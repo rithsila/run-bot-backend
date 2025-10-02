@@ -1,0 +1,331 @@
+// src/users/users.service.ts
+import {
+  BadRequestException,
+  ConflictException,
+  Injectable,
+  Logger,
+} from '@nestjs/common';
+import { InjectModel } from '@nestjs/mongoose';
+import { Model, Types } from 'mongoose';
+import * as argon2 from 'argon2';
+import { promises as dns } from 'dns';
+import { SignupMeta, User, UserDocument } from './user.schema';
+import { SignInMethod } from '../auth/signin-method.enum';
+import { setTimeout as delay } from 'timers/promises';
+import { canonicalizeEmail, maskEmail } from 'src/common/utils/email.util';
+import { Role } from './roles.enum';
+
+
+@Injectable()
+export class UserService {
+  private readonly logger = new Logger(UserService.name);
+
+  private readonly disposable = new Set([
+    'mailinator.com',
+    'tempmail.com',
+    'yopmail.com',
+    'example.com',
+    'user.com',
+    'test.com',
+  ]);
+
+  constructor(@InjectModel(User.name) private readonly model: Model<UserDocument>
+  ) { }
+
+  // -------------------------
+  // Email normalization
+  // -------------------------
+  normalizeEmail(email: string) {
+    // Toggle gmail rules as you prefer:
+    return canonicalizeEmail(email, { gmailDots: true, gmailPlus: true });
+  }
+
+  // -------------------------
+  // Read helpers
+  // -------------------------
+  async findById(id: string) {
+    return this.model.findById(new Types.ObjectId(id)).lean();
+  }
+
+  async findByEmail(email: string) {
+    const norm = this.normalizeEmail(email);
+    this.logger.debug(`Looking up user by email=${maskEmail(norm)}`);
+    return this.model.findOne({ email: norm }).lean();
+  }
+
+
+
+  async getAuthForLoginByEmail(email: string) {
+    const norm = this.normalizeEmail(email);
+    // this.logger.debug(`Auth fetch for email=${maskEmail(norm)}`);
+
+    return this.model
+      .findOne({ email: norm })
+      .select(
+        '+passwordHash firstName lastName email role emailVerified createdAt ' +
+        'failedLoginAttempts lockedUntil passwordChangedAt signInMethod'
+      )
+      .lean();
+  }
+
+  // -------------------------
+  // Activity helpers
+  // -------------------------
+  async updateLastActiveAt(userId: string): Promise<void> {
+    const user = await this.model.findById(userId).select('lastActiveAt').exec();
+    const now = Date.now();
+    const lastActive = user?.lastActiveAt ? new Date(user.lastActiveAt).getTime() : 0;
+    if (!lastActive || now - lastActive > 60 * 1000) {
+      await this.model.findByIdAndUpdate(userId, { lastActiveAt: new Date() }).exec();
+    }
+  }
+
+  async upsertGoogleUser(input: {
+    googleId: string;
+    email: string | null;
+    firstName: string;
+    lastName: string;
+    photoURL?: string;
+  }): Promise<UserDocument> {
+    const email = input.email ? this.normalizeEmail(input.email) : null;
+
+    // Prefer googleId; fallback to email if available
+    const or: any[] = [{ googleId: input.googleId }];
+    if (email) or.push({ email });
+
+    let user = await this.model.findOne({ $or: or });
+
+    if (!user) {
+      user = new this.model({
+        email: email ?? undefined,
+        firstName: input.firstName,
+        lastName: input.lastName,
+        photoURL: input.photoURL,
+        googleId: input.googleId,
+        // If creating via Google, default sign-in method to Google
+        signInMethod: SignInMethod.Google,
+        emailVerified: !!email, // Google usually returns verified email
+      });
+    } else {
+      // Attach googleId if missing
+      if (!user.googleId) user.googleId = input.googleId;
+
+      // Fill profile fields if empty
+      if (!user.firstName && input.firstName) user.firstName = input.firstName;
+      if (!user.lastName && input.lastName) user.lastName = input.lastName;
+      if (!user.photoURL && input.photoURL) user.photoURL = input.photoURL;
+
+      // If user was created without signInMethod, set it; otherwise keep existing
+      if (!user.signInMethod) {
+        user.signInMethod = SignInMethod.Google;
+      }
+    }
+
+    await user.save();
+    return user;
+  }
+  
+
+  async recordFailedLogin(
+    userId: string,
+    opts?: { maxAttempts?: number; lockMs?: number }
+  ): Promise<{ failedLoginAttempts: number; lockedUntil: Date | null } | null> {
+    const maxAttempts = opts?.maxAttempts ?? 5;
+    const lockMs = opts?.lockMs ?? 10 * 60 * 1000;
+
+    const doc = await this.model
+      .findByIdAndUpdate(
+        userId,
+        { $inc: { failedLoginAttempts: 1 } },
+        { new: true, select: 'failedLoginAttempts lockedUntil' },
+      )
+      .lean();
+
+    if (!doc) return null;
+
+    const failedLoginAttempts = doc.failedLoginAttempts ?? 0;
+
+    if (!doc.lockedUntil && failedLoginAttempts >= maxAttempts) {
+      const until = new Date(Date.now() + lockMs);
+      await this.model.findByIdAndUpdate(userId, { $set: { lockedUntil: until } }).lean();
+      return { failedLoginAttempts, lockedUntil: until };
+    }
+
+    return { failedLoginAttempts, lockedUntil: doc.lockedUntil ?? null };
+  }
+
+  async recordSuccessfulLogin(userId: string): Promise<void> {
+    await this.model
+      .findByIdAndUpdate(
+        userId,
+        { $set: { failedLoginAttempts: 0, lockedUntil: null, lastLoginAt: new Date() } },
+        { new: false },
+      )
+      .lean();
+  }
+
+  isLocked(user: { lockedUntil?: Date | string | null }): boolean {
+    if (!user?.lockedUntil) return false;
+    return new Date(user.lockedUntil).getTime() > Date.now();
+  }
+
+  async clearLockIfExpired(userId: string, lockedUntil?: Date | string | null): Promise<void> {
+    if (!lockedUntil) return;
+    if (new Date(lockedUntil).getTime() <= Date.now()) {
+      await this.model.findByIdAndUpdate(
+        userId,
+        { $set: { failedLoginAttempts: 0, lockedUntil: null } },
+        { new: false },
+      ).lean();
+    }
+  }
+
+  // -------------------------
+  // Public mapper (safe shape)
+  // -------------------------
+  toPublicUser(u: UserDocument) {
+    return {
+      _id: String(u._id),
+      email: u.email,
+      firstName: u.firstName,
+      lastName: u.lastName ?? null,
+      role: u.role,
+      emailVerified: !!u.emailVerified,
+    };
+  }
+
+  // -------------------------
+  // Sign-up guards
+  // -------------------------
+  private enforceNotDisposable(email: string) {
+    const domain = this.normalizeEmail(email).split('@')[1] || '';
+    if (this.disposable.has(domain)) {
+      this.logger.warn(`Blocked disposable email domain: ${domain}`);
+      throw new BadRequestException('Disposable email not allowed');
+    }
+  }
+
+  private async enforceMx(email: string) {
+    const domain = this.normalizeEmail(email).split('@')[1] || '';
+    const timeoutMs = 1500;
+
+    try {
+      const result = await Promise.race([
+        dns.resolveMx(domain),
+        delay(timeoutMs + 100).then(() => {
+          throw new Error('MX timeout');
+        }),
+      ]);
+      if (!Array.isArray(result) || result.length === 0) {
+        throw new Error('No MX');
+      }
+    } catch (e) {
+      this.logger.warn(`Email domain MX check failed: ${domain} (${(e as Error).message})`);
+      throw new BadRequestException('Email domain is not reachable');
+    }
+  }
+
+  // -------------------------
+  // Create user (signup)
+  // -------------------------
+  async create(p: {
+    firstName: string;
+    lastName?: string;
+    email: string;
+    password: string;
+    emailVerified: boolean;
+    signInMethod: SignInMethod;
+    signupMeta?: SignupMeta;
+  }) {
+    const email = this.normalizeEmail(p.email);
+
+    // Pre-checks
+    this.enforceNotDisposable(email);
+
+    // Run MX check and password hash in parallel to shave latency
+    const [_, passwordHash] = await Promise.all([
+      this.enforceMx(email),
+      argon2.hash(p.password, {
+        type: argon2.argon2id,
+        // sensible explicit params; tune if needed
+        memoryCost: 2 ** 16, // 64 MiB
+        timeCost: 3,
+        parallelism: 1,
+      }),
+    ]);
+
+    const firstName = p.firstName.trim();
+    const lastName = p.lastName?.trim() || undefined;
+
+    const meta: SignupMeta | undefined = p.signupMeta
+      ? {
+        userAgent: p.signupMeta.userAgent ?? null,
+        referer: p.signupMeta.referer ?? null,
+        deviceIdHash: p.signupMeta.deviceIdHash ?? null,
+        ipHash: p.signupMeta.ipHash ?? null,
+        renderedAtMs: p.signupMeta.renderedAtMs ?? null,
+        submittedAtMs: p.signupMeta.submittedAtMs ?? Date.now(),
+      }
+      : undefined;
+
+    try {
+      const doc = await this.model.create({
+        firstName,
+        lastName,
+        email,
+        passwordHash,
+        signInMethod: SignInMethod.Password,
+        signupMeta: meta,
+      });
+
+      this.logger.log(
+        `Created pending user id=${doc._id.toString()} email=${maskEmail(doc.email)}`,
+      );
+
+
+      // Return safe projection
+      return {
+        id: doc._id.toString(),
+        firstName: doc.firstName,
+        lastName: doc.lastName,
+        email: doc.email,
+        role: doc.role,
+        emailVerified: doc.emailVerified,
+        createdAt: (doc as any).createdAt,
+      };
+    } catch (e: any) {
+      const isDup =
+        e?.code === 11000 ||
+        e?.codeName === 'DuplicateKey' ||
+        (typeof e?.message === 'string' && e.message.includes('E11000 duplicate key'));
+
+      if (isDup) {
+        this.logger.warn(`Duplicate email attempted: ${maskEmail(email)}`);
+        throw new ConflictException('Email already registered');
+      }
+
+      this.logger.error(
+        `Error creating user for ${maskEmail(email)}: ${e?.message || e}`,
+        e?.stack,
+      );
+      throw e;
+    }
+  }
+
+  async findPublicById(id: string) {
+    const doc = await this.model.findById(id)
+      .select('firstName lastName email role emailVerified photoURL createdAt') // ← only safe fields
+      .lean();
+    return doc ? this.toPublicUser(doc) : null;
+  }
+
+  async findCreators() {
+
+    return this.model
+      .find({ role: Role.Creator })
+      .sort({ createdAt: -1 })
+      .select('-passwordHash') // extra safety; it's select:false already
+      .lean()
+      .exec();
+  }
+}
