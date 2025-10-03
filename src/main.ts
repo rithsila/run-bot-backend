@@ -26,8 +26,7 @@ async function bootstrap() {
   // ---- build origins at RUNTIME ----
   const allowedOrigins = buildAllowedOrigins([
     config.get<string>('FRONTEND_ADMIN_URL'),
-    config.get<string>('FRONTEND_STUDENT_URL'),
-    config.get<string>('FRONTEND_INSTRUCTOR_URL')
+    config.get<string>('FRONTEND_URL'),
   ]);
   logger.log(`[CORS] allowed origins: ${allowedOrigins.join(', ')}`);
 

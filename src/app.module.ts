@@ -42,6 +42,7 @@ import { RealtimeModule } from './realtime/realtime.module';
 import { ReferralModule } from './referrals/referrals.module';
 import { PlanModule } from './plan/plan.module';
 import { EaSnqpModule } from './ea-snqp/ea-snqp.module';
+import { TradingPlanModule } from './trading-plan/trading-plan.module';
 
 @Module({
   imports: [
@@ -152,6 +153,7 @@ import { EaSnqpModule } from './ea-snqp/ea-snqp.module';
     ReferralModule,
     PlanModule,
     EaSnqpModule,
+    TradingPlanModule,
   ],
 
   controllers: [AppController],
