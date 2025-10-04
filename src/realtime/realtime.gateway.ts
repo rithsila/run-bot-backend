@@ -4,18 +4,20 @@ import {
   ConnectedSocket, MessageBody, OnGatewayConnection
 } from '@nestjs/websockets';
 import { Server, Socket } from 'socket.io';
-import { Logger } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 
+@Injectable()
 @WebSocketGateway({
   namespace: '/realtime',
   transports: ['websocket'],
+  cors: { origin: true, credentials: true },
 })
 export class RealtimeGateway implements OnGatewayConnection {
   private readonly log = new Logger(RealtimeGateway.name);
   @WebSocketServer() server!: Server;
 
   async handleConnection(client: Socket) {
-    await client.join('orders');
+    await client.join('RealTime');
     this.log.debug(`CONNECT id=${client.id} rooms=${JSON.stringify([...client.rooms])}`);
     client.emit('rt:connected', { ok: true, rooms: [...client.rooms] });
   }

@@ -21,7 +21,6 @@ import { ApiSuccess } from 'src/common/types/api-response.type';
 @Controller('trading-plan')
 export class TradingPlanController {
     constructor(private readonly service: TradingPlanService) { }
-
     @Post()
     @HttpCode(HttpStatus.CREATED)
     @Throttle({ default: { limit: 5, ttl: 30_000 } })
@@ -32,9 +31,7 @@ export class TradingPlanController {
     ): Promise<ApiSuccess<unknown>> {
         const uid = req?.user?.userId;
         if (!uid) throw new UnauthorizedException('AUTH_REQUIRED');
-
         const plan = await this.service.create(uid, dto);
-
         return {
             success: true,
             statusCode: HttpStatus.CREATED,
@@ -46,10 +43,10 @@ export class TradingPlanController {
         };
     }
 
+    
     @Get()
     @HttpCode(HttpStatus.OK)
     async findMine(@Req() req: AuthRequest): Promise<ApiSuccess<unknown[]>> {
-
         const items = await this.service.findAll();
 
         return {

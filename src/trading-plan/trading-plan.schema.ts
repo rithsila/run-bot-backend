@@ -4,10 +4,12 @@ import { Document, Types } from 'mongoose';
 import { Direction, Pair } from './trading-plan.enum';
 import { User } from 'src/user/user.schema';
 
-export type TradingPlanDocument = TradingPlan & Document;
+export type TradingPlanDocument = TradingPlan & Document & { _id: Types.ObjectId };
 
 @Schema({ collection: 'trading_plans', timestamps: true })
 export class TradingPlan {
+
+
     @Prop({ type: String, enum: Object.values(Pair), required: true })
     pair!: Pair;
 

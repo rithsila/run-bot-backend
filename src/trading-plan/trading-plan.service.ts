@@ -3,6 +3,7 @@ import {
   BadRequestException,
   ForbiddenException,
   Injectable,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
@@ -13,34 +14,38 @@ import {
   TradingPlanDocument,
 } from './trading-plan.schema';
 import { CreateTradingPlanDto } from './dto/create-trading-plan.dto';
+import { WebPushSubService } from 'src/web-push-sub/web-push-sub.service';
+import { TradingPlanLean } from 'src/common/types/trading.type';
 
 const MAX_PLANS_PER_USER = 6;
 
 @Injectable()
 export class TradingPlanService {
+  
+
   constructor(
     @InjectModel(TradingPlan.name)
     private readonly planModel: Model<TradingPlanDocument>,
+    private readonly push: WebPushSubService,
   ) { }
+
   async create(currentUserId: string, dto: CreateTradingPlanDto) {
     const userId = this.asObjectId(currentUserId);
-
-    // OPTIONAL: ensure you have this compound index for speed
-    // TradingPlanSchema.index({ publishedBy: 1, createdAt: 1 });
+    let created!: TradingPlanLean;                                 // ✅ TS: will be set
 
     const session = await this.planModel.db.startSession();
     try {
-      let created;
       await session.withTransaction(async () => {
-        // Count current docs for this user
-        const count = await this.planModel.countDocuments({ publishedBy: userId }).session(session);
+        /* ───────── cap at MAX_PLANS_PER_USER ───────── */
+        const count = await this.planModel
+          .countDocuments({ publishedBy: userId })
+          .session(session);
 
-        // If at or above the cap, delete the oldest to make room
         const toDelete = Math.max(0, count - MAX_PLANS_PER_USER + 1);
         if (toDelete > 0) {
           const oldest = await this.planModel
             .find({ publishedBy: userId })
-            .sort({ createdAt: 1 }) // oldest first
+            .sort({ createdAt: 1 })
             .limit(toDelete)
             .select({ _id: 1 })
             .lean()
@@ -48,21 +53,29 @@ export class TradingPlanService {
 
           const ids = oldest.map((d) => d._id);
           if (ids.length) {
-            await this.planModel.deleteMany({ _id: { $in: ids } }).session(session);
+            await this.planModel
+              .deleteMany({ _id: { $in: ids } })
+              .session(session);
           }
         }
 
-        // Create the new plan
-        const doc = await this.planModel.create([{ ...dto, publishedBy: userId }], { session });
-        created = doc[0].toObject();
+        /* ───────── insert the new plan ───────── */
+        const [doc] = await this.planModel.create(
+          [{ ...dto, publishedBy: userId }],
+          { session },
+        );
+        created = doc.toObject();                             // <-- assignment
       });
-
-      return created;
-    } catch (err) {
-      // Fallback for non-replica-set environments (no transactions)
-      if (String(err?.message || "").includes("Transaction numbers are only allowed on a replica set")) {
-        // Manual, non-transactional fallback (best-effort)
-        const count = await this.planModel.countDocuments({ publishedBy: userId });
+    } catch (err: any) {
+      /* ───── fallback for non-replica-set Mongo (unchanged) ───── */
+      if (
+        String(err?.message || '').includes(
+          'Transaction numbers are only allowed on a replica set',
+        )
+      ) {
+        const count = await this.planModel.countDocuments({
+          publishedBy: userId,
+        });
         const toDelete = Math.max(0, count - MAX_PLANS_PER_USER + 1);
         if (toDelete > 0) {
           const oldest = await this.planModel
@@ -77,15 +90,33 @@ export class TradingPlanService {
             await this.planModel.deleteMany({ _id: { $in: ids } });
           }
         }
-        const doc = await this.planModel.create({ ...dto, publishedBy: userId });
-        return doc.toObject();
+        const doc = await this.planModel.create({
+          ...dto,
+          publishedBy: userId,
+        });
+        created = doc.toObject();                             // <-- assignment
+      } else {
+        throw err;
       }
-
-      throw err;
     } finally {
       session.endSession();
     }
+
+    /* ───────── send Web-Push (non-blocking) ───────── */
+    void this.push.broadcast(
+      {
+        title: 'New Trading Plan 📈',
+        body: `${created.pair} • ${created.direction}`,
+        url: `/trading-plans/${created._id}`,
+        ts: Date.now(),
+      },
+      60,                                                     // TTL seconds
+    );
+
+    return created;
   }
+
+
   async findAll() {
     return this.planModel
       .find({})

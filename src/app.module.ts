@@ -43,6 +43,7 @@ import { ReferralModule } from './referrals/referrals.module';
 import { PlanModule } from './plan/plan.module';
 import { EaSnqpModule } from './ea-snqp/ea-snqp.module';
 import { TradingPlanModule } from './trading-plan/trading-plan.module';
+import { WebPushSubModule } from './web-push-sub/web-push-sub.module';
 
 @Module({
   imports: [
@@ -154,6 +155,7 @@ import { TradingPlanModule } from './trading-plan/trading-plan.module';
     PlanModule,
     EaSnqpModule,
     TradingPlanModule,
+    WebPushSubModule,
   ],
 
   controllers: [AppController],
