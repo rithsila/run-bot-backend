@@ -44,6 +44,7 @@ import { PlanModule } from './plan/plan.module';
 import { EaSnqpModule } from './ea-snqp/ea-snqp.module';
 import { TradingPlanModule } from './trading-plan/trading-plan.module';
 import { WebPushSubModule } from './web-push-sub/web-push-sub.module';
+import { SignalModule } from './signal/signal.module';
 
 @Module({
   imports: [
@@ -156,6 +157,7 @@ import { WebPushSubModule } from './web-push-sub/web-push-sub.module';
     EaSnqpModule,
     TradingPlanModule,
     WebPushSubModule,
+    SignalModule,
   ],
 
   controllers: [AppController],
