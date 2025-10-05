@@ -10,19 +10,17 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { Types } from 'mongoose';
-
 import { WebPushSubService } from './web-push-sub.service';
 import {
   SubscribeWebPushDto,
   UnsubscribeWebPushDto,
 } from './dto/web-push-sub.dto';
 import { JwtAuthGuard } from 'src/auth/guard/jwt-auth.guard';
-import * as authRequestType from 'src/common/types/auth-request.type';
 import type { AuthRequest } from 'src/common/types/auth-request.type';
 
-
-@Controller('web-push-sub')               // base route
+@Controller('web-push-sub')
 export class WebPushSubController {
+
   constructor(private readonly push: WebPushSubService) { }
 
   /* ───────── Public: fetch the VAPID key ───────── */
@@ -61,14 +59,5 @@ export class WebPushSubController {
     return { ok: true };
   }
 
-  /* ───────── Optional admin broadcast (comment out if unused) ─────────
-  @UseGuards(AdminGuard)
-  @Post('broadcast')
-  async broadcast(@Body() b: { title: string; body?: string; url?: string }) {
-    return this.push.broadcast(
-      { title: b.title, body: b.body ?? '', url: b.url ?? '/', ts: Date.now() },
-      60,
-    );
-  }
-  */
+
 }

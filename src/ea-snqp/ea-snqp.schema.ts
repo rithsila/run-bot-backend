@@ -42,7 +42,6 @@ export class EaSnqp {
 
     @Prop({
         type: String,
-        unique: true,
         select: false,
         trim: true,
         maxlength: 255,

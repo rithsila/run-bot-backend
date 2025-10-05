@@ -32,7 +32,6 @@ export class EaSnqpService {
     async requestSnqp(currentUserId: string, body: RequestSnqpDto) {
         this.ensureUser(currentUserId);
 
-        // Optional duplicate guard: (user + tradingAccount) for Request/Verified
         const dupFilter: FilterQuery<EaSnqpDocument> = {
             user: new Types.ObjectId(currentUserId),
             status: { $in: [MembershipStatus.Request, MembershipStatus.Verified] },
