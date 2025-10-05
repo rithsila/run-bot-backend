@@ -21,6 +21,7 @@ import { UserModule } from 'src/user/user.module';
     UserModule
   ],
   providers: [ReferralsService, BrokersService, MembershipsService],
-  controllers: [ReferralsController, BrokersController,MembershipsController]
+  controllers: [ReferralsController, BrokersController, MembershipsController],
+  exports: [MembershipsService]
 })
 export class ReferralModule { }
