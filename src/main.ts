@@ -13,7 +13,6 @@ import * as bodyParser from 'body-parser';
 import helmet from 'helmet';
 import hpp from 'hpp';
 import compression from 'compression';
-import { WsAdapter } from './realtime/ws.adapter';
 import { buildAllowedOrigins } from './common/security/origin';
 
 async function bootstrap() {
@@ -25,9 +24,9 @@ async function bootstrap() {
 
   // ---- build origins at RUNTIME ----
   const allowedOrigins = buildAllowedOrigins([
-    config.get<string>('FRONTEND_ADMIN_URL'),
     config.get<string>('FRONTEND_URL'),
   ]);
+
   logger.log(`[CORS] allowed origins: ${allowedOrigins.join(', ')}`);
 
   app.set('trust proxy', 1);
@@ -75,8 +74,6 @@ async function bootstrap() {
     maxAge: 86400,
   });
 
-  // ---- WS CORS via adapter using the SAME array ----
-  app.useWebSocketAdapter(new WsAdapter(app, allowedOrigins));
 
   app.enableShutdownHooks();
 

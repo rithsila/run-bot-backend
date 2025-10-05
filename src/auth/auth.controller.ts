@@ -32,7 +32,6 @@ import { SkipCsrf } from './guard/skip-csrf.decorator';
 import crypto from 'crypto';
 import { GoogleUserPayload } from 'src/common/types/google-auth.type';
 import { cookieBase } from 'src/common/cookies/cookie.util';
-import type { AppAudience } from 'src/auth/decorators/app.decorator';
 import { TurnstileGuard } from 'src/turnstile/turnstile.guard';
 import { TurnstileAction } from 'src/turnstile/turnstile.decorator';
 
@@ -194,7 +193,6 @@ export class AuthController {
     @Res({ passthrough: true }) res: Response,
   ) {
     // state was injected by GoogleStrategy.authorizationParams(req)
-    const app = (req.query.state as AppAudience) ?? 'student';
 
     // req.user comes from GoogleStrategy.validate()
     const { accessToken, expiresIn } =
@@ -217,14 +215,8 @@ export class AuthController {
       maxAge: expiresIn * 1000,
     });
 
-    const map: Record<AppAudience, string> = {
-      admin: process.env.FRONTEND_ADMIN_URL ?? "",
-      student: process.env.FRONTEND_STUDENT_URL ?? "",
-      instructor: process.env.FRONTEND_INSTRUCTOR_URL ?? "",
-    };
-    const redirectUrl = new URL(map[app]);
-    redirectUrl.pathname = '/oauth/complete';
-    return res.redirect(redirectUrl.toString());
+   
+    return res.redirect('/');
   }
 
   @Post('logout')

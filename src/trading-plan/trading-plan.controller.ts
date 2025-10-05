@@ -22,6 +22,7 @@ import { ApiSuccess } from 'src/common/types/api-response.type';
 @Controller('trading-plan')
 export class TradingPlanController {
     constructor(private readonly service: TradingPlanService) { }
+
     @Post()
     @HttpCode(HttpStatus.CREATED)
     @Throttle({ default: { limit: 5, ttl: 30_000 } })
@@ -84,7 +85,7 @@ export class TradingPlanController {
 
     @Delete(':id')
     async remove(@Param('id') id: string, @Req() req: any) {
-        return this.service.remove(req.user.id, id);
+        return this.service.remove(id);
     }
 
 }

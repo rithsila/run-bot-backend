@@ -61,7 +61,7 @@ export class TradingPlanService {
           [{ ...dto, publishedBy: userId }],
           { session },
         );
-        created = doc.toObject();                           
+        created = doc.toObject();
       });
     } catch (err: any) {
       if (
@@ -131,15 +131,14 @@ export class TradingPlanService {
     return doc;
   }
 
-  async remove(currentUserId: string, planId: string) {
+  async remove(planId: string) {
     if (!Types.ObjectId.isValid(planId)) {
       throw new BadRequestException('Invalid trading plan id');
     }
-    const userId = this.asObjectId(currentUserId);
 
     // Atomic: match by _id + publishedBy
     const deleted = await this.planModel
-      .findOneAndDelete({ _id: planId, publishedBy: userId })
+      .findOneAndDelete({ _id: planId })
       .lean();
 
     if (!deleted) {

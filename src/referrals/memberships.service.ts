@@ -96,8 +96,17 @@ export class MembershipsService {
             .sort({ createdAt: -1 })
             .skip((page - 1) * limit)
             .limit(limit)
-            .populate('broker', 'name logo')
-            .populate('user', 'firstName lastName email');
+            .populate([
+                { path: 'user', select: 'firstName lastName email' },
+                {
+                    path: 'referral',
+                    select: 'partnerCode registerUrl', // add fields you need from Referral
+                    populate: [
+                        { path: 'broker', select: 'name logo description' },
+                        { path: 'user', select: 'firstName lastName email' },
+                    ],
+                },
+            ])
 
         // partnerCode is select:false by default; include only when explicitly asked
         if (query.includePartnerCode === '1' || query.includePartnerCode === 'true') {
@@ -116,38 +125,15 @@ export class MembershipsService {
 
     async updateStatus(
         membershipId: string,
-        adminUserId: string,
         status: MembershipStatus,
-        opts?: { brokerAccountId?: string; notes?: string }
     ) {
-        this.ensureId(membershipId, 'membership');
-        this.ensureId(adminUserId, 'admin');
 
         if (!Object.values(MembershipStatus).includes(status)) {
             throw new BadRequestException('Invalid membership status');
         }
 
-        const doc = await this.membershipModel.findById(membershipId);
-        if (!doc) throw new NotFoundException('Membership not found');
+        await this.membershipModel.findByIdAndUpdate(membershipId, { status });
 
-        // apply changes
-
-        if (opts?.notes !== undefined) {
-            doc.notes = opts.notes?.trim() || undefined;
-        }
-        // save approver for non-Request states
-        if (status !== MembershipStatus.Request) {
-            (doc as any).approvedBy = adminUserId;
-        }
-
-        await doc.save();
-
-        return this.membershipModel
-            .findById(doc._id)
-            .populate('broker', 'name logo')
-            .populate('user', 'firstName lastName email')
-            .lean()
-            .exec();
     }
 
 }

@@ -97,15 +97,10 @@ export class MembershipsController {
     async setStatus(
         @Req() req: AuthRequest,
         @Param('id') id: string,
-        @Body() body: { status?: MembershipStatus; brokerAccountId?: string; notes?: string }
+        @Body() body: { status?: MembershipStatus; }
     ) {
-        const uid = req?.user?.userId;
-        if (!uid) throw new UnauthorizedException('AUTH_REQUIRED');
 
-        const data = await this.service.updateStatus(id, uid, body.status as MembershipStatus, {
-            brokerAccountId: body?.brokerAccountId,
-            notes: body?.notes,
-        });
+        const data = await this.service.updateStatus(id, body.status as MembershipStatus);
 
         return {
             success: true,

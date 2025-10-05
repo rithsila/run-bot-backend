@@ -62,7 +62,7 @@ export class User {
   @Prop({ required: false, default: SignInMethod.Password, enum: SignInMethod })
   signInMethod?: SignInMethod;
 
-  @Prop({ type: String, enum: Role, default: Role.Student })
+  @Prop({ type: String, enum: Role, default: Role.User })
   role: Role;
 
   @Prop({ type: Date })

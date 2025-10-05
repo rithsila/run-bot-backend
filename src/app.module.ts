@@ -38,7 +38,6 @@ import { AuthModule } from './auth/auth.module';
 import { JwtAuthGuard } from './auth/guard/jwt-auth.guard';
 import { CsrfGuard } from './auth/guard/csrf.guard';
 import { MediaModule } from './media/media.module';
-import { RealtimeModule } from './realtime/realtime.module';
 import { ReferralModule } from './referrals/referrals.module';
 import { PlanModule } from './plan/plan.module';
 import { EaSnqpModule } from './ea-snqp/ea-snqp.module';
@@ -152,7 +151,6 @@ import { TurnstileModule } from './turnstile/turnstile.module';
     MailModule,
     AuthModule,
     MediaModule,
-    RealtimeModule,
     ReferralModule,
     PlanModule,
     EaSnqpModule,
