@@ -6,6 +6,7 @@ import {
   Get,
   Post,
   Req,
+  UnauthorizedException,
   UseGuards,
 } from '@nestjs/common';
 import { Types } from 'mongoose';
@@ -16,11 +17,13 @@ import {
   UnsubscribeWebPushDto,
 } from './dto/web-push-sub.dto';
 import { JwtAuthGuard } from 'src/auth/guard/jwt-auth.guard';
+import * as authRequestType from 'src/common/types/auth-request.type';
+import type { AuthRequest } from 'src/common/types/auth-request.type';
 
 
 @Controller('web-push-sub')               // base route
 export class WebPushSubController {
-  constructor(private readonly push: WebPushSubService) {}
+  constructor(private readonly push: WebPushSubService) { }
 
   /* ───────── Public: fetch the VAPID key ───────── */
   @Get('vapid-public-key')
@@ -31,11 +34,15 @@ export class WebPushSubController {
   /* ───────── Auth required: store or update a subscription ───────── */
   @UseGuards(JwtAuthGuard)
   @Post('subscribe')
-  async subscribe(@Req() req: any, @Body() dto: SubscribeWebPushDto) {
-    await this.push.upsertSubscription(new Types.ObjectId(req.user._id), {
+  async subscribe(@Req() req: AuthRequest, @Body() dto: SubscribeWebPushDto) {
+
+    const uid = req?.user?.userId;
+    if (!uid) throw new UnauthorizedException('AUTH_REQUIRED');
+
+    await this.push.upsertSubscription(new Types.ObjectId(uid), {
       ...dto,
       userAgent: req.headers['user-agent']?.toString() ?? null,
-      ipHint   : req.ip ?? null,
+      ipHint: req.ip ?? null,
     });
     return { ok: true };
   }
