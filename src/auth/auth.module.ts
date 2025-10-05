@@ -8,6 +8,7 @@ import { AuthController } from './auth.controller';
 import { UserModule } from 'src/user/user.module';
 import { JwtStrategy } from './strategies/jwt.strategy';
 import { GoogleStrategy } from './strategies/google.strategy';
+import { TurnstileModule } from 'src/turnstile/turnstile.module';
 
 @Module({
   imports: [
@@ -15,6 +16,7 @@ import { GoogleStrategy } from './strategies/google.strategy';
     UserModule,
     PassportModule.register({ defaultStrategy: 'jwt-bearer', session: false }),
     JwtModule.register({}),
+    TurnstileModule
   ],
   controllers: [AuthController],
   providers: [

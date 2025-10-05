@@ -33,6 +33,8 @@ import crypto from 'crypto';
 import { GoogleUserPayload } from 'src/common/types/google-auth.type';
 import { cookieBase } from 'src/common/cookies/cookie.util';
 import type { AppAudience } from 'src/auth/decorators/app.decorator';
+import { TurnstileGuard } from 'src/turnstile/turnstile.guard';
+import { TurnstileAction } from 'src/turnstile/turnstile.decorator';
 
 @Controller('auth')
 export class AuthController {
@@ -42,6 +44,8 @@ export class AuthController {
     private readonly users: UserService
   ) { }
 
+  @UseGuards(TurnstileGuard)
+  @TurnstileAction('register')        
   @Public()
   @SkipCsrf()
   @Post('signup')
@@ -89,18 +93,17 @@ export class AuthController {
       path: req.url,
     };
   }
-
   @Public()
   @Post('login')
-  @Throttle({ default: { limit: 5, ttl: 60_000 } }) // 5/min per IP|device
-  @UsePipes(
-    new ValidationPipe({
-      whitelist: true,
-      forbidNonWhitelisted: false,
-      transform: true,
-      transformOptions: { enableImplicitConversion: true },
-    }),
-  )
+  @UseGuards(TurnstileGuard)
+  @TurnstileAction('login')
+  @Throttle({ default: { limit: 5, ttl: 60_000 } })
+  @UsePipes(new ValidationPipe({
+    whitelist: true,
+    forbidNonWhitelisted: false,
+    transform: true,
+    transformOptions: { enableImplicitConversion: true },
+  }))
   @HttpCode(HttpStatus.OK)
   async login(
     @Body() dto: LoginDto,
@@ -195,7 +198,7 @@ export class AuthController {
 
     // req.user comes from GoogleStrategy.validate()
     const { accessToken, expiresIn } =
-      await this.auth.handleGoogleLogin(req.user as GoogleUserPayload, app);
+      await this.auth.handleGoogleLogin(req.user as GoogleUserPayload);
 
     const base = cookieBase();
 

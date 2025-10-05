@@ -1,9 +1,7 @@
 // src/trading-plans/trading-plan.service.ts
 import {
   BadRequestException,
-  ForbiddenException,
   Injectable,
-  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
@@ -21,7 +19,7 @@ const MAX_PLANS_PER_USER = 6;
 
 @Injectable()
 export class TradingPlanService {
-  
+
 
   constructor(
     @InjectModel(TradingPlan.name)
@@ -59,15 +57,13 @@ export class TradingPlanService {
           }
         }
 
-        /* ───────── insert the new plan ───────── */
         const [doc] = await this.planModel.create(
           [{ ...dto, publishedBy: userId }],
           { session },
         );
-        created = doc.toObject();                             // <-- assignment
+        created = doc.toObject();                           
       });
     } catch (err: any) {
-      /* ───── fallback for non-replica-set Mongo (unchanged) ───── */
       if (
         String(err?.message || '').includes(
           'Transaction numbers are only allowed on a replica set',
@@ -135,6 +131,25 @@ export class TradingPlanService {
     return doc;
   }
 
+  async remove(currentUserId: string, planId: string) {
+    if (!Types.ObjectId.isValid(planId)) {
+      throw new BadRequestException('Invalid trading plan id');
+    }
+    const userId = this.asObjectId(currentUserId);
+
+    // Atomic: match by _id + publishedBy
+    const deleted = await this.planModel
+      .findOneAndDelete({ _id: planId, publishedBy: userId })
+      .lean();
+
+    if (!deleted) {
+      // Either it didn’t exist, or it wasn’t owned by this user
+      throw new NotFoundException('Trading plan not found');
+    }
+
+    return { ok: true, id: String(deleted._id) };
+  }
+
   // --- helpers ---
   private asObjectId(id: string) {
     if (!Types.ObjectId.isValid(id)) {
@@ -143,11 +158,4 @@ export class TradingPlanService {
     return new Types.ObjectId(id);
   }
 
-  private ensureOwner(ownerId: Types.ObjectId | string, userId: Types.ObjectId) {
-    const own =
-      ownerId instanceof Types.ObjectId
-        ? ownerId.equals(userId)
-        : String(ownerId) === String(userId);
-    if (!own) throw new ForbiddenException('Not your trading plan');
-  }
 }

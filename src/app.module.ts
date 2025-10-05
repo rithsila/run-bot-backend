@@ -45,6 +45,7 @@ import { EaSnqpModule } from './ea-snqp/ea-snqp.module';
 import { TradingPlanModule } from './trading-plan/trading-plan.module';
 import { WebPushSubModule } from './web-push-sub/web-push-sub.module';
 import { SignalModule } from './signal/signal.module';
+import { TurnstileModule } from './turnstile/turnstile.module';
 
 @Module({
   imports: [
@@ -158,6 +159,7 @@ import { SignalModule } from './signal/signal.module';
     TradingPlanModule,
     WebPushSubModule,
     SignalModule,
+    TurnstileModule,
   ],
 
   controllers: [AppController],

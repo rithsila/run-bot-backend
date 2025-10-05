@@ -22,7 +22,6 @@ import { formatRemainingLockTime } from 'src/common/utils/time.util';
 import { GoogleUserPayload } from 'src/common/types/google-auth.type';
 import { Role } from 'src/user/roles.enum';
 
-type AppAudience = 'admin' | 'student' | 'instructor';
 
 @Injectable()
 export class AuthService {
@@ -143,17 +142,12 @@ export class AuthService {
 
       await this.users.recordSuccessfulLogin(String(authDoc._id));
 
-      const app = dto.app as AppAudience;
-      if (!this.allowMap[app].includes(authDoc.role as Role)) {
-        throw new UnauthorizedException('This account cannot access that app');
-      }
 
       const payload = {
         sub: String(authDoc._id),
         email: authDoc.email,
         role: authDoc.role as Role,
         perms: (authDoc as any).perms ?? [], // if you store string[] perms on the user
-        aud: app,
         typ: 'access' as const,
       };
 
@@ -171,7 +165,6 @@ export class AuthService {
           email: maskEmail(user.email),
           ip_subnet24: t?.ip ? subnet24(t.ip) : null,
           deviceIdHash: t?.deviceIdHash ?? null,
-          aud: app,
           role: authDoc.role,
         }),
       );
@@ -188,7 +181,6 @@ export class AuthService {
 
   async handleGoogleLogin(
     google: GoogleUserPayload,
-    app: AppAudience, // <— accept the audience from controller (state)
   ): Promise<{
     tokenType: 'Bearer';
     accessToken: string;
@@ -209,9 +201,7 @@ export class AuthService {
 
     // enforce mapping (most Google signups are Students by default)
     const userRole = userDoc.role as Role;
-    if (!this.allowMap[app].includes(userRole)) {
-      throw new UnauthorizedException('This account cannot access that app');
-    }
+  
 
     // --- issue access JWT exactly like /login ---
     const payload = {
@@ -219,7 +209,6 @@ export class AuthService {
       email: userDoc.email,
       role: userRole,
       perms: (userDoc as any).perms ?? [],
-      aud: app,
       typ: 'access' as const,
     };
 
@@ -233,7 +222,6 @@ export class AuthService {
         evt: 'oauth_google_success',
         _id: publicUser._id,
         email: maskEmail(publicUser.email),
-        aud: app,
         role: userRole,
       }),
     );
@@ -254,7 +242,6 @@ export class AuthService {
     email: string;
     role: Role;
     perms?: string[];
-    aud: AppAudience;
     typ: 'access';
   }): Promise<string> {
     if (this.JWT_ALG !== 'RS256' && this.JWT_ALG !== 'HS256') {
@@ -295,10 +282,5 @@ export class AuthService {
     }
   }
 
-  private readonly allowMap: Record<AppAudience, Role[]> = {
-    admin: [Role.Admin],
-    student: [Role.Student],
-    instructor: [Role.Instructor, Role.Admin], // let Admins access instructor app
-  };
 
 }

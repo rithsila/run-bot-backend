@@ -1,11 +1,5 @@
 // src/auth/dto/login.dto.ts
-import {
-  IsEmail,
-  IsIn,
-  IsString,
-  MinLength,
-  MaxLength,
-} from 'class-validator';
+import { IsEmail, IsOptional, IsString, MinLength, MaxLength } from 'class-validator';
 
 export class LoginDto {
   @IsEmail()
@@ -17,6 +11,7 @@ export class LoginDto {
   @MaxLength(128)
   password!: string;
 
-  @IsIn(['admin', 'student', 'instructor'])
-  app!: 'admin' | 'student' | 'instructor';
+  @IsOptional()
+  @IsString()
+  turnstileToken?: string;
 }

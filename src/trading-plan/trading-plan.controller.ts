@@ -2,6 +2,7 @@
 import {
     Body,
     Controller,
+    Delete,
     Get,
     HttpCode,
     HttpStatus,
@@ -43,7 +44,6 @@ export class TradingPlanController {
         };
     }
 
-    
     @Get()
     @HttpCode(HttpStatus.OK)
     async findMine(@Req() req: AuthRequest): Promise<ApiSuccess<unknown[]>> {
@@ -81,4 +81,10 @@ export class TradingPlanController {
             data: plan,
         };
     }
+
+    @Delete(':id')
+    async remove(@Param('id') id: string, @Req() req: any) {
+        return this.service.remove(req.user.id, id);
+    }
+
 }
