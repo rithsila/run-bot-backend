@@ -11,6 +11,8 @@ import { RequestSnqpDto } from './dto/request-snqp.dto';
 import { EaSnqp, EaSnqpDocument } from './ea-snqp.schema';
 import { GetAllSnqpDto } from './dto/get-all-snqp.dto';
 import { UpdateSnqpStatusDto } from './dto/update-snqp-status.dto';
+import { WebPushSubService } from 'src/web-push-sub/web-push-sub.service';
+import { Role } from 'src/user/roles.enum';
 
 @Injectable()
 export class EaSnqpService {
@@ -18,6 +20,7 @@ export class EaSnqpService {
     constructor(
         @InjectModel(EaSnqp.name)
         private readonly model: Model<EaSnqpDocument>,
+        private readonly push: WebPushSubService,
     ) { }
 
     private ensureUser(id?: string) {
@@ -48,8 +51,21 @@ export class EaSnqpService {
             tradingAccount: body.tradingAccount || undefined,
             accountNumbers: body.accountNumbers ?? [],
             bankAccount: body.bankAccount || undefined,
+            tradingView: body.tradingView || undefined,
             status: MembershipStatus.Request,
         });
+
+        void this.push.sendToRoles(
+            [Role.Admin, Role.Creator],
+            {
+                title: `License request!`,      // from previous step
+                body: 'New license request submitted.',
+                ts: Date.now(),
+                type: 'license_request',                   // optional, handy on client
+            },
+            60,
+            new Types.ObjectId(currentUserId),           // exclude requester (optional)
+        );
 
         return this.model.findById(created._id).lean().exec();
     }
@@ -131,6 +147,7 @@ export class EaSnqpService {
                             $project: {
                                 _id: 1,
                                 tradingAccount: 1,
+                                tradingView: 1,
                                 accountNumbers: 1,
                                 bankAccount: 1,
                                 status: 1,
@@ -178,50 +195,44 @@ export class EaSnqpService {
     async updateStatus(id: string, dto: UpdateSnqpStatusDto) {
         if (!isValidObjectId(id)) throw new BadRequestException('invalid id');
 
-        // Only Verified allowed
-        if (dto.status !== MembershipStatus.Verified) {
-            throw new BadRequestException('Only "Verified" status is allowed.');
+        if (![MembershipStatus.Verified, MembershipStatus.Rejected].includes(dto.status)) {
+            throw new BadRequestException('Only "Verified" or "Rejected" status is allowed.');
         }
 
         const license = (dto.license ?? '').trim();
-        if (!license) {
+        // license required only for Verified
+        if (dto.status === MembershipStatus.Verified && !license) {
             throw new BadRequestException('license is required to verify.');
         }
 
-        // Ensure doc exists first so we can craft friendly errors
         const doc = await this.model.findById(id).lean().exec();
         if (!doc) throw new NotFoundException('License request not found');
 
         try {
-            // write licenseKey (unique) and set status → Verified
             await this.model.updateOne(
                 { _id: id },
                 {
                     $set: {
-                        status: MembershipStatus.Verified,
-                        licenseKey: license,
-                        // optionally (uncomment if you want to refresh dates on verify):
-                        // issueDate: new Date(),
-                        // expiryDate: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000), // +1y
+                        status: dto.status,
+                        // ✅ Verified → licenseKey = license; Rejected → licenseKey = ""
+                        licenseKey: dto.status === MembershipStatus.Verified ? license : '',
+                        // (optional date bumps on verify)
+                        // ...(dto.status === MembershipStatus.Verified ? {
+                        //   issueDate: new Date(),
+                        //   expiryDate: new Date(Date.now() + 365*24*60*60*1000),
+                        // } : {}),
                     },
                 },
                 { runValidators: true },
             );
         } catch (e: any) {
-            // handle unique key violation on licenseKey
             if (e?.code === 11000 && e?.keyPattern?.licenseKey) {
                 throw new BadRequestException('This license key is already in use.');
             }
             throw e;
         }
 
-        // Return a clean, safe projection (no licenseKey field)
-        const updated = await this.model
-            .findById(id)
-            .select('+licenseKey') // read to compute derived field
-            .lean()
-            .exec();
-
+        const updated = await this.model.findById(id).select('+licenseKey').lean().exec();
         if (!updated) throw new NotFoundException('License request not found after update');
 
         const safe = {
@@ -232,10 +243,8 @@ export class EaSnqpService {
             status: updated.status,
             issueDate: updated.issueDate,
             expiryDate: updated.expiryDate,
-            license:
-                updated.status === MembershipStatus.Verified && updated.licenseKey
-                    ? updated.licenseKey
-                    : 'No license Key Verified!',
+            // ✅ Rejected returns "", Verified returns actual key
+            license: updated.status === MembershipStatus.Verified ? (updated.licenseKey ?? '') : '',
             user: doc.user,
         };
 

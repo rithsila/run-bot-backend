@@ -28,6 +28,9 @@ export class EaSnqp {
     @Prop({ type: String, trim: true, maxlength: 5000 })
     bankAccount?: string;
 
+    @Prop({ type: String, trim: true, maxlength: 5000 })
+    tradingView?: string;
+
     @Prop({ type: Types.ObjectId, ref: 'User', required: true, index: true })
     user!: Types.ObjectId;
 

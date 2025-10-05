@@ -4,13 +4,15 @@ import { EaSnqpController } from './ea-snqp.controller';
 import { MongooseModule } from '@nestjs/mongoose';
 import { EaSnqp, EaSnqpSchema } from './ea-snqp.schema';
 import { ReferralModule } from 'src/referrals/referrals.module';
+import { WebPushSubModule } from 'src/web-push-sub/web-push-sub.module';
 
 @Module({
   imports: [
     MongooseModule.forFeature([
       { name: EaSnqp.name, schema: EaSnqpSchema },
     ]),
-    ReferralModule
+    ReferralModule,
+    WebPushSubModule
   ],
   providers: [EaSnqpService],
   controllers: [EaSnqpController]

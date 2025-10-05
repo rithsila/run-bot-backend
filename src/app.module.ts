@@ -45,6 +45,7 @@ import { TradingPlanModule } from './trading-plan/trading-plan.module';
 import { WebPushSubModule } from './web-push-sub/web-push-sub.module';
 import { SignalModule } from './signal/signal.module';
 import { TurnstileModule } from './turnstile/turnstile.module';
+import { TabFlagsModule } from './tab-flags/tab-flags.module';
 
 @Module({
   imports: [
@@ -158,6 +159,7 @@ import { TurnstileModule } from './turnstile/turnstile.module';
     WebPushSubModule,
     SignalModule,
     TurnstileModule,
+    TabFlagsModule,
   ],
 
   controllers: [AppController],

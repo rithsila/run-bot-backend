@@ -1,5 +1,5 @@
 // src/ea-snqp/dto/update-snqp-status.dto.ts
-import { IsEnum, IsNotEmpty, IsString, MaxLength } from 'class-validator';
+import { IsEnum, IsNotEmpty, IsOptional, IsString, MaxLength } from 'class-validator';
 import { MembershipStatus } from 'src/referrals/memberships.enum';
 
 export class UpdateSnqpStatusDto {
@@ -9,8 +9,7 @@ export class UpdateSnqpStatusDto {
     status!: MembershipStatus;
 
     // required when status is Verified – frontend always sends it
+    @IsOptional()
     @IsString()
-    @IsNotEmpty()
-    @MaxLength(255)
-    license!: string;
+    license: string;
 }

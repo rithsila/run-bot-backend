@@ -20,7 +20,6 @@ const MAX_PLANS_PER_USER = 6;
 @Injectable()
 export class TradingPlanService {
 
-
   constructor(
     @InjectModel(TradingPlan.name)
     private readonly planModel: Model<TradingPlanDocument>,
@@ -34,7 +33,6 @@ export class TradingPlanService {
     const session = await this.planModel.db.startSession();
     try {
       await session.withTransaction(async () => {
-        /* ───────── cap at MAX_PLANS_PER_USER ───────── */
         const count = await this.planModel
           .countDocuments({ publishedBy: userId })
           .session(session);

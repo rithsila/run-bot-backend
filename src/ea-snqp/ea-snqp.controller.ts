@@ -121,6 +121,7 @@ export class EaSnqpController {
         @Param('id') id: string,
         @Body() body: UpdateSnqpStatusDto,
     ) {
+        console.log("ppp============", body)
         const data = await this.service.updateStatus(id, body);
         return {
             success: true,

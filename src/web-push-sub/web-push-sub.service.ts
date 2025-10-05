@@ -6,6 +6,8 @@ import { Model, Types } from 'mongoose';
 import pLimit from 'p-limit';
 import webpush, { PushSubscription } from 'web-push';
 import { WebPushSub, WebPushSubDocument } from './web-push-sub.schema';
+import { Role } from 'src/user/roles.enum';
+import { User, UserDocument } from 'src/user/user.schema';
 
 
 const CONCURRENCY = 25;                  // parallel calls to push gateways
@@ -19,6 +21,9 @@ export class WebPushSubService {
   constructor(
     @InjectModel(WebPushSub.name)
     private readonly sub: Model<WebPushSubDocument>,
+
+    @InjectModel(User.name)
+    private readonly users: Model<UserDocument>,
   ) {
     // Initialise VAPID credentials once
     webpush.setVapidDetails(
@@ -142,6 +147,33 @@ export class WebPushSubService {
   async broadcast(payload: unknown, ttl = 60) {
     const userIds = await this.sub.distinct('userId', { active: true });
     return this.sendToUsers(userIds as Types.ObjectId[], payload, ttl);
+  }
+
+  async sendToRoles(
+    roles: Role[],
+    payload: unknown,
+    ttl = 60,
+    exclude?: Types.ObjectId,
+  ) {
+    const userIds = await this.getUserIdsByRoles(roles, exclude);
+    if (!userIds.length) return { ok: true, failed: 0, errors: [] };
+
+    return this.sendToUsers(userIds, payload, ttl);
+  }
+
+  async getUserIdsByRoles(
+    roles: Role[],
+    exclude?: Types.ObjectId,
+  ): Promise<Types.ObjectId[]> {
+    const query: any = { role: { $in: roles } };
+    if (exclude) query._id = { $ne: exclude };
+
+    const ids = (await this.users
+      .find(query)
+      .distinct('_id')
+      .exec()) as Types.ObjectId[];
+
+    return ids;
   }
 
 

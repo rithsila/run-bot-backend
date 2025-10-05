@@ -34,6 +34,11 @@ export class RequestSnqpDto {
     })
     accountNumbers?: string[];
 
+    @IsString()
+    @MaxLength(200)
+    @Transform(({ value }) => (typeof value === 'string' ? value.trim() : value))
+    tradingView?: string;
+
     @IsOptional()
     @IsString()
     @MaxLength(5000)
