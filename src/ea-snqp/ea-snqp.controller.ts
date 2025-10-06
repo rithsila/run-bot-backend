@@ -123,7 +123,6 @@ export class EaSnqpController {
     ) {
         const uid = req?.user?.userId;
         if (!uid) throw new UnauthorizedException('AUTH_REQUIRED');
-
         const data = await this.service.updateStatus(id, uid, body);
         return {
             success: true,

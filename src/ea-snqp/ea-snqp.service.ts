@@ -188,7 +188,7 @@ export class EaSnqpService {
         return { items, page, limit, total, totalPages };
     }
 
-    async updateStatus(id: string, currentUserId: string, dto: UpdateSnqpStatusDto, opts?: { reason?: string },) {
+    async updateStatus(id: string, currentUserId: string, dto: UpdateSnqpStatusDto) {
         if (!isValidObjectId(id)) throw new BadRequestException('invalid id');
 
         if (![MembershipStatus.Verified, MembershipStatus.Rejected].includes(dto.status)) {
@@ -203,9 +203,8 @@ export class EaSnqpService {
 
         const doc = await this.model.findById(id).lean().exec();
         if (!doc) throw new NotFoundException('License request not found');
-
         try {
-            const existing = await this.model.updateOne(
+            await this.model.updateOne(
                 { _id: id },
                 {
                     $set: {
@@ -224,7 +223,7 @@ export class EaSnqpService {
 
 
             // 4) Push to exactly ONE user (all their active endpoints)
-            const { title, body } = buildMembershipPush(dto.status, opts?.reason);
+            const { title, body } = buildMembershipPush(dto.status);
 
 
             await this.push.sendToUser(currentUserId, {
@@ -233,7 +232,7 @@ export class EaSnqpService {
                 url: `/memberships`,
                 ts: Date.now(),
                 type: 'membership_update',
-                status, // optional: lets client render different UI per status
+                status: dto.status, // optional: lets client render different UI per status
             });
 
         } catch (e: any) {
@@ -246,6 +245,7 @@ export class EaSnqpService {
         const updated = await this.model.findById(id).select('+licenseKey').lean().exec();
         if (!updated) throw new NotFoundException('License request not found after update');
 
+
         const safe = {
             _id: updated._id,
             accountNumbers: updated.accountNumbers,
@@ -253,7 +253,6 @@ export class EaSnqpService {
             status: updated.status,
             issueDate: updated.issueDate,
             expiryDate: updated.expiryDate,
-            // ✅ Rejected returns "", Verified returns actual key
             license: updated.status === MembershipStatus.Verified ? (updated.licenseKey ?? '') : '',
             user: doc.user,
         };
