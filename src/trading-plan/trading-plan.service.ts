@@ -28,7 +28,7 @@ export class TradingPlanService {
 
   async create(currentUserId: string, dto: CreateTradingPlanDto) {
     const userId = this.asObjectId(currentUserId);
-    let created!: TradingPlanLean;                                 // ✅ TS: will be set
+    let created!: TradingPlanLean;
 
     const session = await this.planModel.db.startSession();
     try {
@@ -47,29 +47,24 @@ export class TradingPlanService {
             .lean()
             .session(session);
 
-          const ids = oldest.map((d) => d._id);
+          const ids = oldest.map(d => d._id);
           if (ids.length) {
-            await this.planModel
-              .deleteMany({ _id: { $in: ids } })
-              .session(session);
+            await this.planModel.deleteMany({ _id: { $in: ids } }).session(session);
           }
         }
 
-        const [doc] = await this.planModel.create(
-          [{ ...dto, publishedBy: userId }],
-          { session },
-        );
-        created = doc.toObject();
+        const [doc] = await this.planModel.create([{ ...dto, publishedBy: userId }], { session });
+
+        // ⬇️ Re-fetch as lean to get proper types (including _id: ObjectId)
+        created = await this.planModel
+          .findById(doc._id)
+          .lean<TradingPlanLean>()
+          .session(session)
+          .orFail();
       });
     } catch (err: any) {
-      if (
-        String(err?.message || '').includes(
-          'Transaction numbers are only allowed on a replica set',
-        )
-      ) {
-        const count = await this.planModel.countDocuments({
-          publishedBy: userId,
-        });
+      if (String(err?.message || '').includes('Transaction numbers are only allowed on a replica set')) {
+        const count = await this.planModel.countDocuments({ publishedBy: userId });
         const toDelete = Math.max(0, count - MAX_PLANS_PER_USER + 1);
         if (toDelete > 0) {
           const oldest = await this.planModel
@@ -79,16 +74,16 @@ export class TradingPlanService {
             .select({ _id: 1 })
             .lean();
 
-          const ids = oldest.map((d) => d._id);
+          const ids = oldest.map(d => d._id);
           if (ids.length) {
             await this.planModel.deleteMany({ _id: { $in: ids } });
           }
         }
-        const doc = await this.planModel.create({
-          ...dto,
-          publishedBy: userId,
-        });
-        created = doc.toObject();                             // <-- assignment
+
+        const doc = await this.planModel.create({ ...dto, publishedBy: userId });
+
+        // ⬇️ Re-fetch as lean (no session here)
+        created = await this.planModel.findById(doc._id).lean<TradingPlanLean>().orFail();
       } else {
         throw err;
       }
@@ -96,7 +91,7 @@ export class TradingPlanService {
       session.endSession();
     }
 
-    /* ───────── send Web-Push (non-blocking) ───────── */
+    // push…
     void this.push.broadcast(
       {
         title: 'New Trading Plan 📈',
@@ -104,12 +99,11 @@ export class TradingPlanService {
         url: `/trading-plans/${created._id}`,
         ts: Date.now(),
       },
-      60,                                                     // TTL seconds
+      60,
     );
 
     return created;
   }
-
 
   async findAll() {
     return this.planModel

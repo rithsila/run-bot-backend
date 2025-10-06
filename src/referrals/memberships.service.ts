@@ -14,7 +14,7 @@ import { MembershipStatus } from './memberships.enum';
 import { WebPushSubService } from 'src/web-push-sub/web-push-sub.service';
 import { Role } from 'src/user/roles.enum';
 
-function buildMembershipPush(status: MembershipStatus, reason?: string) {
+export function buildMembershipPush(status: MembershipStatus, reason?: string) {
     switch (status) {
         case MembershipStatus.Verified:
             return {
@@ -170,7 +170,7 @@ export class MembershipsService {
         };
     }
 
- 
+
 
     async updateStatus(
         membershipId: string,

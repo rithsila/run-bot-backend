@@ -13,6 +13,7 @@ import { GetAllSnqpDto } from './dto/get-all-snqp.dto';
 import { UpdateSnqpStatusDto } from './dto/update-snqp-status.dto';
 import { WebPushSubService } from 'src/web-push-sub/web-push-sub.service';
 import { Role } from 'src/user/roles.enum';
+import { buildMembershipPush } from 'src/referrals/memberships.service';
 
 @Injectable()
 export class EaSnqpService {
@@ -187,7 +188,7 @@ export class EaSnqpService {
         return { items, page, limit, total, totalPages };
     }
 
-    async updateStatus(id: string, currentUserId: string, dto: UpdateSnqpStatusDto) {
+    async updateStatus(id: string, currentUserId: string, dto: UpdateSnqpStatusDto, opts?: { reason?: string },) {
         if (!isValidObjectId(id)) throw new BadRequestException('invalid id');
 
         if (![MembershipStatus.Verified, MembershipStatus.Rejected].includes(dto.status)) {
@@ -204,7 +205,7 @@ export class EaSnqpService {
         if (!doc) throw new NotFoundException('License request not found');
 
         try {
-            await this.model.updateOne(
+            const existing = await this.model.updateOne(
                 { _id: id },
                 {
                     $set: {
@@ -222,17 +223,18 @@ export class EaSnqpService {
             );
 
 
-            void this.push.sendToRoles(
-                [Role.Admin, Role.Creator],
-                {
-                    title: `License update!`,      // from previous step
-                    body: `Your License is ${dto.status}`,
-                    ts: Date.now(),
-                    type: 'license_request',                   // optional, handy on client
-                },
-                60,
-                new Types.ObjectId(currentUserId),           // exclude requester (optional)
-            );
+            // 4) Push to exactly ONE user (all their active endpoints)
+            const { title, body } = buildMembershipPush(dto.status, opts?.reason);
+
+
+            await this.push.sendToUser(currentUserId, {
+                title,
+                body,
+                url: `/memberships`,
+                ts: Date.now(),
+                type: 'membership_update',
+                status, // optional: lets client render different UI per status
+            });
 
         } catch (e: any) {
             if (e?.code === 11000 && e?.keyPattern?.licenseKey) {

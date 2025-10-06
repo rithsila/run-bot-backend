@@ -7,6 +7,7 @@ export type TradingPlanLean = {
     direction: Direction;
     description?: string;
     tradingViewId: string;
+    thumbnailUrl: string;
     publishedBy: Types.ObjectId;
     createdAt?: Date;
     updatedAt?: Date;
