@@ -38,11 +38,6 @@ export class CreateMembershipDto {
     })
     accountNumbers!: string[];
 
-    @IsOptional()
-    @IsString()
-    @MaxLength(200)
-    @Transform(({ value }) => (typeof value === 'string' ? value.trim() : value))
-    tradingAccount?: string;
 
     @IsOptional() @IsString() @MinLength(5) @MaxLength(2000)
     @Transform(({ value }) => {

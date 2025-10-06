@@ -11,12 +11,7 @@ import {
 
 
 export class RequestSnqpDto {
-    @IsOptional()
-    @IsString()
-    @MaxLength(200)
-    @Transform(({ value }) => (typeof value === 'string' ? value.trim() : value))
-    tradingAccount?: string;
-
+   
     @IsOptional()
     @IsArray()
     @ArrayMaxSize(100) // safety cap; tweak as needed

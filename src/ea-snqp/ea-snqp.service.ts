@@ -36,7 +36,6 @@ export class EaSnqpService {
             user: new Types.ObjectId(currentUserId),
             status: { $in: [MembershipStatus.Request, MembershipStatus.Verified] },
         };
-        if (body.tradingAccount) dupFilter.tradingAccount = body.tradingAccount;
 
         const dup = await this.model.exists(dupFilter);
         if (dup) {
@@ -47,7 +46,6 @@ export class EaSnqpService {
 
         const created = await this.model.create({
             user: new Types.ObjectId(currentUserId),
-            tradingAccount: body.tradingAccount || undefined,
             accountNumbers: body.accountNumbers ?? [],
             bankAccount: body.bankAccount || undefined,
             tradingView: body.tradingView || undefined,
@@ -126,7 +124,6 @@ export class EaSnqpService {
                 $match: {
                     $or: [
                         { bankAccount: { $regex: searchRegex } },
-                        { tradingAccount: { $regex: searchRegex } },
                         { 'userDoc.firstName': { $regex: searchRegex } },
                         { 'userDoc.lastName': { $regex: searchRegex } },
                         { 'userDoc.email': { $regex: searchRegex } },
@@ -145,7 +142,6 @@ export class EaSnqpService {
                         {
                             $project: {
                                 _id: 1,
-                                tradingAccount: 1,
                                 tradingView: 1,
                                 accountNumbers: 1,
                                 bankAccount: 1,
@@ -191,7 +187,7 @@ export class EaSnqpService {
         return { items, page, limit, total, totalPages };
     }
 
-    async updateStatus(id: string, dto: UpdateSnqpStatusDto) {
+    async updateStatus(id: string, currentUserId: string, dto: UpdateSnqpStatusDto) {
         if (!isValidObjectId(id)) throw new BadRequestException('invalid id');
 
         if (![MembershipStatus.Verified, MembershipStatus.Rejected].includes(dto.status)) {
@@ -224,6 +220,20 @@ export class EaSnqpService {
                 },
                 { runValidators: true },
             );
+
+
+            void this.push.sendToRoles(
+                [Role.Admin, Role.Creator],
+                {
+                    title: `License update!`,      // from previous step
+                    body: `Your License is ${dto.status}`,
+                    ts: Date.now(),
+                    type: 'license_request',                   // optional, handy on client
+                },
+                60,
+                new Types.ObjectId(currentUserId),           // exclude requester (optional)
+            );
+
         } catch (e: any) {
             if (e?.code === 11000 && e?.keyPattern?.licenseKey) {
                 throw new BadRequestException('This license key is already in use.');
@@ -236,7 +246,6 @@ export class EaSnqpService {
 
         const safe = {
             _id: updated._id,
-            tradingAccount: updated.tradingAccount,
             accountNumbers: updated.accountNumbers,
             bankAccount: updated.bankAccount,
             status: updated.status,

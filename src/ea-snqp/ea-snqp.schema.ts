@@ -7,9 +7,7 @@ export type EaSnqpDocument = EaSnqp & Document;
 
 @Schema({ timestamps: true, collection: 'ea_snqp' })
 export class EaSnqp {
-    @Prop({ type: String, trim: true, maxlength: 200 })
-    tradingAccount?: string;
-
+ 
     @Prop({
         type: [{ type: String, trim: true, maxlength: 50 }],
         default: [],

@@ -24,9 +24,6 @@ export class Membership {
     @Prop({ type: MongooseSchema.Types.ObjectId, ref: 'Referral', required: true, index: true })
     referral!: MongooseSchema.Types.ObjectId;
 
-    @Prop({ type: String, trim: true, maxlength: 200 })
-    tradingAccount?: string;
-
     @Prop({
         type: [{ type: String, trim: true, maxlength: 50 }],
         default: [],

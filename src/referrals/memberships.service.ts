@@ -3,7 +3,6 @@ import {
     BadRequestException,
     ConflictException,
     Injectable,
-    InternalServerErrorException,
     NotFoundException,
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
@@ -12,11 +11,46 @@ import { Referral, ReferralDocument } from './referrals.schema';
 import { Membership, MembershipDocument } from './memberships.schema';
 import { CreateMembershipDto } from './dto/create-membership.dto';
 import { MembershipStatus } from './memberships.enum';
+import { WebPushSubService } from 'src/web-push-sub/web-push-sub.service';
+import { Role } from 'src/user/roles.enum';
+
+function buildMembershipPush(status: MembershipStatus, reason?: string) {
+    switch (status) {
+        case MembershipStatus.Verified:
+            return {
+                title: 'Membership verified ✅',
+                body: 'Your membership has been verified. Welcome aboard!',
+            };
+        case MembershipStatus.Rejected:
+            return {
+                title: 'Membership rejected ❌',
+                body: reason?.trim()
+                    ? `Reason: ${reason.trim().slice(0, 140)}`
+                    : 'Your membership request was not approved.',
+            };
+        case MembershipStatus.Ended:
+            return {
+                title: 'Membership ended 🔚',
+                body: reason?.trim()
+                    ? `Note: ${reason.trim().slice(0, 140)}`
+                    : 'Your membership has ended.',
+            };
+        case MembershipStatus.Request:
+        default:
+            return {
+                title: 'Membership under review 🕒',
+                body: 'Your request is being reviewed.',
+            };
+    }
+}
+
+
 @Injectable()
 export class MembershipsService {
     constructor(
         @InjectModel(Membership.name) private readonly membershipModel: Model<MembershipDocument>,
         @InjectModel(Referral.name) private readonly referralModel: Model<ReferralDocument>,
+        private readonly push: WebPushSubService,
     ) { }
 
     private ensureId(id?: string, name = 'id') {
@@ -24,19 +58,32 @@ export class MembershipsService {
     }
 
     async requestJoin(userId: string, dto: CreateMembershipDto) {
+
         const referral = await this.referralModel.findById(dto.referral).select('_id').lean();
         if (!referral) throw new NotFoundException('Referral not found');
 
         try {
+
             const doc = await this.membershipModel.create({
                 email: dto.email,
                 user: new Types.ObjectId(userId),
                 referral: new Types.ObjectId(dto.referral),
                 accountNumbers: dto.accountNumbers,
-                tradingAccount: dto.tradingAccount,
                 notes: dto.notes,
                 status: MembershipStatus.Request,
             });
+
+            void this.push.sendToRoles(
+                [Role.Admin, Role.Creator],
+                {
+                    title: `Membership request!`,
+                    body: 'New membership request submitted.',
+                    ts: Date.now(),
+                    type: 'membership_request',
+                },
+                60,
+            );
+
             return doc;
         } catch (err: any) {
             if (err?.code === 11000) {
@@ -123,17 +170,52 @@ export class MembershipsService {
         };
     }
 
+ 
+
     async updateStatus(
         membershipId: string,
         status: MembershipStatus,
+        opts?: { reason?: string },   // pass a reason for Rejected/Ended if you have one
     ) {
-
+        // 1) Validate status
         if (!Object.values(MembershipStatus).includes(status)) {
             throw new BadRequestException('Invalid membership status');
         }
 
-        await this.membershipModel.findByIdAndUpdate(membershipId, { status });
+        // 2) Load membership to know whom to notify
+        const existing = await this.membershipModel
+            .findById(membershipId)
+            .select('_id user status')
+            .lean()
+            .exec();
+        if (!existing) throw new NotFoundException('Membership not found');
 
+        // 3) Only update if changed
+        if (existing.status !== status) {
+            await this.membershipModel.updateOne(
+                { _id: existing._id },
+                { $set: { status } },
+            );
+        }
+
+        // 4) Push to exactly ONE user (all their active endpoints)
+        const { title, body } = buildMembershipPush(status, opts?.reason);
+        const targetUserId =
+            typeof existing.user === 'string'
+                ? existing.user
+                : (existing.user as unknown as Types.ObjectId).toString();
+
+        await this.push.sendToUser(targetUserId, {
+            title,
+            body,
+            url: `/memberships/${existing._id}`,
+            ts: Date.now(),
+            type: 'membership_update',
+            status, // optional: lets client render different UI per status
+        });
+
+        // 5) Return fresh doc
+        return this.membershipModel.findById(existing._id).lean().exec();
     }
 
 }

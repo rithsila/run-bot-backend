@@ -176,13 +176,24 @@ export class WebPushSubService {
     return ids;
   }
 
+  // src/push/web-push-sub.service.ts (near the top of the class)
+  private toObjectId(id: string | Types.ObjectId): Types.ObjectId {
+    return typeof id === 'string' ? new Types.ObjectId(id) : id;
+  }
+
+
+  async sendToUser(
+    userId: string | Types.ObjectId,
+    payload: unknown,
+    ttl = 60,
+  ) {
+    const oid = this.toObjectId(userId);
+    // reuse your existing fan-out logic
+    return this.sendToUsers([oid], payload, ttl);
+  }
 
   /* ────────── Nightly cleanup ────────── */
 
-  /**
-   * Hard-delete inactive subscriptions once they’ve been dead for N days.
-   * Runs daily at 02:17 AM. Adjust the cron expression or period as needed.
-   */
   @Cron('17 2 * * *')
   async pruneOldInactive() {
     const cutoff = new Date(

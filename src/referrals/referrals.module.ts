@@ -10,6 +10,7 @@ import { Membership, MembershipSchema } from './memberships.schema';
 import { MembershipsController } from './memberships.controller';
 import { MembershipsService } from './memberships.service';
 import { UserModule } from 'src/user/user.module';
+import { WebPushSubModule } from 'src/web-push-sub/web-push-sub.module';
 
 @Module({
   imports: [
@@ -18,10 +19,12 @@ import { UserModule } from 'src/user/user.module';
       { name: Referral.name, schema: ReferralSchema },
       { name: Membership.name, schema: MembershipSchema }
     ]),
-    UserModule
+    UserModule,
+    WebPushSubModule
   ],
   providers: [ReferralsService, BrokersService, MembershipsService],
   controllers: [ReferralsController, BrokersController, MembershipsController],
   exports: [MembershipsService]
 })
+
 export class ReferralModule { }

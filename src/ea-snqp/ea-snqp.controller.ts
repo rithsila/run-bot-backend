@@ -117,12 +117,14 @@ export class EaSnqpController {
     @Patch(':id/status')
     @UsePipes(new ValidationPipe({ transform: true, whitelist: true, forbidNonWhitelisted: true }))
     async updateStatus(
-        @Req() req: Request,
+        @Req() req: AuthRequest,
         @Param('id') id: string,
         @Body() body: UpdateSnqpStatusDto,
     ) {
-       
-        const data = await this.service.updateStatus(id, body);
+        const uid = req?.user?.userId;
+        if (!uid) throw new UnauthorizedException('AUTH_REQUIRED');
+
+        const data = await this.service.updateStatus(id, uid, body);
         return {
             success: true,
             statusCode: HttpStatus.OK,
