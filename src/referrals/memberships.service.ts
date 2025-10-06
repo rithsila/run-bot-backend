@@ -14,6 +14,15 @@ import { MembershipStatus } from './memberships.enum';
 import { WebPushSubService } from 'src/web-push-sub/web-push-sub.service';
 import { Role } from 'src/user/roles.enum';
 
+
+type UpdateMembershipPayload = {
+    status?: MembershipStatus;
+    adminNotes?: string;
+    reason?: string;
+    updatedBy?: string; // optional audit
+};
+
+
 export function buildMembershipPush(status: MembershipStatus, reason?: string) {
 
     switch (status) {
@@ -176,30 +185,36 @@ export class MembershipsService {
     async updateStatus(
         membershipId: string,
         status: MembershipStatus,
-        opts?: { reason?: string },   // pass a reason for Rejected/Ended if you have one
+        opts?: { reason?: string },
     ) {
-        // 1) Validate status
+        this.ensureId(membershipId, 'membershipId');
+
         if (!Object.values(MembershipStatus).includes(status)) {
             throw new BadRequestException('Invalid membership status');
         }
 
-        // 2) Load membership to know whom to notify
+        // Load to know current status + owner
         const existing = await this.membershipModel
             .findById(membershipId)
             .select('_id user status')
             .lean()
             .exec();
+
         if (!existing) throw new NotFoundException('Membership not found');
 
-        // 3) Only update if changed
+        // Only update if changed
         if (existing.status !== status) {
+            const setObj: Record<string, any> = { status };
+            // persist reason if provided (useful for Rejected/Ended)
+            if (opts?.reason) setObj.statusReason = opts.reason;
+
             await this.membershipModel.updateOne(
                 { _id: existing._id },
-                { $set: { status } },
+                { $set: setObj },
             );
         }
 
-        // 4) Push to exactly ONE user (all their active endpoints)
+        // Push to exactly ONE user (all active endpoints)
         const { title, body } = buildMembershipPush(status, opts?.reason);
         const targetUserId =
             typeof existing.user === 'string'
@@ -212,10 +227,66 @@ export class MembershipsService {
             url: `/memberships/${existing._id}`,
             ts: Date.now(),
             type: 'membership_update',
-            status, // optional: lets client render different UI per status
+            status,
         });
 
-        // 5) Return fresh doc
+        // Return fresh doc
+        return this.membershipModel.findById(existing._id).lean().exec();
+    }
+
+    async updateMembership(membershipId: string, payload: UpdateMembershipPayload) {
+        this.ensureId(membershipId, 'membershipId');
+
+        const existing = await this.membershipModel
+            .findById(membershipId)
+            .select('_id user status')
+            .lean()
+            .exec();
+        if (!existing) throw new NotFoundException('Membership not found');
+
+        const setObj: Record<string, any> = {};
+        let statusChanged = false;
+
+        if (typeof payload.adminNotes === 'string') {
+            setObj.adminNotes = payload.adminNotes;
+        }
+
+        if (payload.status) {
+            if (!Object.values(MembershipStatus).includes(payload.status)) {
+                throw new BadRequestException('Invalid membership status');
+            }
+            if (existing.status !== payload.status) {
+                setObj.status = payload.status;
+                statusChanged = true;
+                if (payload.reason) setObj.statusReason = payload.reason;
+            }
+        }
+
+        // Nothing to do
+        if (!Object.keys(setObj).length) {
+            return this.membershipModel.findById(existing._id).lean().exec();
+        }
+
+        await this.membershipModel.updateOne({ _id: existing._id }, { $set: setObj });
+
+        // Send push only when status really changed
+        if (statusChanged) {
+            const { title, body } = buildMembershipPush(payload.status!, payload.reason);
+            const targetUserId =
+                typeof existing.user === 'string'
+                    ? existing.user
+                    : (existing.user as unknown as Types.ObjectId).toString();
+
+            await this.push.sendToUser(targetUserId, {
+                title,
+                body,
+                url: `/memberships/${existing._id}`,
+                ts: Date.now(),
+                type: 'membership_update',
+                status: payload.status,
+            });
+        }
+
         return this.membershipModel.findById(existing._id).lean().exec();
     }
 

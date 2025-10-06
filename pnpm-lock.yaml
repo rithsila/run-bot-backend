@@ -86,6 +86,9 @@ importers:
       mongoose:
         specifier: ^8.17.2
         version: 8.17.2
+      mongoose-paginate-v2:
+        specifier: ^1.9.1
+        version: 1.9.1(mongoose@8.17.2)
       nestjs-pino:
         specifier: ^4.4.0
         version: 4.4.0(@nestjs/common@11.1.6(class-transformer@0.5.1)(class-validator@0.14.2)(reflect-metadata@0.2.2)(rxjs@7.8.2))(pino-http@10.5.0)(pino@9.9.2)(rxjs@7.8.2)
@@ -2831,9 +2834,23 @@ packages:
       socks:
         optional: true
 
+  mongoose-lean-virtuals@1.1.1:
+    resolution: {integrity: sha512-8chOqpVE3bcoWT2pIgcJeIZlXaOfQCavZgQZF4qytUtjRBqsNMyzUoR16qdw9XL2kC478N8iA8z0AA+NSS0d1A==}
+    engines: {node: '>=16.20.1'}
+    peerDependencies:
+      mongoose: '>=5.11.10'
+
+  mongoose-paginate-v2@1.9.1:
+    resolution: {integrity: sha512-DgURdWkPCeY6cuzkONk0snkFFG/l6ABABDkV3PyW/M2XGvfK/yP4i6Y/PuXkqhfVxKHFLvZ/qBnQxkGzzvo43Q==}
+    engines: {node: '>=4.0.0'}
+
   mongoose@8.17.2:
     resolution: {integrity: sha512-zp0xzzphKZrr9azDayn0w08gp0jzeZO8EQKvCKNd6c1I/Y9PRmTKj7x+60IWF3+DKmqWq7WZ4ihDEvOFUtWkSA==}
     engines: {node: '>=16.20.1'}
+
+  mpath@0.8.4:
+    resolution: {integrity: sha512-DTxNZomBcTWlrMW76jy1wvV37X/cNNxPW1y2Jzd4DZkAaC5ZGsm8bfGfNOthcDuRJujXLqiuS6o3Tpy0JEoh7g==}
+    engines: {node: '>=4.0.0'}
 
   mpath@0.9.0:
     resolution: {integrity: sha512-ikJRQTk8hw5DEoFVxHG1Gn9T/xcjtdnOKIU1JTmGjZZlg9LST2mBLmcX3/ICIbgJydT2GOc15RnNy5mHmzfSew==}
@@ -6890,6 +6907,17 @@ snapshots:
       bson: 6.10.4
       mongodb-connection-string-url: 3.0.2
 
+  mongoose-lean-virtuals@1.1.1(mongoose@8.17.2):
+    dependencies:
+      mongoose: 8.17.2
+      mpath: 0.8.4
+
+  mongoose-paginate-v2@1.9.1(mongoose@8.17.2):
+    dependencies:
+      mongoose-lean-virtuals: 1.1.1(mongoose@8.17.2)
+    transitivePeerDependencies:
+      - mongoose
+
   mongoose@8.17.2:
     dependencies:
       bson: 6.10.4
@@ -6908,6 +6936,8 @@ snapshots:
       - snappy
       - socks
       - supports-color
+
+  mpath@0.8.4: {}
 
   mpath@0.9.0: {}
 

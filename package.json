@@ -46,6 +46,7 @@
     "ioredis": "^5.7.0",
     "joi": "^18.0.0",
     "mongoose": "^8.17.2",
+    "mongoose-paginate-v2": "^1.9.1",
     "nestjs-pino": "^4.4.0",
     "nodemailer": "^7.0.5",
     "p-limit": "^7.1.1",

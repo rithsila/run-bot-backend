@@ -5,6 +5,7 @@ import {
   InternalServerErrorException,
   UnauthorizedException,
   BadRequestException,
+  ConflictException,
 } from '@nestjs/common';
 import { UserService } from '../user/user.service';
 import { SignupDto } from './dto/signup.dto';
@@ -31,7 +32,7 @@ export class AuthService {
   private readonly ACCESS_TTL_SEC = Number(process.env.JWT_ACCESS_TTL ?? 900); // 15m default
   private readonly JWT_ALG = (process.env.JWT_ALG as 'RS256' | 'HS256' | undefined) ?? 'RS256';
   private readonly JWT_ISSUER = process.env.JWT_ISSUER;
-  private readonly JWT_AUDIENCE = process.env.JWT_AUDIENCE;
+
 
   constructor(
     private readonly users: UserService,
@@ -42,8 +43,13 @@ export class AuthService {
     dto: SignupDto,
     reqMeta: Partial<SignupMeta> = {},
   ): Promise<PublicUser> {
+    const email = this.users.normalizeEmail(dto.email);
+    const isExisting = await this.users.findByEmail(email)
+    if (isExisting) {
+      throw new ConflictException('Email already registered!');
+    }
     try {
-      const email = this.users.normalizeEmail(dto.email);
+
       this.logger.debug(`Signup attempt email=${maskEmail(email)}`);
 
       const user = await this.users.create({
@@ -201,7 +207,7 @@ export class AuthService {
 
     // enforce mapping (most Google signups are Students by default)
     const userRole = userDoc.role as Role;
-  
+
 
     // --- issue access JWT exactly like /login ---
     const payload = {

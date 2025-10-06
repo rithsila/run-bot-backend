@@ -41,6 +41,10 @@ export class Membership {
 
     @Prop({ type: String, trim: true, maxlength: 2000 })
     notes?: string;
+    
+    @Prop({ type: String, maxlength: 2000, default: "" })
+    adminNotes?: string;
+
 
     @Prop({ type: MongooseSchema.Types.ObjectId, ref: 'User' })
     approvedBy?: MongooseSchema.Types.ObjectId;

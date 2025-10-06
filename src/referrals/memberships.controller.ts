@@ -23,6 +23,8 @@ import { JwtAuthGuard } from 'src/auth/guard/jwt-auth.guard';
 import { Throttle } from '@nestjs/throttler';
 import { CreateMembershipDto } from './dto/create-membership.dto';
 import { MembershipStatus } from './memberships.enum';
+import { UpdateStatusDto } from './dto/update-status.dto';
+import { UpdateMembershipDto } from './dto/update-membership.dto';
 
 @Controller('memberships')
 @UseGuards(
@@ -33,7 +35,6 @@ import { MembershipStatus } from './memberships.enum';
 )
 export class MembershipsController {
     constructor(private readonly service: MembershipsService) { }
-
     @Get()
     async findAll(
         @Req() req: AuthRequest,
@@ -97,10 +98,30 @@ export class MembershipsController {
     async setStatus(
         @Req() req: AuthRequest,
         @Param('id') id: string,
-        @Body() body: { status?: MembershipStatus; }
+        @Body() body: UpdateStatusDto
     ) {
+        const data = await this.service.updateStatus(id, body.status, { reason: body.reason });
 
-        const data = await this.service.updateStatus(id, body.status as MembershipStatus);
+        return {
+            success: true,
+            statusCode: HttpStatus.OK,
+            data,
+            timestamp: new Date().toISOString(),
+            path: req.url,
+        };
+    }
+
+    @Patch(':id')
+    async updateMembership(
+        @Req() req: AuthRequest,
+        @Param('id') id: string,
+        @Body() body: UpdateMembershipDto
+    ) {
+        const data = await this.service.updateMembership(id, {
+            status: body.status,
+            adminNotes: body.adminNotes,
+            reason: body.reason,
+        });
 
         return {
             success: true,
