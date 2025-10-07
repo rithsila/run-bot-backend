@@ -3,6 +3,7 @@ import {
     BadRequestException,
     ConflictException,
     Injectable,
+    InternalServerErrorException,
     NotFoundException,
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
@@ -13,7 +14,11 @@ import { CreateMembershipDto } from './dto/create-membership.dto';
 import { MembershipStatus } from './memberships.enum';
 import { WebPushSubService } from 'src/web-push-sub/web-push-sub.service';
 import { Role } from 'src/user/roles.enum';
-
+import type {
+    PaginateModel,
+    PaginateResult,
+} from 'mongoose';
+import { MembershipsPaginateDto } from './dto/memberships-paginate.dto';
 
 type UpdateMembershipPayload = {
     status?: MembershipStatus;
@@ -24,7 +29,6 @@ type UpdateMembershipPayload = {
 
 
 export function buildMembershipPush(status: MembershipStatus, reason?: string) {
-
     switch (status) {
         case MembershipStatus.Verified:
             return {
@@ -58,7 +62,7 @@ export function buildMembershipPush(status: MembershipStatus, reason?: string) {
 @Injectable()
 export class MembershipsService {
     constructor(
-        @InjectModel(Membership.name) private readonly membershipModel: Model<MembershipDocument>,
+        @InjectModel(Membership.name) private readonly membershipModel: PaginateModel<MembershipDocument>,
         @InjectModel(Referral.name) private readonly referralModel: Model<ReferralDocument>,
         private readonly push: WebPushSubService,
     ) { }
@@ -180,8 +184,6 @@ export class MembershipsService {
         };
     }
 
-
-
     async updateStatus(
         membershipId: string,
         status: MembershipStatus,
@@ -288,6 +290,42 @@ export class MembershipsService {
         }
 
         return this.membershipModel.findById(existing._id).lean().exec();
+    }
+
+    async paginate(q: MembershipsPaginateDto) {
+        // sanitize inputs
+        const page = Math.max(1, Number(q.page) || 1);
+        const limit = Math.min(100, Math.max(1, Number(q.limit) || 20));
+
+        const filter: FilterQuery<MembershipDocument> = {};
+        if (q.status) {
+            if (!Object.values(MembershipStatus).includes(q.status)) {
+                throw new BadRequestException('Invalid status');
+            }
+            filter.status = q.status;
+        }
+
+        const result: PaginateResult<MembershipDocument> =
+            await this.membershipModel.paginate(filter, {
+                page,
+                limit,
+                sort: { createdAt: -1 },
+                lean: true,           // return POJOs (faster for API)
+                leanWithId: true,     // keep id
+                select: '-adminNotes' // (optional) hide adminNotes from list
+            });
+
+        return {
+            items: result.docs,
+            page: result.page ?? page,        // 1-based
+            limit: result.limit ?? limit,
+            total: result.totalDocs,
+            totalPages: result.totalPages,
+            hasPrevPage: result.hasPrevPage,
+            hasNextPage: result.hasNextPage,
+            prevPage: result.prevPage ?? null,
+            nextPage: result.nextPage ?? null,
+        };
     }
 
 }

@@ -11,13 +11,15 @@ import { MembershipsController } from './memberships.controller';
 import { MembershipsService } from './memberships.service';
 import { UserModule } from 'src/user/user.module';
 import { WebPushSubModule } from 'src/web-push-sub/web-push-sub.module';
+import { User, UserSchema } from 'src/user/user.schema';
 
 @Module({
   imports: [
     MongooseModule.forFeature([
       { name: Broker.name, schema: BrokerSchema },
       { name: Referral.name, schema: ReferralSchema },
-      { name: Membership.name, schema: MembershipSchema }
+      { name: Membership.name, schema: MembershipSchema },
+      { name: User.name, schema: UserSchema }
     ]),
     UserModule,
     WebPushSubModule

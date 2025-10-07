@@ -16,6 +16,7 @@ import compression from 'compression';
 import { buildAllowedOrigins } from './common/security/origin';
 
 async function bootstrap() {
+
   const app = await NestFactory.create<NestExpressApplication>(AppModule, { bufferLogs: true });
 
   app.useLogger(app.get(PinoLogger));
@@ -74,7 +75,6 @@ async function bootstrap() {
     maxAge: 86400,
   });
 
-
   app.enableShutdownHooks();
 
   try {
@@ -89,4 +89,5 @@ async function bootstrap() {
   await app.listen(port);
   logger.log(`🚀 Application listening on port ${port}`);
 }
+
 bootstrap();

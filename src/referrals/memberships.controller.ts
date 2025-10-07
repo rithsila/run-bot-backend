@@ -12,6 +12,7 @@ import {
     Patch,
     UseGuards,
     HttpCode,
+    ValidationPipe,
 } from '@nestjs/common';
 import { MembershipsService } from './memberships.service';
 import type { AuthRequest } from 'src/common/types/auth-request.type';
@@ -22,9 +23,9 @@ import { CsrfGuard } from 'src/auth/guard/csrf.guard';
 import { JwtAuthGuard } from 'src/auth/guard/jwt-auth.guard';
 import { Throttle } from '@nestjs/throttler';
 import { CreateMembershipDto } from './dto/create-membership.dto';
-import { MembershipStatus } from './memberships.enum';
 import { UpdateStatusDto } from './dto/update-status.dto';
 import { UpdateMembershipDto } from './dto/update-membership.dto';
+import { MembershipsPaginateDto } from './dto/memberships-paginate.dto';
 
 @Controller('memberships')
 @UseGuards(
@@ -35,27 +36,28 @@ import { UpdateMembershipDto } from './dto/update-membership.dto';
 )
 export class MembershipsController {
     constructor(private readonly service: MembershipsService) { }
-    @Get()
-    async findAll(
-        @Req() req: AuthRequest,
-        @Query()
-        query: {
-            page?: number | string;
-            limit?: number | string;
-            status?: string;
-            broker?: string;
-            user?: string;
-        },
-    ) {
-        const data = await this.service.findAll(query);
-        return {
-            success: true,
-            statusCode: HttpStatus.OK,
-            data,
-            timestamp: new Date().toISOString(),
-            path: req.url,
-        };
-    }
+
+    // @Get()
+    // async findAll(
+    //     @Req() req: AuthRequest,
+    //     @Query()
+    //     query: {
+    //         page?: number | string;
+    //         limit?: number | string;
+    //         status?: string;
+    //         broker?: string;
+    //         user?: string;
+    //     },
+    // ) {
+    //     const data = await this.service.findAll(query);
+    //     return {
+    //         success: true,
+    //         statusCode: HttpStatus.OK,
+    //         data,
+    //         timestamp: new Date().toISOString(),
+    //         path: req.url,
+    //     };
+    // }
 
     @Post('join')
     @HttpCode(HttpStatus.CREATED)
@@ -77,6 +79,20 @@ export class MembershipsController {
             code: 'JOIN_MEMBERSHIP',
             message: 'Success!',
         };
+    }
+    @Get()
+    async list(
+        @Query(
+            new ValidationPipe({
+                transform: true,   // applies DTO @Transform to page/limit
+                whitelist: true,   // strips unknown query params
+                forbidNonWhitelisted: false,
+            }),
+        )
+        q: MembershipsPaginateDto,
+    ) {
+        // Returns: { items, page, limit, total, totalPages, hasPrevPage, hasNextPage, prevPage, nextPage }
+        return this.service.paginate(q);
     }
 
     @Get('me')

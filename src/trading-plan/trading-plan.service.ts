@@ -14,6 +14,8 @@ import {
 import { CreateTradingPlanDto } from './dto/create-trading-plan.dto';
 import { WebPushSubService } from 'src/web-push-sub/web-push-sub.service';
 import { TradingPlanLean } from 'src/common/types/trading.type';
+import { TabFlagsService } from 'src/tab-flags/tab-flags.service';
+import { TabBarId } from 'src/tab-flags/tab-flags.enum';
 
 const MAX_PLANS_PER_USER = 6;
 
@@ -24,6 +26,7 @@ export class TradingPlanService {
     @InjectModel(TradingPlan.name)
     private readonly planModel: Model<TradingPlanDocument>,
     private readonly push: WebPushSubService,
+    private readonly tabFlags: TabFlagsService,
   ) { }
 
   async create(currentUserId: string, dto: CreateTradingPlanDto) {
@@ -102,6 +105,8 @@ export class TradingPlanService {
       60,
     );
 
+    void this.tabFlags.setBadge(userId, TabBarId.TradingPlans, true);
+    
     return created;
   }
 

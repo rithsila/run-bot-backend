@@ -1,6 +1,7 @@
 // src/user/user.schema.ts
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { HydratedDocument } from 'mongoose';
+import paginate from 'mongoose-paginate-v2';
 import { Role } from './roles.enum';
 import { SignInMethod } from '../auth/signin-method.enum';
 
@@ -26,7 +27,6 @@ export class SignupMeta {
   @Prop({ type: Number, default: null })
   submittedAtMs?: number | null;
 }
-
 export const SignupMetaSchema = SchemaFactory.createForClass(SignupMeta);
 
 @Schema({ timestamps: true })
@@ -44,9 +44,11 @@ export class User {
     trim: true,
     maxlength: 120,
     match: [/^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/, 'Invalid email format'],
+    index: true,
   })
   email: string;
 
+  // Canonical form used for strict uniqueness (e.g., normalized gmail)
   @Prop({ required: true, unique: true, index: true })
   emailCanonical: string;
 
@@ -56,7 +58,7 @@ export class User {
   @Prop()
   photoURL?: string;
 
-  @Prop({ required: false, select: false }) 
+  @Prop({ required: false, select: false })
   passwordHash?: string;
 
   @Prop({ required: false, default: SignInMethod.Password, enum: SignInMethod })
@@ -81,7 +83,7 @@ export class User {
   passwordChangedAt?: Date;
 
   // OAuth provider IDs (Google “sub”)
-  @Prop({ type: String, required: false, index: true, unique: true, sparse: true })
+  @Prop({ type: String, index: true, unique: true, sparse: true })
   googleId?: string;
 
   @Prop({ type: SignupMetaSchema, required: false })
@@ -90,15 +92,30 @@ export class User {
 
 export const UserSchema = SchemaFactory.createForClass(User);
 
+// ---------- Plugins ----------
+UserSchema.plugin(paginate); // <-- enable mongoose-paginate-v2
+
+// ---------- Middleware ----------
 UserSchema.pre('validate', function (next) {
   if (this.firstName) this.firstName = this.firstName.trim();
   if (this.lastName) this.lastName = this.lastName.trim();
   if (this.email) this.email = this.email.trim().toLowerCase();
-  (this as any).emailCanonical = (this as any).email; // mirror
+
+  // Keep emailCanonical in sync. Replace with your smarter canonicalizer if you have one.
+  const raw = (this as any).email as string | undefined;
+  if (raw) {
+    // const canon = canonicalizeEmail(raw); // preferred if you have it
+    const canon = raw; // simple mirror; replace with real canonicalization logic if desired
+    (this as any).emailCanonical = canon;
+  }
   next();
 });
-// helpful indexes for dashboards/filters
+
+// ---------- Helpful Indexes ----------
 UserSchema.index({ role: 1 });
 UserSchema.index({ lastActiveAt: -1 });
+UserSchema.index({ createdAt: -1 });
 
-
+// For faster email lookups on auth flows
+UserSchema.index({ email: 1 }, { unique: true });
+UserSchema.index({ emailCanonical: 1 }, { unique: true });

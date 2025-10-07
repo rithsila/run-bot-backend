@@ -46,6 +46,7 @@ import { WebPushSubModule } from './web-push-sub/web-push-sub.module';
 import { SignalModule } from './signal/signal.module';
 import { TurnstileModule } from './turnstile/turnstile.module';
 import { TabFlagsModule } from './tab-flags/tab-flags.module';
+import { AnalyzeNewsModule } from './analyze-news/analyze-news.module';
 
 @Module({
   imports: [
@@ -160,6 +161,7 @@ import { TabFlagsModule } from './tab-flags/tab-flags.module';
     SignalModule,
     TurnstileModule,
     TabFlagsModule,
+    AnalyzeNewsModule,
   ],
 
   controllers: [AppController],
