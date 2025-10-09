@@ -128,7 +128,6 @@ export class LicenseRequestController {
         dto: CreateLicenseRequestDto,
     ) {
 
-
         await this.service.updateMyRequest(id, dto);
 
         return {

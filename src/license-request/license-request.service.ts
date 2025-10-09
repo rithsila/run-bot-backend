@@ -178,15 +178,19 @@ export class LicenseRequestService {
             .lean()
             .exec();
 
+        console.log("dto?.accountSn1p3rShot", dto?.accountSn1p3rShot)
         if (!existing) throw new NotFoundException('License request not found');
-
         await this.model.findByIdAndUpdate(
             requestId,
             {
-                ...dto,
+                accountRiskManager: dto?.accountRiskManager || "",
+                accountSn1p3rConcept: dto?.accountSn1p3rConcept || "",
+                accountSn1p3rShot: dto?.accountSn1p3rShot || "",
+                bankAccountName: dto?.bankAccountName,
+                tradingViewUsername: dto?.tradingViewUsername,
+                notes: dto?.notes,
                 status: MembershipStatus.Request,
             },
-            { runValidators: true },
         );
 
         void this.push.sendToRoles(
@@ -202,7 +206,6 @@ export class LicenseRequestService {
 
         return { ok: true };
     }
-
 
     async paginate(dto: LicenseRequestsPaginateDto) {
         const page = Math.max(1, dto.page || 1);

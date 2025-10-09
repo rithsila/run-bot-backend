@@ -5,14 +5,14 @@ import {
   ExecutionContext,
   Injectable,
   UnauthorizedException,
-  Optional,          // 👈 import Optional
+  Optional,
 } from '@nestjs/common';
 import { verifyHmacWithTimestamp } from 'src/common/crypto/hmac.util';
 import { ReplayService } from './replay.service';
 
 @Injectable()
 export class SignatureGuard implements CanActivate {
-  constructor(@Optional() private readonly replay?: ReplayService) {} // 👈 Optional class dep
+  constructor(@Optional() private readonly replay?: ReplayService) {}
 
   async canActivate(ctx: ExecutionContext): Promise<boolean> {
     const req: any = ctx.switchToHttp().getRequest();
@@ -21,8 +21,17 @@ export class SignatureGuard implements CanActivate {
 
     const tsHeader = req.headers['x-timestamp'] as string | undefined;
     const sigHeader = req.headers['x-signature'] as string | undefined;
-    const keyId = (req.headers['x-key-id'] as string | undefined) || process.env.MT5_WEBHOOK_KEY_ID;
-    if (!tsHeader || !sigHeader) throw new UnauthorizedException('Missing x-timestamp or x-signature');
+    const keyId = (req.headers['x-key-id'] as string | undefined) || process.env.WEBHOOK_KEY_ID;
+
+    // ✅ Precise "missing header(s)" messaging
+    const missing: string[] = [];
+    if (!tsHeader) missing.push('x-timestamp');
+    if (!sigHeader) missing.push('x-signature');
+    if (missing.length) {
+      const msg =
+        missing.length === 2 ? `Missing ${missing[0]} and ${missing[1]}` : `Missing ${missing[0]}`;
+      throw new UnauthorizedException(msg);
+    }
 
     const tsNum = Number(tsHeader);
     const nowSec = Math.floor(Date.now() / 1000);
@@ -31,10 +40,10 @@ export class SignatureGuard implements CanActivate {
       throw new UnauthorizedException('Timestamp outside allowed window');
     }
 
-    const secret = process.env.MT5_WEBHOOK_SECRET;
+    const secret = process.env.WEBHOOK_SECRET;
     if (!secret) throw new BadRequestException('Server secret not configured');
 
-    const ok = verifyHmacWithTimestamp(sigHeader, raw, tsNum, secret);
+    const ok = verifyHmacWithTimestamp(sigHeader!, raw, tsNum, secret);
     if (!ok) throw new UnauthorizedException('Invalid signature');
 
     // Optional replay block

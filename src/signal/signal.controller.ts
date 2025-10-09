@@ -8,7 +8,7 @@ export class SignalController {
     @UseGuards(SignatureGuard)
     
     @Public()
-    @Post('webhook')
+    @Post('webhook/signal')
     async webhook(@Body() dto: any) {
         console.log("------------------------", dto)
     }

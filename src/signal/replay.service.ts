@@ -12,7 +12,6 @@ export class ReplayService implements OnModuleDestroy {
     const url = process.env.REDIS_URL;
     if (url && url.trim()) {
       this.redis = new Redis(url, {
-        // optional hardening/timeouts
         maxRetriesPerRequest: 2,
         enableReadyCheck: true,
         lazyConnect: false,
