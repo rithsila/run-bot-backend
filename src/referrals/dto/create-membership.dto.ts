@@ -1,7 +1,6 @@
 // src/memberships/dto/create-membership.dto.ts
 import {
     IsEmail,
-    IsMongoId,
     IsOptional,
     IsString,
     MaxLength,
@@ -20,8 +19,8 @@ export class CreateMembershipDto {
     @Transform(({ value }) => String(value).trim().toLowerCase())
     email!: string;
 
-    @IsMongoId()
-    referral!: string;
+    @IsString()
+    referral: string;
 
     @IsArray()
     @ArrayMinSize(1)

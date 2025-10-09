@@ -3,12 +3,10 @@ import {
     BadRequestException,
     ConflictException,
     Injectable,
-    InternalServerErrorException,
     NotFoundException,
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
-import { FilterQuery, Model, Types, isValidObjectId } from 'mongoose';
-import { Referral, ReferralDocument } from './referrals.schema';
+import { FilterQuery, Types, isValidObjectId } from 'mongoose';
 import { Membership, MembershipDocument } from './memberships.schema';
 import { CreateMembershipDto } from './dto/create-membership.dto';
 import { MembershipStatus } from './memberships.enum';
@@ -19,14 +17,12 @@ import type {
     PaginateResult,
 } from 'mongoose';
 import { MembershipsPaginateDto } from './dto/memberships-paginate.dto';
+import { UpdateMembershipDto } from './dto/update-membership.dto';
 
-type UpdateMembershipPayload = {
-    status?: MembershipStatus;
-    adminNotes?: string;
-    reason?: string;
-    updatedBy?: string; // optional audit
-};
 
+function escapeRegex(str: string) {
+    return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
 
 export function buildMembershipPush(status: MembershipStatus, reason?: string) {
     switch (status) {
@@ -58,12 +54,11 @@ export function buildMembershipPush(status: MembershipStatus, reason?: string) {
     }
 }
 
-
 @Injectable()
 export class MembershipsService {
+
     constructor(
         @InjectModel(Membership.name) private readonly membershipModel: PaginateModel<MembershipDocument>,
-        @InjectModel(Referral.name) private readonly referralModel: Model<ReferralDocument>,
         private readonly push: WebPushSubService,
     ) { }
 
@@ -72,16 +67,19 @@ export class MembershipsService {
     }
 
     async requestJoin(userId: string, dto: CreateMembershipDto) {
-
-        const referral = await this.referralModel.findById(dto.referral).select('_id').lean();
-        if (!referral) throw new NotFoundException('Referral not found');
-
         try {
+            const isExisting = await this.membershipModel.findOne({
+                user: new Types.ObjectId(userId),
+            });
+
+            if (isExisting) {
+                throw new ConflictException('You can only request a membership once.');
+            }
 
             const doc = await this.membershipModel.create({
                 email: dto.email,
                 user: new Types.ObjectId(userId),
-                referral: new Types.ObjectId(dto.referral),
+                referral: dto.referral,
                 accountNumbers: dto.accountNumbers,
                 notes: dto.notes,
                 status: MembershipStatus.Request,
@@ -100,232 +98,149 @@ export class MembershipsService {
 
             return doc;
         } catch (err: any) {
-            if (err?.code === 11000) {
-                throw new ConflictException('This user already has a membership for this referral.');
-            }
             throw err;
         }
     }
 
-    async myMemberships(currentUserId: string) {
+    async myMemberships(
+        currentUserId: string,
+        opts?: { includePartnerCode?: boolean }
+    ) {
         this.ensureId(currentUserId, 'user');
 
+        const referralSelect = ['title', 'logoUrl', 'broker'];
+        if (opts?.includePartnerCode) referralSelect.push('partnerCode');
+
         return this.membershipModel
-            .find({ user: currentUserId })
-            .populate([
-                { path: 'user', select: 'firstName lastName email' },
-                {
-                    path: 'referral',
-                    select: 'partnerCode registerUrl', // add fields you need from Referral
-                    populate: [
-                        { path: 'broker', select: 'name logo description' },
-                        { path: 'user', select: 'firstName lastName email' },
-                    ],
+            .findOne({ user: currentUserId })
+            .select('email referral accountNumbers status notes createdAt adminNotes')
+            .populate({
+                path: 'referral',
+                select: referralSelect.join(' '),
+                populate: {
+                    path: 'broker',
+                    model: 'Broker', // matches your @Schema class name
+                    select: 'name logo', // keep it light
                 },
-            ])
-            .lean()
+            })
+            .lean({ virtuals: true })
             .exec();
     }
 
-
-    async findAll(query: {
-        page?: number | string;
-        limit?: number | string;
-        status?: MembershipStatus | string;
-        broker?: string;
-        user?: string;
-        includePartnerCode?: '1' | 'true';
-    }) {
-        const page = Math.max(1, Number(query.page) || 1);
-        const limit = Math.min(100, Math.max(1, Number(query.limit) || 20));
-
-        const filter: FilterQuery<MembershipDocument> = {};
-        if (query.status && Object.values(MembershipStatus).includes(query.status as MembershipStatus)) {
-            filter.status = query.status as MembershipStatus;
-        }
-        if (query.broker) {
-            this.ensureId(query.broker, 'broker');
-            filter.broker = query.broker;
-        }
-        if (query.user) {
-            this.ensureId(query.user, 'user');
-            filter.user = query.user;
+    async updateById(id: string, dto: UpdateMembershipDto) {
+        this.ensureId(id);
+        if (!dto || (dto.status === undefined && dto.adminNotes === undefined)) {
+            throw new BadRequestException('Nothing to update');
         }
 
-        const q = this.membershipModel
-            .find(filter)
-            .sort({ createdAt: -1 })
-            .skip((page - 1) * limit)
-            .limit(limit)
-            .populate([
-                { path: 'user', select: 'firstName lastName email' },
-                {
-                    path: 'referral',
-                    select: 'partnerCode registerUrl', // add fields you need from Referral
-                    populate: [
-                        { path: 'broker', select: 'name logo description' },
-                        { path: 'user', select: 'firstName lastName email' },
-                    ],
-                },
-            ])
+        const ops: any = { $set: {} as Record<string, any> };
 
-        // partnerCode is select:false by default; include only when explicitly asked
-        if (query.includePartnerCode === '1' || query.includePartnerCode === 'true') {
-            q.select('+partnerCode');
+        if (dto.adminNotes !== undefined) {
+            ops.$set.adminNotes = dto.adminNotes;
+        }
+        if (dto.status !== undefined) {
+            ops.$set.status = dto.status;
+
+            // Without actor info: only clear approvedBy if leaving Verified
+            if (dto.status !== MembershipStatus.Verified) {
+                ops.$unset = { ...(ops.$unset || {}), approvedBy: '' };
+            }
         }
 
-        const [data, total] = await Promise.all([q.lean().exec(), this.membershipModel.countDocuments(filter)]);
-        return {
-            data,
-            page,
-            limit,
-            total,
-            pages: Math.ceil(total / limit),
-        };
-    }
+        const updated = await this.membershipModel.findByIdAndUpdate(id, ops, {
+            new: true,
+            runValidators: true,
+        });
 
-    async updateStatus(
-        membershipId: string,
-        status: MembershipStatus,
-        opts?: { reason?: string },
-    ) {
-        this.ensureId(membershipId, 'membershipId');
+        if (!updated) throw new NotFoundException('Membership not found');
 
-        if (!Object.values(MembershipStatus).includes(status)) {
-            throw new BadRequestException('Invalid membership status');
-        }
-
-        // Load to know current status + owner
-        const existing = await this.membershipModel
-            .findById(membershipId)
-            .select('_id user status')
-            .lean()
-            .exec();
-
-        if (!existing) throw new NotFoundException('Membership not found');
-
-        // Only update if changed
-        if (existing.status !== status) {
-            const setObj: Record<string, any> = { status };
-            // persist reason if provided (useful for Rejected/Ended)
-            if (opts?.reason) setObj.statusReason = opts.reason;
-
-            await this.membershipModel.updateOne(
-                { _id: existing._id },
-                { $set: setObj },
-            );
-        }
-
-        // Push to exactly ONE user (all active endpoints)
-        const { title, body } = buildMembershipPush(status, opts?.reason);
+        const { title, body } = buildMembershipPush(updated?.status, dto.adminNotes);
         const targetUserId =
-            typeof existing.user === 'string'
-                ? existing.user
-                : (existing.user as unknown as Types.ObjectId).toString();
+            typeof updated.user === 'string'
+                ? updated.user
+                : (updated.user as unknown as Types.ObjectId).toString();
 
         await this.push.sendToUser(targetUserId, {
             title,
             body,
-            url: `/memberships/${existing._id}`,
+            url: `/memberships/${updated._id}`,
             ts: Date.now(),
             type: 'membership_update',
-            status,
+            status: updated?.status,
         });
 
-        // Return fresh doc
-        return this.membershipModel.findById(existing._id).lean().exec();
+        return updated;
     }
 
-    async updateMembership(membershipId: string, payload: UpdateMembershipPayload) {
+    async updateMembership(membershipId: string, membership: CreateMembershipDto) {
         this.ensureId(membershipId, 'membershipId');
-
         const existing = await this.membershipModel
             .findById(membershipId)
             .select('_id user status')
             .lean()
             .exec();
+
         if (!existing) throw new NotFoundException('Membership not found');
 
-        const setObj: Record<string, any> = {};
-        let statusChanged = false;
-
-        if (typeof payload.adminNotes === 'string') {
-            setObj.adminNotes = payload.adminNotes;
-        }
-
-        if (payload.status) {
-            if (!Object.values(MembershipStatus).includes(payload.status)) {
-                throw new BadRequestException('Invalid membership status');
-            }
-            if (existing.status !== payload.status) {
-                setObj.status = payload.status;
-                statusChanged = true;
-                if (payload.reason) setObj.statusReason = payload.reason;
-            }
-        }
-
-        // Nothing to do
-        if (!Object.keys(setObj).length) {
-            return this.membershipModel.findById(existing._id).lean().exec();
-        }
-
-        await this.membershipModel.updateOne({ _id: existing._id }, { $set: setObj });
-
-        // Send push only when status really changed
-        if (statusChanged) {
-            const { title, body } = buildMembershipPush(payload.status!, payload.reason);
-            const targetUserId =
-                typeof existing.user === 'string'
-                    ? existing.user
-                    : (existing.user as unknown as Types.ObjectId).toString();
-
-            await this.push.sendToUser(targetUserId, {
-                title,
-                body,
-                url: `/memberships/${existing._id}`,
+        await this.membershipModel.findByIdAndUpdate(membershipId, {
+            ...membership,
+            status: MembershipStatus.Request
+        })
+        void this.push.sendToRoles(
+            [Role.Admin, Role.Creator],
+            {
+                title: `Membership request!`,
+                body: 'New membership request submitted.',
                 ts: Date.now(),
-                type: 'membership_update',
-                status: payload.status,
-            });
-        }
-
-        return this.membershipModel.findById(existing._id).lean().exec();
+                type: 'membership_request',
+            },
+            60,
+        );
     }
 
-    async paginate(q: MembershipsPaginateDto) {
-        // sanitize inputs
-        const page = Math.max(1, Number(q.page) || 1);
-        const limit = Math.min(100, Math.max(1, Number(q.limit) || 20));
+    async paginate(dto: MembershipsPaginateDto) {
+        const page = Math.max(1, dto.page || 1);
+        const limit = Math.min(100, Math.max(1, dto.limit || 20));
 
         const filter: FilterQuery<MembershipDocument> = {};
-        if (q.status) {
-            if (!Object.values(MembershipStatus).includes(q.status)) {
+
+        // filter by status (exact)
+        if (dto.status) {
+            if (!Object.values(MembershipStatus).includes(dto.status)) {
                 throw new BadRequestException('Invalid status');
             }
-            filter.status = q.status;
+            filter.status = dto.status;
         }
 
-        const result: PaginateResult<MembershipDocument> =
-            await this.membershipModel.paginate(filter, {
-                page,
-                limit,
-                sort: { createdAt: -1 },
-                lean: true,           // return POJOs (faster for API)
-                leanWithId: true,     // keep id
-                select: '-adminNotes' // (optional) hide adminNotes from list
-            });
+        // search by email (case-insensitive). Use ^... for prefix; plain for contains.
+        if (dto.search) {
+            // contains:
+            const rx = new RegExp(escapeRegex(dto.search), 'i');
+            // prefix (faster with email index): const rx = new RegExp(`^${escapeRegex(dto.search)}`, 'i');
+            filter.email = rx;
+        }
+
+        const result: PaginateResult<MembershipDocument> = await this.membershipModel.paginate(filter, {
+            page,
+            limit,
+            sort: { createdAt: -1 },
+            lean: true,
+            leanWithId: true,
+            populate: [
+                { path: 'user', select: 'firstName lastName photoURL email' },
+                { path: 'approvedBy', select: 'firstName lastName email' },
+            ],
+        });
 
         return {
             items: result.docs,
-            page: result.page ?? page,        // 1-based
+            page: result.page ?? page,
             limit: result.limit ?? limit,
             total: result.totalDocs,
             totalPages: result.totalPages,
-            hasPrevPage: result.hasPrevPage,
-            hasNextPage: result.hasNextPage,
-            prevPage: result.prevPage ?? null,
-            nextPage: result.nextPage ?? null,
+            hasPrev: result.hasPrevPage,
+            hasNext: result.hasNextPage,
         };
     }
-
 }
+

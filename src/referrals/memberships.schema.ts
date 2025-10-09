@@ -22,8 +22,8 @@ export class Membership {
   @Prop({ type: MongooseSchema.Types.ObjectId, ref: 'User', required: true, index: true })
   user!: MongooseSchema.Types.ObjectId;
 
-  @Prop({ type: MongooseSchema.Types.ObjectId, ref: 'Referral', required: true, index: true })
-  referral!: MongooseSchema.Types.ObjectId;
+  @Prop({ type: String, required: true })
+  referral!: string;
 
   @Prop({
     type: [{ type: String, trim: true, maxlength: 50 }],
@@ -52,28 +52,5 @@ export class Membership {
 
 export const MembershipSchema = SchemaFactory.createForClass(Membership);
 
-// normalize accountNumbers on save/update
-MembershipSchema.pre(['save', 'findOneAndUpdate', 'updateOne'], function (next) {
-  const update: any = (this as any).getUpdate?.() ?? this;
-  const arr: string[] =
-    update.accountNumbers ??
-    update.$set?.accountNumbers ??
-    (this as any).accountNumbers;
-
-  if (Array.isArray(arr)) {
-    const normalized = [...new Set(arr.map((s) => s?.trim()).filter(Boolean))];
-    if (update.$set) update.$set.accountNumbers = normalized;
-    else update.accountNumbers = normalized;
-  }
-  next();
-});
-
-// unique compound constraint still applies
-MembershipSchema.index({ user: 1, referral: 1 }, { unique: true, name: 'uniq_user_referral' });
-
-// helpful list indexes
-MembershipSchema.index({ createdAt: -1, status: 1 });
-MembershipSchema.index({ email: 1 }); // for quick email lookups
-
-// 👉 enable pagination
+// ⬇️ ENABLE PAGINATION
 MembershipSchema.plugin(paginate);

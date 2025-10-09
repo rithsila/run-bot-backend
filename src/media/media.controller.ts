@@ -4,7 +4,7 @@ import { Public } from 'src/auth/guard/public.decorator';
 
 @Controller('media')
 export class MediaController {
-  constructor(private readonly media: MediaService) {}
+  constructor(private readonly media: MediaService) { }
 
   // GET /media/sign?folder=news
   @Public()

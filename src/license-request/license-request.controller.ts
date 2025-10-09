@@ -1,4 +1,4 @@
-// src/memberships/memberships.controller.ts
+// src/license-requests/license-request.controller.ts
 import {
     Body,
     Controller,
@@ -14,7 +14,7 @@ import {
     HttpCode,
     ValidationPipe,
 } from '@nestjs/common';
-import { MembershipsService } from './memberships.service';
+import { LicenseRequestService } from './license-request.service';
 import type { AuthRequest } from 'src/common/types/auth-request.type';
 import { ApiSuccess, PaginatedResult } from 'src/common/types/api-response.type';
 import { InternalHmacGuard } from 'src/auth/guard/hmac.guard';
@@ -22,58 +22,59 @@ import { DeviceHashGuard } from 'src/auth/guard/device-hash-guard';
 import { CsrfGuard } from 'src/auth/guard/csrf.guard';
 import { JwtAuthGuard } from 'src/auth/guard/jwt-auth.guard';
 import { Throttle } from '@nestjs/throttler';
-import { CreateMembershipDto } from './dto/create-membership.dto';
-import { MembershipsPaginateDto } from './dto/memberships-paginate.dto';
-import { UpdateMembershipDto } from './dto/update-membership.dto';
+import { CreateLicenseRequestDto } from './dto/create-license-request.dto';
+import { LicenseRequestsPaginateDto } from './dto/license-requests-paginate.dto';
+import { AdminUpdateLicenseRequestDto } from './dto/admin-update-license-request.dto';
 
-export type MembershipLean = Record<string, any>;
-type MembershipPage = PaginatedResult<MembershipLean>;
+export type LicenseRequestLean = Record<string, any>;
+type LicenseRequestPage = PaginatedResult<LicenseRequestLean>;
 
-@Controller('memberships')
-@UseGuards(
-    InternalHmacGuard,
-    DeviceHashGuard,
-    CsrfGuard,
-    JwtAuthGuard,
-)
-export class MembershipsController {
+@Controller('license-requests')
+@UseGuards(InternalHmacGuard, DeviceHashGuard, CsrfGuard, JwtAuthGuard)
+export class LicenseRequestController {
+    constructor(private readonly service: LicenseRequestService) { }
 
-    constructor(private readonly service: MembershipsService) { }
-
-    @Post('join')
+    /**
+     * User submits a new license request.
+     */
+    @Post('request')
     @HttpCode(HttpStatus.CREATED)
     @Throttle({ default: { limit: 5, ttl: 30_000 } })
-    async join(
+    async request(
         @Req() req: AuthRequest,
-        @Body() dto: CreateMembershipDto,
+        @Body(new ValidationPipe({ transform: true, whitelist: true }))
+        dto: CreateLicenseRequestDto,
     ): Promise<ApiSuccess> {
         const uid = req?.user?.userId;
         if (!uid) throw new UnauthorizedException('AUTH_REQUIRED');
 
-        await this.service.requestJoin(uid, dto);
+        await this.service.requestLicense(uid, dto);
 
         return {
             success: true,
             statusCode: HttpStatus.CREATED,
             timestamp: new Date().toISOString(),
             path: req.url,
-            code: 'JOIN_MEMBERSHIP',
+            code: 'LICENSE_REQUEST',
             message: 'Success!',
         };
     }
 
+    /**
+     * Paginated list (admin).
+     */
     @Get()
     @Throttle({ default: { limit: 20, ttl: 60_000 } })
     async list(
         @Req() req: AuthRequest,
         @Query(new ValidationPipe({ transform: true, whitelist: true }))
-        q: MembershipsPaginateDto,
-    ): Promise<ApiSuccess<MembershipPage>> {
+        q: LicenseRequestsPaginateDto,
+    ): Promise<ApiSuccess<LicenseRequestPage>> {
         const data = await this.service.paginate(q);
         return {
             success: true,
             statusCode: HttpStatus.OK,
-            code: 'MEMBERSHIPS_LIST',
+            code: 'LICENSE_REQUESTS_LIST',
             message: 'OK',
             timestamp: new Date().toISOString(),
             path: req.url,
@@ -81,12 +82,15 @@ export class MembershipsController {
         };
     }
 
+    /**
+     * Current user's license request.
+     */
     @Get('me')
     async mine(@Req() req: AuthRequest) {
         const uid = req?.user?.userId;
         if (!uid) throw new UnauthorizedException('AUTH_REQUIRED');
 
-        const data = await this.service.myMemberships(uid);
+        const data = await this.service.myLicenseRequest(uid);
         return {
             success: true,
             statusCode: HttpStatus.OK,
@@ -96,22 +100,37 @@ export class MembershipsController {
         };
     }
 
+    /**
+     * Admin updates a license request (status, notes, license keys).
+     */
     @Patch('status/:id')
-    async updateById(
+    async adminUpdateById(
         @Param('id') id: string,
-        @Body(new ValidationPipe({ transform: true, whitelist: true }))
-        dto: UpdateMembershipDto, // or UpdateStatusDto if you prefer status-only DTO
+        @Body(new ValidationPipe({
+            transform: true,
+            whitelist: true,
+            forbidNonWhitelisted: false, // ⬅️ override global
+        }))
+        dto: AdminUpdateLicenseRequestDto,
     ) {
-        return this.service.updateById(id, dto);
+        return this.service.adminUpdateById(id, dto);
     }
+
+
+    /**
+     * User updates their own license request (while still in Request state).
+     */
     @Patch(':id')
-    async updateMembership(
+    async updateMyRequest(
         @Req() req: AuthRequest,
         @Param('id') id: string,
-        @Body() body: CreateMembershipDto
+        @Body(new ValidationPipe({ transform: true, whitelist: true }))
+        dto: CreateLicenseRequestDto,
     ) {
-        const data = body;
-        await this.service.updateMembership(id, data);
+
+
+        await this.service.updateMyRequest(id, dto);
+
         return {
             success: true,
             statusCode: HttpStatus.OK,

@@ -9,8 +9,11 @@ export class Referral {
   @Prop({ type: MongooseSchema.Types.ObjectId, ref: 'Broker', required: true })
   broker: MongooseSchema.Types.ObjectId;
 
-  @Prop({ type: MongooseSchema.Types.ObjectId, ref: 'User', required: true })
-  user: MongooseSchema.Types.ObjectId;
+  @Prop({ type: String, required: true })
+  title: string;
+
+  @Prop({ type: String, trim: true })
+  logoUrl?: string;
 
   @Prop({ trim: true })
   partnerCode?: string;
@@ -20,6 +23,3 @@ export class Referral {
 }
 
 export const ReferralSchema = SchemaFactory.createForClass(Referral);
-
-// Make one referral per (broker,user) pair
-ReferralSchema.index({ broker: 1, user: 1 }, { unique: true });

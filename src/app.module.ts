@@ -40,13 +40,13 @@ import { CsrfGuard } from './auth/guard/csrf.guard';
 import { MediaModule } from './media/media.module';
 import { ReferralModule } from './referrals/referrals.module';
 import { PlanModule } from './plan/plan.module';
-import { EaSnqpModule } from './ea-snqp/ea-snqp.module';
 import { TradingPlanModule } from './trading-plan/trading-plan.module';
 import { WebPushSubModule } from './web-push-sub/web-push-sub.module';
 import { SignalModule } from './signal/signal.module';
 import { TurnstileModule } from './turnstile/turnstile.module';
 import { TabFlagsModule } from './tab-flags/tab-flags.module';
 import { AnalyzeNewsModule } from './analyze-news/analyze-news.module';
+import { LicenseRequestModule } from './license-request/license-request.module';
 
 @Module({
   imports: [
@@ -155,13 +155,13 @@ import { AnalyzeNewsModule } from './analyze-news/analyze-news.module';
     MediaModule,
     ReferralModule,
     PlanModule,
-    EaSnqpModule,
     TradingPlanModule,
     WebPushSubModule,
     SignalModule,
     TurnstileModule,
     TabFlagsModule,
     AnalyzeNewsModule,
+    LicenseRequestModule,
   ],
 
   controllers: [AppController],

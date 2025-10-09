@@ -32,7 +32,6 @@ export class TradingPlanService {
   async create(currentUserId: string, dto: CreateTradingPlanDto) {
     const userId = this.asObjectId(currentUserId);
     let created!: TradingPlanLean;
-
     const session = await this.planModel.db.startSession();
     try {
       await session.withTransaction(async () => {
@@ -116,7 +115,6 @@ export class TradingPlanService {
       .sort({ createdAt: -1 })
       .lean();
   }
-
   async findById(id: string) {
     if (!Types.ObjectId.isValid(id)) {
       throw new BadRequestException('Invalid trading plan id');
@@ -127,7 +125,6 @@ export class TradingPlanService {
     }
     return doc;
   }
-
   async remove(planId: string) {
     if (!Types.ObjectId.isValid(planId)) {
       throw new BadRequestException('Invalid trading plan id');
@@ -145,7 +142,6 @@ export class TradingPlanService {
 
     return { ok: true, id: String(deleted._id) };
   }
-
   // --- helpers ---
   private asObjectId(id: string) {
     if (!Types.ObjectId.isValid(id)) {
@@ -153,5 +149,4 @@ export class TradingPlanService {
     }
     return new Types.ObjectId(id);
   }
-
 }
