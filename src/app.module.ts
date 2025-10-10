@@ -44,9 +44,9 @@ import { TradingPlanModule } from './trading-plan/trading-plan.module';
 import { WebPushSubModule } from './web-push-sub/web-push-sub.module';
 import { SignalModule } from './signal/signal.module';
 import { TurnstileModule } from './turnstile/turnstile.module';
-import { TabFlagsModule } from './tab-flags/tab-flags.module';
 import { AnalyzeNewsModule } from './analyze-news/analyze-news.module';
 import { LicenseRequestModule } from './license-request/license-request.module';
+import { RealtimeModule } from './real-time/real-time.module';
 
 @Module({
   imports: [
@@ -159,9 +159,9 @@ import { LicenseRequestModule } from './license-request/license-request.module';
     WebPushSubModule,
     SignalModule,
     TurnstileModule,
-    TabFlagsModule,
     AnalyzeNewsModule,
     LicenseRequestModule,
+    RealtimeModule,
   ],
 
   controllers: [AppController],

@@ -14,6 +14,7 @@ import helmet from 'helmet';
 import hpp from 'hpp';
 import compression from 'compression';
 import { buildAllowedOrigins } from './common/security/origin';
+import { SocketIoAdapter } from './real-time/socketio.adapter';
 
 async function bootstrap() {
 
@@ -26,9 +27,14 @@ async function bootstrap() {
   // ---- build origins at RUNTIME ----
   const allowedOrigins = buildAllowedOrigins([
     config.get<string>('FRONTEND_URL'),
+    config.get<string>('FRONTEND_URL_IP'),
   ]);
 
   logger.log(`[CORS] allowed origins: ${allowedOrigins.join(', ')}`);
+
+  const wsAdapter = new SocketIoAdapter(app, allowedOrigins);
+  await wsAdapter.connectToRedisIfNeeded();   // uses REDIS_URL if present, else no-op
+  app.useWebSocketAdapter(wsAdapter);
 
   app.set('trust proxy', 1);
   app.useGlobalFilters(new HttpErrorFilter());

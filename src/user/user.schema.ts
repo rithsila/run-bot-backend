@@ -111,11 +111,3 @@ UserSchema.pre('validate', function (next) {
   next();
 });
 
-// ---------- Helpful Indexes ----------
-UserSchema.index({ role: 1 });
-UserSchema.index({ lastActiveAt: -1 });
-UserSchema.index({ createdAt: -1 });
-
-// For faster email lookups on auth flows
-UserSchema.index({ email: 1 }, { unique: true });
-UserSchema.index({ emailCanonical: 1 }, { unique: true });

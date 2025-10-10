@@ -4,13 +4,13 @@ import { TradingPlanController } from './trading-plan.controller';
 import { MongooseModule } from '@nestjs/mongoose';
 import { TradingPlan, TradingPlanSchema } from './trading-plan.schema';
 import { WebPushSubModule } from 'src/web-push-sub/web-push-sub.module';
-import { TabFlagsModule } from 'src/tab-flags/tab-flags.module';
+import { RealtimeModule } from 'src/real-time/real-time.module';
 
 @Module({
   imports: [
     MongooseModule.forFeature([{ name: TradingPlan.name, schema: TradingPlanSchema }]),
     WebPushSubModule,
-    TabFlagsModule
+    RealtimeModule
   ],
   providers: [TradingPlanService],
   controllers: [TradingPlanController]
