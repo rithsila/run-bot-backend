@@ -1,6 +1,6 @@
 
 export enum PlanCategory {
-    Indicator = 'Indicator',
+    Tools = 'Tools',
     Course = 'Course',
     VPS = 'VPS',
     Bot = 'Bot',

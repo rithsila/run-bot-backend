@@ -33,7 +33,7 @@ async function bootstrap() {
   logger.log(`[CORS] allowed origins: ${allowedOrigins.join(', ')}`);
 
   const wsAdapter = new SocketIoAdapter(app, allowedOrigins);
-  await wsAdapter.connectToRedisIfNeeded();   // uses REDIS_URL if present, else no-op
+  await wsAdapter.connectToRedisIfNeeded();   
   app.useWebSocketAdapter(wsAdapter);
 
   app.set('trust proxy', 1);

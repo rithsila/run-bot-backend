@@ -8,7 +8,6 @@ import {
     IsOptional,
     IsString,
     IsUrl,
-    Length,
     MaxLength,
     Min,
 } from 'class-validator';
@@ -20,7 +19,6 @@ const trim = () =>
     );
 
 export class CreatePlanDto {
-    /** title – plan name */
     @IsString()
     @IsNotEmpty()
     @MaxLength(120)

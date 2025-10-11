@@ -47,6 +47,7 @@ import { TurnstileModule } from './turnstile/turnstile.module';
 import { AnalyzeNewsModule } from './analyze-news/analyze-news.module';
 import { LicenseRequestModule } from './license-request/license-request.module';
 import { RealtimeModule } from './real-time/real-time.module';
+import { PaymentModule } from './payment/payment.module';
 
 @Module({
   imports: [
@@ -162,6 +163,7 @@ import { RealtimeModule } from './real-time/real-time.module';
     AnalyzeNewsModule,
     LicenseRequestModule,
     RealtimeModule,
+    PaymentModule,
   ],
 
   controllers: [AppController],
