@@ -16,6 +16,7 @@ import { LicenseRequestsPaginateDto } from './dto/license-requests-paginate.dto'
 import { MembershipStatus } from 'src/referrals/memberships.enum';
 import { WebPushSubService } from 'src/web-push-sub/web-push-sub.service';
 import { Role } from 'src/user/roles.enum';
+import { Membership, MembershipDocument, MembershipSchema } from 'src/referrals/memberships.schema';
 
 function escapeRegex(str: string) {
     return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -56,6 +57,8 @@ export class LicenseRequestService {
     constructor(
         @InjectModel(LicenseRequest.name)
         private readonly model: PaginateModel<LicenseRequestDocument>,
+        @InjectModel(Membership.name)
+        private readonly membershipModel: PaginateModel<MembershipDocument>,
         private readonly push: WebPushSubService,
     ) { }
 
@@ -68,6 +71,15 @@ export class LicenseRequestService {
      */
     async requestLicense(userId: string, dto: CreateLicenseRequestDto) {
         this.ensureId(userId, 'user');
+
+        const verifiedExists = await this.membershipModel.exists({
+            user: new Types.ObjectId(userId),
+            status: MembershipStatus.Verified,
+        });
+        if (!verifiedExists) {
+            throw new ForbiddenException('You need a verified membership to request a license.');
+        }
+
         const existing = await this.model.findOne({ user: new Types.ObjectId(userId) }).lean().exec();
         if (existing) {
             throw new ConflictException('You can only submit one license request.');
@@ -99,9 +111,6 @@ export class LicenseRequestService {
         return doc;
     }
 
-    /**
-     * User fetches their license request (populated minimal).
-     */
     async myLicenseRequest(currentUserId: string) {
         this.ensureId(currentUserId, 'user');
 
@@ -168,7 +177,6 @@ export class LicenseRequestService {
         return updated;
     }
 
-
     async updateMyRequest(requestId: string, dto: CreateLicenseRequestDto) {
         this.ensureId(requestId, 'requestId');
 
@@ -231,15 +239,22 @@ export class LicenseRequestService {
             sort: { createdAt: -1 },
             lean: true,
             leanWithId: true,
-
             populate: [
-                { path: 'user', select: 'firstName lastName photoURL email' },
+                { path: 'user', select: 'firstName lastName photoURL' },
                 { path: 'approvedBy', select: 'firstName lastName email' },
             ],
         });
 
+        const items = await Promise.all(result.docs.map(async res => {
+            const membership = await this.membershipModel.findOne({ user: res?.user })
+            return {
+                ...res,
+                membershipEmail: membership?.email
+            }
+        }))
+
         return {
-            items: result.docs,
+            items,
             page: result.page ?? page,
             limit: result.limit ?? limit,
             total: result.totalDocs,

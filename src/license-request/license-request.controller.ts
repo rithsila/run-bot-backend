@@ -34,9 +34,6 @@ type LicenseRequestPage = PaginatedResult<LicenseRequestLean>;
 export class LicenseRequestController {
     constructor(private readonly service: LicenseRequestService) { }
 
-    /**
-     * User submits a new license request.
-     */
     @Post('request')
     @HttpCode(HttpStatus.CREATED)
     @Throttle({ default: { limit: 5, ttl: 30_000 } })
@@ -60,9 +57,6 @@ export class LicenseRequestController {
         };
     }
 
-    /**
-     * Paginated list (admin).
-     */
     @Get()
     @Throttle({ default: { limit: 20, ttl: 60_000 } })
     async list(
@@ -82,9 +76,7 @@ export class LicenseRequestController {
         };
     }
 
-    /**
-     * Current user's license request.
-     */
+
     @Get('me')
     async mine(@Req() req: AuthRequest) {
         const uid = req?.user?.userId;
@@ -100,9 +92,7 @@ export class LicenseRequestController {
         };
     }
 
-    /**
-     * Admin updates a license request (status, notes, license keys).
-     */
+    
     @Patch('status/:id')
     async adminUpdateById(
         @Param('id') id: string,
@@ -116,10 +106,6 @@ export class LicenseRequestController {
         return this.service.adminUpdateById(id, dto);
     }
 
-
-    /**
-     * User updates their own license request (while still in Request state).
-     */
     @Patch(':id')
     async updateMyRequest(
         @Req() req: AuthRequest,

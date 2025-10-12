@@ -6,7 +6,7 @@ import {
     NotFoundException,
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
-import { FilterQuery, Types, isValidObjectId } from 'mongoose';
+import { FilterQuery, isValidObjectId } from 'mongoose';
 import { Membership, MembershipDocument } from './memberships.schema';
 import { CreateMembershipDto } from './dto/create-membership.dto';
 import { MembershipStatus } from './memberships.enum';
@@ -16,6 +16,7 @@ import type {
     PaginateModel,
     PaginateResult,
 } from 'mongoose';
+import { Types } from 'mongoose';
 import { MembershipsPaginateDto } from './dto/memberships-paginate.dto';
 import { UpdateMembershipDto } from './dto/update-membership.dto';
 
@@ -60,6 +61,7 @@ export class MembershipsService {
     constructor(
         @InjectModel(Membership.name) private readonly membershipModel: PaginateModel<MembershipDocument>,
         private readonly push: WebPushSubService,
+        
     ) { }
 
     private ensureId(id?: string, name = 'id') {
@@ -241,6 +243,23 @@ export class MembershipsService {
             hasPrev: result.hasPrevPage,
             hasNext: result.hasNextPage,
         };
+    }
+
+    async getVerifiedMembership(userId: string): Promise<Membership | null> {
+        this.ensureId(userId, 'user');
+
+        return this.membershipModel
+            .findOne({
+                user: new Types.ObjectId(userId),
+                status: MembershipStatus.Verified,
+            })
+            .select('email referral accountNumbers status notes createdAt adminNotes approvedBy')
+            .populate({
+                path: 'referral',
+                select: 'title logoUrl broker',
+                populate: { path: 'broker', model: 'Broker', select: 'name logo' },
+            })
+            .exec(); 
     }
 }
 

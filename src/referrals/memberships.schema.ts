@@ -52,5 +52,4 @@ export class Membership {
 
 export const MembershipSchema = SchemaFactory.createForClass(Membership);
 
-// ⬇️ ENABLE PAGINATION
 MembershipSchema.plugin(paginate);

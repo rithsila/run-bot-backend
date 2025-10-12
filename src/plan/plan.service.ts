@@ -64,9 +64,9 @@ export class PlanService {
     async findAll() {
         const items = await this.planModel
             .find()
+            .sort({ createdAt: -1 })
             .lean()
             .exec()
-
         return items
     }
 
