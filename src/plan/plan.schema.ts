@@ -6,7 +6,7 @@ import { PlanCategory } from './plan.enum';
 export type PlanDocument = Plan & Document;
 
 
-@Schema({ collection: 'plans', timestamps: true })
+@Schema({ timestamps: true })
 export class Plan {
     @Prop({ type: String, required: true, trim: true, maxlength: 120 })
     title!: string;

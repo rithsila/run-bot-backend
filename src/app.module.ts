@@ -42,12 +42,13 @@ import { ReferralModule } from './referrals/referrals.module';
 import { PlanModule } from './plan/plan.module';
 import { TradingPlanModule } from './trading-plan/trading-plan.module';
 import { WebPushSubModule } from './web-push-sub/web-push-sub.module';
-import { SignalModule } from './signal/signal.module';
 import { TurnstileModule } from './turnstile/turnstile.module';
 import { AnalyzeNewsModule } from './analyze-news/analyze-news.module';
 import { LicenseRequestModule } from './license-request/license-request.module';
 import { RealtimeModule } from './real-time/real-time.module';
 import { PaymentModule } from './payment/payment.module';
+import { RetailerModule } from './retailer/retailer.module';
+import webhooksConfig from './config/webhooks.config';
 
 @Module({
   imports: [
@@ -148,6 +149,7 @@ import { PaymentModule } from './payment/payment.module';
       }),
     }),
 
+    ConfigModule.forFeature(webhooksConfig),
     // ─── Feature Modules ──────────────────────────────────────────────────────
     HealthModule,
     UserModule,
@@ -158,12 +160,12 @@ import { PaymentModule } from './payment/payment.module';
     PlanModule,
     TradingPlanModule,
     WebPushSubModule,
-    SignalModule,
     TurnstileModule,
     AnalyzeNewsModule,
     LicenseRequestModule,
     RealtimeModule,
     PaymentModule,
+    RetailerModule,
   ],
 
   controllers: [AppController],

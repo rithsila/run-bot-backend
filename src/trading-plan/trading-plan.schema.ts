@@ -26,8 +26,6 @@ export class TradingPlan {
         type: String,
         required: false,         
         trim: true,
-        maxlength: 120,
-        match: /^[A-Za-z0-9_-]+$/,
     })
     tradingViewId?: string;
 

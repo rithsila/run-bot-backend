@@ -15,6 +15,7 @@ import hpp from 'hpp';
 import compression from 'compression';
 import { buildAllowedOrigins } from './common/security/origin';
 import { SocketIoAdapter } from './real-time/socketio.adapter';
+import { bypassCorsFor } from './common/cors/bypass-cors.util';
 
 async function bootstrap() {
 
@@ -33,12 +34,14 @@ async function bootstrap() {
   logger.log(`[CORS] allowed origins: ${allowedOrigins.join(', ')}`);
 
   const wsAdapter = new SocketIoAdapter(app, allowedOrigins);
-  await wsAdapter.connectToRedisIfNeeded();   
+  await wsAdapter.connectToRedisIfNeeded();
   app.useWebSocketAdapter(wsAdapter);
 
   app.set('trust proxy', 1);
   app.useGlobalFilters(new HttpErrorFilter());
 
+  const express = app.getHttpAdapter().getInstance();
+  express.use('/retailer', bodyParser.json({ limit: '1mb', verify: (req: any, _r, buf) => { req.rawBody = buf; } }));
   app.use(bodyParser.json({ limit: '64kb', verify: (req: any, _res, buf) => { req.rawBody = buf; } }));
   app.use(bodyParser.urlencoded({ extended: false, limit: '16kb', verify: (req: any, _res, buf) => { req.rawBody = buf; } }));
 
@@ -75,11 +78,16 @@ async function bootstrap() {
       'content-type', 'accept', 'authorization',
       'x-csrf-token', 'x-client-device-id', 'x-device-id', 'x-device-hash',
       'x-internal-signature', 'x-internal-timestamp',
-      'x-idempotency-key', 'idempotency-key',
+      'x-idempotency-key', 'idempotency-key', 'x-api-key',
     ],
     optionsSuccessStatus: 204,
     maxAge: 86400,
   });
+
+  bypassCorsFor(app, [
+    '/retailer',          // if your controller is @Controller('retailer')
+    // '/webhook/retailer' // use this instead if your path is /webhook/retailer
+  ]);
 
   app.enableShutdownHooks();
 

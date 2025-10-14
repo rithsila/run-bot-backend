@@ -15,8 +15,6 @@ export class CreateTradingPlanDto {
 
     @IsOptional()
     @IsString()
-    @Length(1, 120)
-    @Matches(/^[A-Za-z0-9_-]+$/)
     tradingViewId?: string;   // ✅ now optional
 
     /** Optional thumbnail (e.g., Cloudinary/S3 URL) */

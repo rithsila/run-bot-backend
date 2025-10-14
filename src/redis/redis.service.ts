@@ -6,7 +6,7 @@ import { randomUUID } from 'crypto';
 
 @Injectable()
 export class RedisService implements OnModuleDestroy {
-  constructor(@Inject(REDIS) private readonly redis: Redis) {}
+  constructor(@Inject(REDIS) private readonly redis: Redis) { }
 
   // --- core helpers ---
   ping() {
@@ -76,5 +76,44 @@ export class RedisService implements OnModuleDestroy {
     `;
     const res = await this.redis.eval(script, 1, `lock:${key}`, token, String(ttlSec));
     return res === 1;
+  }
+
+  private sigKey(pair: string) {
+    return `retail:avg_signal:${pair.toUpperCase()}`; // e.g. retail:avg_signal:EURUSD
+  }
+
+  /**
+   * Save only the average signal for a pair.
+   * Stores as a small hash: {signal, runAt}. Optional TTL (seconds).
+   * signal ∈ 'buy' | 'sell' | 'neutral' | '' | null
+   */
+  async setAvgSignal(params: {
+    pair: string;
+    signal: string | null;
+    runAt?: Date;
+    ttlSec?: number; // optional
+  }): Promise<void> {
+    const key = this.sigKey(params.pair);
+    const signal = (params.signal ?? '').toLowerCase();
+    const runAtIso = (params.runAt ?? new Date()).toISOString();
+
+    await this.redis.hset(key, { signal, runAt: runAtIso });
+    if (params.ttlSec && params.ttlSec > 0) {
+      await this.redis.expire(key, params.ttlSec);
+    }
+  }
+
+  /**
+   * Read only the average signal for a pair.
+   * Returns { signal, runAt } or null if missing.
+   */
+  async getAvgSignal(pair: string): Promise<{ signal: string | null; runAt: string | null } | null> {
+    const key = this.sigKey(pair);
+    const h = await this.redis.hgetall(key);
+    if (!h || Object.keys(h).length === 0) return null;
+    return {
+      signal: h.signal ? String(h.signal).toLowerCase() : null,
+      runAt: h.runAt ?? null,
+    };
   }
 }
