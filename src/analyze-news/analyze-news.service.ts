@@ -11,6 +11,7 @@ import { AnalyzeNews, AnalyzeNewsDocument } from './analyze-news.schema';
 import { CreateAnalyzeNewsDto } from './dto/create-analyze-news.dto';
 import { WebPushSubService } from 'src/web-push-sub/web-push-sub.service';
 import { Direction } from 'src/trading-plan/trading-plan.enum';
+import { PersistImageService } from 'src/common/persist-image.service';
 
 export type AnalyzeNewsLean = {
     _id: Types.ObjectId;
@@ -30,10 +31,27 @@ export class AnalyzeNewsService {
         @InjectModel(AnalyzeNews.name)
         private readonly newsModel: Model<AnalyzeNewsDocument>,
         private readonly push: WebPushSubService,
+        private readonly img: PersistImageService,
     ) { }
 
     async create(dto: CreateAnalyzeNewsDto) {
         if (dto.impact == null) dto.impact = Direction.Bearish;
+
+        // ---- persist thumbnail if provided
+        let finalThumb = (dto.thumbnailUrl ?? "").trim();
+        if (finalThumb) {
+            try {
+                // Always persist remote images to control lifetime; especially *.oaiusercontent.com
+                const up = await this.img.uploadFromUrl(finalThumb, {
+                    folder: "analyze-news",
+                });
+                finalThumb = up.secure_url;
+            } catch (e) {
+                // Log and fall back; DO NOT throw just because thumbnail failed
+                console.warn("[AnalyzeNews.create] thumbnail persist failed:", e);
+                finalThumb = ""; // or "/chart_thumbnail.png"
+            }
+        }
 
         let created!: AnalyzeNewsLean;
 
