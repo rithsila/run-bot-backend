@@ -37,30 +37,36 @@ export class AnalyzeNewsService {
     async create(dto: CreateAnalyzeNewsDto) {
         if (dto.impact == null) dto.impact = Direction.Bearish;
 
-        // ---- persist thumbnail if provided
-        let finalThumb = (dto.thumbnailUrl ?? "").trim();
+        // 1) Persist thumbnail to Cloudinary if provided
+        let finalThumb = (dto.thumbnailUrl ?? '').trim();
+
         if (finalThumb) {
             try {
-                // Always persist remote images to control lifetime; especially *.oaiusercontent.com
                 const up = await this.img.uploadFromUrl(finalThumb, {
-                    folder: "analyze-news",
+                    folder: 'analyze-news',
                 });
-                finalThumb = up.secure_url;
+                finalThumb = up.secure_url; // <- permanent URL
             } catch (e) {
-                // Log and fall back; DO NOT throw just because thumbnail failed
-                console.warn("[AnalyzeNews.create] thumbnail persist failed:", e);
-                finalThumb = ""; // or "/chart_thumbnail.png"
+                console.warn('[AnalyzeNews.create] thumbnail persist failed:', e);
+                finalThumb = ''; // or set to '/chart_thumbnail.png' if you prefer a guaranteed placeholder
             }
         }
 
+        // 2) Build payload with the *persisted* URL (avoid saving empty string)
+        const payload: CreateAnalyzeNewsDto = {
+            ...dto,
+            thumbnailUrl: finalThumb || undefined,
+        };
+
         let created!: AnalyzeNewsLean;
 
+        // 3) Enforce MAX=6 and create doc (transactional, with fallback)
         const session = await this.newsModel.db.startSession();
         try {
             await session.withTransaction(async () => {
-                // enforce max=6 (global, since no publishedBy in schema)
                 const count = await this.newsModel.countDocuments({}).session(session);
                 const toDelete = Math.max(0, count - MAX_ANALYZE_NEWS + 1);
+
                 if (toDelete > 0) {
                     const oldest = await this.newsModel
                         .find({})
@@ -72,11 +78,14 @@ export class AnalyzeNewsService {
 
                     const ids = oldest.map(d => d._id);
                     if (ids.length) {
-                        await this.newsModel.deleteMany({ _id: { $in: ids } }).session(session);
+                        await this.newsModel
+                            .deleteMany({ _id: { $in: ids } })
+                            .session(session);
                     }
                 }
 
-                const [doc] = await this.newsModel.create([dto], { session });
+                // IMPORTANT: use payload (NOT raw dto)
+                const [doc] = await this.newsModel.create([payload], { session });
 
                 created = await this.newsModel
                     .findById(doc._id)
@@ -85,10 +94,11 @@ export class AnalyzeNewsService {
                     .orFail();
             });
         } catch (err: any) {
-            // Fallback for standalone Mongo (no replica set)
+            // Standalone Mongo fallback (no replica set)
             if (String(err?.message || '').includes('Transaction numbers are only allowed on a replica set')) {
                 const count = await this.newsModel.countDocuments({});
                 const toDelete = Math.max(0, count - MAX_ANALYZE_NEWS + 1);
+
                 if (toDelete > 0) {
                     const oldest = await this.newsModel
                         .find({})
@@ -103,8 +113,12 @@ export class AnalyzeNewsService {
                     }
                 }
 
-                const doc = await this.newsModel.create(dto);
-                created = await this.newsModel.findById(doc._id).lean<AnalyzeNewsLean>().orFail();
+                // IMPORTANT: use payload (NOT raw dto)
+                const doc = await this.newsModel.create(payload);
+                created = await this.newsModel
+                    .findById(doc._id)
+                    .lean<AnalyzeNewsLean>()
+                    .orFail();
             } else {
                 throw err;
             }
@@ -112,7 +126,7 @@ export class AnalyzeNewsService {
             session.endSession();
         }
 
-        // Push notification
+        // 4) Push notification (unchanged)
         void this.push.broadcast(
             {
                 title: 'New Analysis 📰',
