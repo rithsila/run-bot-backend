@@ -6,9 +6,10 @@ import { Cron } from '@nestjs/schedule';
 import { HttpService } from '@nestjs/axios';
 import { firstValueFrom } from 'rxjs';
 import { RetailLatest } from './retailer.schema';
+import { WebPushSubService } from 'src/web-push-sub/web-push-sub.service';
 
 // Symbols to refresh
-const SYMBOLS = ['XAUUSD','EURUSD','GBPJPY','US30','NAS100','SP500','BTCUSD','ETHUSD'];
+const SYMBOLS = ['XAUUSD', 'EURUSD', 'GBPJPY', 'US30', 'NAS100', 'SP500', 'BTCUSD', 'ETHUSD'];
 
 type Signal = 'buy' | 'sell' | 'neutral' | null;
 
@@ -23,6 +24,14 @@ function toDateOrNull(v: unknown): Date | null {
     return Number.isNaN(d.getTime()) ? null : d;
   }
   return null;
+}
+function nearlyEqual(a: number | null | undefined, b: number | null | undefined, eps = 0.01) {
+  if (a == null && b == null) return true;
+  if (a == null || b == null) return false;
+  return Math.abs(Number(a) - Number(b)) <= eps;
+}
+function sanitizeSignal(s: any): Signal {
+  return s === 'buy' || s === 'sell' || s === 'neutral' ? s : null;
 }
 
 // --- Base URL handling ---
@@ -56,7 +65,8 @@ export class RetailerService {
     @InjectModel(RetailLatest.name)
     private readonly latestModel: Model<RetailLatest>,
     private readonly http: HttpService,
-  ) {}
+    private readonly push: WebPushSubService,
+  ) { }
 
   private sleep(ms: number) {
     return new Promise((r) => setTimeout(r, ms));
@@ -165,11 +175,9 @@ export class RetailerService {
     const start = Date.now();
     this.log.log('RetailerService cron: FXSSI refresh tick (3m)…');
 
-    // Preflight health (optional)
+    // 1) Preflight health (skip tick if scraper is down)
     try {
-      const healthUrl = buildUrl('/health');
-      this.log.debug(`Health check: GET ${healthUrl}`);
-      await firstValueFrom(this.http.get(healthUrl, { timeout: 5_000 }));
+      await firstValueFrom(this.http.get(`${SCRAPER_BASE.replace(/\/+$/, '')}/health`, { timeout: 5_000 }));
     } catch (e: any) {
       const status = e?.response?.status;
       const detail = e?.response?.data?.detail ?? e?.message ?? String(e);
@@ -177,7 +185,98 @@ export class RetailerService {
       return;
     }
 
-    await this.refreshMany(SYMBOLS);
-    this.log.log(`RetailerService cron done in ${Date.now() - start}ms`);
+    // 2) Snapshot current DB state for all symbols (for comparisons)
+    const prevDocs = await this.latestModel
+      .find({ pair: { $in: SYMBOLS } })
+      .lean()
+      .exec();
+    const prevMap = new Map(prevDocs.map(d => [String(d.pair).toUpperCase(), d]));
+
+    let changes = 0;
+    let errors = 0;
+
+    // 3) Iterate symbols with small stagger so we don't hammer the scraper
+    for (const sym of SYMBOLS) {
+      const jitter = Math.floor(Math.random() * 400);
+      await this.sleep(1500 + jitter);
+
+      try {
+        const { data } = await firstValueFrom(
+          this.http.get<ScraperResponse>(`${SCRAPER_BASE.replace(/\/+$/, '')}/fxssi/current-ratio`, {
+            params: { symbol: sym },
+            timeout: 15_000,
+          }),
+        );
+        if (!data?.ok || !data.data) {
+          const detail = (data as any)?.detail || 'bad payload';
+          throw new Error(`Scraper bad response for ${sym}: ${detail}`);
+        }
+
+        const d = data.data;
+        const prev = prevMap.get(sym);
+
+        const nextSignal = sanitizeSignal(d.signal);
+        const prevSignal = sanitizeSignal(prev?.signal ?? null);
+
+        const leftChanged = !nearlyEqual(prev?.avgLeft, d.left_pct);
+        const rightChanged = !nearlyEqual(prev?.avgRight, d.right_pct);
+        const sigChanged = prevSignal !== nextSignal;
+
+        if (sigChanged || !prev) {
+          // Write only when something meaningful changed (or first insert)
+          await this.upsertLatest({
+            pair: sym,
+            avgLeft: d.left_pct,
+            avgRight: d.right_pct,
+            dividerLeftPct: d.divider_left_pct ?? null,
+            signal: nextSignal,
+            rowLabel: 'Average',
+            sourceUrl: d.sourceUrl,
+            fetchedAt: d.fetchedAt,
+            rendered: !!d.rendered,
+            runAt: new Date(),
+          });
+          changes++;
+
+          if (sigChanged && prev) {
+            this.log.log(
+              `[signal-change] ${sym}: ${prevSignal ?? 'null'} -> ${nextSignal ?? 'null'} ` +
+              `(L=${d.left_pct} R=${d.right_pct})`
+            );
+            const title = `Retailer changed · ${sym} · ${prevSignal?.toUpperCase()} → ${nextSignal?.toUpperCase()}`;
+            const body = `Long ${d.left_pct}% · Short ${d.right_pct}%`;
+
+            const url = `/retail/latest/${sym}`;
+
+            void this.push.broadcast(
+              {
+                title,
+                body,
+                url,
+                ts: Date.now(),
+              },
+              60, // TTL seconds
+            );
+
+          } else if (!prev) {
+            this.log.debug(`[signal-init] ${sym}: ${nextSignal ?? 'null'} (first record)`);
+          } else {
+            this.log.debug(`[update] ${sym}: ${[
+              leftChanged && 'avgLeft',
+              rightChanged && 'avgRight',
+            ].filter(Boolean).join(', ')} changed`);
+          }
+        } else {
+          this.log.debug(`[no-change] ${sym}`);
+        }
+      } catch (err: any) {
+        const status = err?.response?.status;
+        const detail = err?.response?.data?.detail ?? err?.message ?? String(err);
+        this.log.warn(`refreshOne ${sym} failed: ${status ?? ''} ${detail}`);
+        errors++;
+      }
+    }
+
+    this.log.log(`RetailerService cron done in ${Date.now() - start}ms — changes=${changes}, errors=${errors}`);
   }
 }

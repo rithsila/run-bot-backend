@@ -37,7 +37,6 @@ export class AnalyzeNewsService {
     async create(dto: CreateAnalyzeNewsDto) {
         if (dto.impact == null) dto.impact = Direction.Bearish;
 
-        // 1) Persist thumbnail to Cloudinary if provided
         let finalThumb = (dto.thumbnailUrl ?? '').trim();
 
         if (finalThumb) {
@@ -48,7 +47,7 @@ export class AnalyzeNewsService {
                 finalThumb = up.secure_url; // <- permanent URL
             } catch (e) {
                 console.warn('[AnalyzeNews.create] thumbnail persist failed:', e);
-                finalThumb = ''; // or set to '/chart_thumbnail.png' if you prefer a guaranteed placeholder
+                finalThumb = ''; 
             }
         }
 
@@ -126,7 +125,6 @@ export class AnalyzeNewsService {
             session.endSession();
         }
 
-        // 4) Push notification (unchanged)
         void this.push.broadcast(
             {
                 title: 'New Analysis 📰',
