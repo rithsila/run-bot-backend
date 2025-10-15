@@ -160,7 +160,7 @@ export class RetailerService {
     }
 
 
-    @Cron('*/5 * * * *')
+    @Cron('*/1 * * * *')
     async cronRefresh() {
         const start = Date.now();
         this.log.log('RetailerService cron: FXSSI refresh tick (3m)…');
