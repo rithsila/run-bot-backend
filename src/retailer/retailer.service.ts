@@ -114,7 +114,7 @@ export class RetailerService {
     }
 
     async getLatest() {
-        return this.latestModel.find().sort({ runAt: -1 }).lean().exec();
+        return this.latestModel.find().lean().exec();
     }
 
     async refreshOne(symbol: string): Promise<void> {
@@ -160,7 +160,7 @@ export class RetailerService {
     }
 
 
-    @Cron('*/1 * * * *')
+    @Cron('*/5 * * * *')
     async cronRefresh() {
         const start = Date.now();
         this.log.log('RetailerService cron: FXSSI refresh tick (3m)…');
