@@ -34,17 +34,19 @@ import { GoogleUserPayload } from 'src/common/types/google-auth.type';
 import { cookieBase } from 'src/common/cookies/cookie.util';
 import { TurnstileGuard } from 'src/turnstile/turnstile.guard';
 import { TurnstileAction } from 'src/turnstile/turnstile.decorator';
+import { MembershipsService } from 'src/referrals/memberships.service';
 
 @Controller('auth')
 export class AuthController {
 
   constructor(
     private readonly auth: AuthService,
-    private readonly users: UserService
+    private readonly users: UserService,
+    private readonly membership: MembershipsService
   ) { }
 
   @UseGuards(TurnstileGuard)
-  @TurnstileAction('register')        
+  @TurnstileAction('register')
   @Public()
   @SkipCsrf()
   @Post('signup')
@@ -156,23 +158,39 @@ export class AuthController {
 
   @UseGuards(JwtAuthGuard)
   @Get('me')
-  async getMe(@Req() req: AuthRequest) {
+  async getMe(@Req() req: AuthRequest): Promise<ApiSuccess<PublicUser>> {
     const uid = req?.user?.userId;
     if (!uid) throw new UnauthorizedException('AUTH_REQUIRED');
-    const data = await this.users.findById(uid);
+
+    // Important: return a plain object, not a Mongoose Document
+    const user = await this.users.findById(uid);
+    if (!user) throw new UnauthorizedException('USER_NOT_FOUND');
+
+    const membership = await this.membership.getMembership(uid);
+
+    // Build a plain payload — avoid spreading a Document
+    const data: PublicUser = {
+      _id: String(user._id),
+      email: user.email,
+      firstName: user?.firstName,
+      lastName: user?.lastName,
+      role: user?.role,
+      emailVerified: false,
+      photoURL: user.photoURL,
+      isMembership: membership?.status,
+    };
+
     return {
       success: true,
-      statusCode: 200,
       data,
-      tokenContext: {
-        aud: (req.user as any)?.aud,     // 'admin' | 'student' | 'instructor'
-        role: (req.user as any)?.role,   // Role.Admin | Role.Student | Role.Instructor
-        perms: (req.user as any)?.perms ?? [],
-      },
+      statusCode: HttpStatus.OK,
+      code: "ME",
+      message: 'Successful',
       timestamp: new Date().toISOString(),
       path: req.url,
     };
   }
+
 
   @Public()
   @SkipCsrf()
@@ -215,7 +233,7 @@ export class AuthController {
       maxAge: expiresIn * 1000,
     });
 
-   
+
     return res.redirect('/');
   }
 

@@ -239,7 +239,6 @@ export class AuthService {
     };
   }
 
-
   // -----------------------------
   // Helpers (NEW)
   // -----------------------------
@@ -287,6 +286,4 @@ export class AuthService {
       this.logger.warn(`jwt_payload_debug failed: ${(e as Error).message}`);
     }
   }
-
-
 }

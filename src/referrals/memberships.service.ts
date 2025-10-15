@@ -245,14 +245,12 @@ export class MembershipsService {
         };
     }
 
-    async getVerifiedMembership(userId: string): Promise<Membership | null> {
+    async getMembership(userId: string): Promise<Membership | null> {
         this.ensureId(userId, 'user');
 
         return this.membershipModel
             .findOne({
-                user: new Types.ObjectId(userId),
-                status: MembershipStatus.Verified,
-            })
+                user: new Types.ObjectId(userId)})
             .select('email referral accountNumbers status notes createdAt adminNotes approvedBy')
             .populate({
                 path: 'referral',
