@@ -164,7 +164,7 @@ export class RetailerService {
     }
 
     // Every 3 minutes (your log said 3m, but cron was */5)
-    @Cron('*/3 * * * *')
+    @Cron('*/1 * * * *')
     async cronRefresh() {
         const start = Date.now();
         this.log.log('RetailerService cron: FXSSI refresh tick (3m)…');
