@@ -9,8 +9,7 @@ import { RetailLatest } from './retailer.schema';
 
 // Symbols to refresh (edit as needed)
 const SYMBOLS = [
-    'XAUUSD', 'BTCUSD', 'EURUSD', 'GBPJPY',
-    'US30', 'NAS100', 'ETHUSD', 'SP500',
+    'XAUUSD', 'EURUSD', 'GBPJPY', 'US30', 'NAS100', 'SP500', 'BTCUSD', 'ETHUSD',
 ];
 
 type Signal = 'buy' | 'sell' | 'neutral' | null;
@@ -30,7 +29,7 @@ function toDateOrNull(v: unknown): Date | null {
 }
 
 // FastAPI base URL (your scraper)
-const SCRAPER_BASE = process.env.SCRAPER_BASE ?? 'http://127.0.0.1:8000';
+const SCRAPER_BASE = process.env.SCRAPER_BASE ?? 'http://3.26.210.147/:8000';
 
 
 type ScraperResponse = {
@@ -132,7 +131,7 @@ export class RetailerService {
             }
 
             const d = data.data;
-            console.log("---------",d)
+            console.log("---------", d)
             await this.upsertLatest({
                 pair: sym,
                 avgLeft: d.left_pct,
