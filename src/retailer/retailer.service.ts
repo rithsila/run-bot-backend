@@ -160,7 +160,7 @@ export class RetailerService {
   }
 
   // Every 3 minutes (update message to match)
-  @Cron('*/1 * * * *')
+  @Cron('*/5 * * * *')
   async cronRefresh() {
     const start = Date.now();
     this.log.log('RetailerService cron: FXSSI refresh tick (3m)…');
