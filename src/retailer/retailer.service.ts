@@ -132,6 +132,7 @@ export class RetailerService {
             }
 
             const d = data.data;
+            console.log("---------",d)
             await this.upsertLatest({
                 pair: sym,
                 avgLeft: d.left_pct,
@@ -159,7 +160,7 @@ export class RetailerService {
         }
     }
 
-   
+
     @Cron('*/1 * * * *')
     async cronRefresh() {
         const start = Date.now();
