@@ -114,7 +114,7 @@ export class RetailerService {
     }
 
     async getLatest() {
-        return this.latestModel.find().lean().exec();
+        return this.latestModel.find().sort({ runAt: -1 }).lean().exec();
     }
 
     async refreshOne(symbol: string): Promise<void> {
