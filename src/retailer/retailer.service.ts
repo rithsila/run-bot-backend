@@ -62,10 +62,6 @@ export class RetailerService {
         return new Promise((r) => setTimeout(r, ms));
     }
 
-    /**
-     * Upsert the "latest" record for a currency pair.
-     * Keeps only ONE document per pair in Mongo.
-     */
     async upsertLatest(params: {
         pair: string;
         avgLeft: number | null | undefined;
@@ -117,38 +113,6 @@ export class RetailerService {
         return this.latestModel.find().lean().exec();
     }
 
-    async refreshOne(symbol: string): Promise<void> {
-        const sym = symbol.toUpperCase();
-        try {
-            const { data } = await firstValueFrom(
-                this.http.get<ScraperResponse>(`${SCRAPER_BASE}/fxssi/current-ratio`, {
-                    params: { symbol: sym },
-                }),
-            );
-
-            if (!data?.ok || !data.data) {
-                throw new Error(`Scraper returned bad response for ${sym}`);
-            }
-
-            const d = data.data;
-            console.log("---------", d)
-            await this.upsertLatest({
-                pair: sym,
-                avgLeft: d.left_pct,
-                avgRight: d.right_pct,
-                signal: d.signal,
-                runAt: new Date(),
-            });
-
-            this.log.debug(
-                `${sym} refreshed: ${d.left_pct}/${d.right_pct} signal=${d.signal} rendered=${d.rendered ?? false}`,
-            );
-        } catch (err: any) {
-            this.log.warn(`refreshOne ${sym} failed: ${err?.message ?? String(err)}`);
-        }
-    }
-
-    /** Refresh multiple symbols (sequential with jitter to be polite) */
     async refreshMany(symbols: string[] = SYMBOLS): Promise<void> {
         for (let i = 0; i < symbols.length; i++) {
             const sym = symbols[i];
@@ -159,11 +123,62 @@ export class RetailerService {
         }
     }
 
+    async refreshOne(symbol: string): Promise<void> {
+        const sym = symbol.toUpperCase();
+        try {
+            const { data } = await firstValueFrom(
+                this.http.get<ScraperResponse>(`${SCRAPER_BASE}/fxssi/current-ratio`, {
+                    params: { symbol: sym },
+                    // optional: short timeout per call, since your FastAPI already has its own timeout
+                    timeout: 15000,
+                }),
+            );
 
-    @Cron('*/1 * * * *')
+            if (!data?.ok || !data.data) {
+                // Include server detail if available
+                const detail = (data as any)?.detail || 'bad payload';
+                throw new Error(`Scraper bad response for ${sym}: ${detail}`);
+            }
+
+            const d = data.data;
+            await this.upsertLatest({
+                pair: sym,
+                avgLeft: d.left_pct,
+                avgRight: d.right_pct,
+                dividerLeftPct: d.divider_left_pct ?? null,
+                signal: d.signal,
+                rowLabel: 'Average',
+                sourceUrl: d.sourceUrl,
+                fetchedAt: d.fetchedAt,
+                rendered: !!d.rendered,
+                runAt: new Date(),
+            });
+
+            this.log.debug(`${sym} refreshed: ${d.left_pct}/${d.right_pct} signal=${d.signal} rendered=${d.rendered ?? false}`);
+        } catch (err: any) {
+            // print HTTP status + body detail if Axios error
+            const status = err?.response?.status;
+            const detail = err?.response?.data?.detail ?? err?.message ?? String(err);
+            this.log.warn(`refreshOne ${sym} failed: ${status ?? ''} ${detail}`);
+        }
+    }
+
+    // Every 3 minutes (your log said 3m, but cron was */5)
+    @Cron('*/3 * * * *')
     async cronRefresh() {
         const start = Date.now();
         this.log.log('RetailerService cron: FXSSI refresh tick (3m)…');
+
+        // Optional: quick preflight health check to avoid spamming logs when scraper is down
+        try {
+            await firstValueFrom(this.http.get(`${SCRAPER_BASE}/health`, { timeout: 5000 }));
+        } catch (e: any) {
+            const status = e?.response?.status;
+            const detail = e?.response?.data?.detail ?? e?.message ?? String(e);
+            this.log.warn(`Scraper health failed: ${status ?? ''} ${detail}`);
+            return;
+        }
+
         await this.refreshMany(SYMBOLS);
         this.log.log(`RetailerService cron done in ${Date.now() - start}ms`);
     }
