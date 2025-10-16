@@ -47,7 +47,7 @@ export class AnalyzeNewsService {
                 finalThumb = up.secure_url; // <- permanent URL
             } catch (e) {
                 console.warn('[AnalyzeNews.create] thumbnail persist failed:', e);
-                finalThumb = ''; 
+                finalThumb = '';
             }
         }
 
@@ -158,7 +158,25 @@ export class AnalyzeNewsService {
         return { ok: true, id: String(deleted._id) };
     }
 
-    // --- helpers ---
+    async update(id: string, dto: CreateAnalyzeNewsDto): Promise<AnalyzeNewsLean> {
+        const _id = this.asObjectId(id, 'analysis id');
+
+
+
+
+        // Execute the update and return the fresh doc
+        const updated = await this.newsModel
+            .findOneAndUpdate(
+                { _id },
+                { dto },
+                { new: true, lean: true },
+            )
+            .lean<AnalyzeNewsLean | null>();
+
+        if (!updated) throw new NotFoundException('Analyze news not found');
+        return updated;
+    }
+
     private asObjectId(id: string, label = 'id') {
         if (!Types.ObjectId.isValid(id)) {
             throw new BadRequestException(`Invalid ${label}`);

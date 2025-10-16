@@ -28,7 +28,6 @@ async function bootstrap() {
   // ---- build origins at RUNTIME ----
   const allowedOrigins = buildAllowedOrigins([
     config.get<string>('FRONTEND_URL'),
-    config.get<string>('FRONTEND_URL_IP'),
   ]);
 
   logger.log(`[CORS] allowed origins: ${allowedOrigins.join(', ')}`);
@@ -47,8 +46,11 @@ async function bootstrap() {
 
   app.use((req, res, next) => {
     const m = req.method;
-    if (m === 'POST' || m === 'PUT' || m === 'PATCH' || m === 'DELETE') {
-      if (!req.is || !req.is('application/json')) return res.status(415).json({ message: 'Unsupported Media Type' });
+    const hasBody = Number(req.headers['content-length'] || 0) > 0;
+    if (m === 'POST' || m === 'PUT' || m === 'PATCH' || (m === 'DELETE' && hasBody)) {
+      if (hasBody && (!req.is || !req.is('application/json'))) {
+        return res.status(415).json({ message: 'Unsupported Media Type' });
+      }
     }
     next();
   });

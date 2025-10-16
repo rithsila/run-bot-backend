@@ -7,6 +7,7 @@ import {
   HttpCode,
   HttpStatus,
   Param,
+  Patch,
   Post,
   Req,
   UnauthorizedException,
@@ -22,7 +23,7 @@ import { CreateAnalyzeNewsDto } from './dto/create-analyze-news.dto';
 
 @Controller('analyze-news')
 export class AnalyzeNewsController {
-  constructor(private readonly service: AnalyzeNewsService) {}
+  constructor(private readonly service: AnalyzeNewsService) { }
 
   @Post()
   @HttpCode(HttpStatus.CREATED)
@@ -102,6 +103,29 @@ export class AnalyzeNewsController {
       path: req.url,
       code: 'DELETE_ANALYZE_NEWS',
       message: 'Success!',
+    };
+  }
+
+  @Patch(':id')
+  @HttpCode(HttpStatus.OK)
+  async update(
+    @Req() req: AuthRequest,
+    @Param('id') id: string,
+    @Body() dto: CreateAnalyzeNewsDto, // reuse Create DTO as partial
+  ): Promise<ApiSuccess<unknown>> {
+    const uid = req?.user?.userId;
+    if (!uid) throw new UnauthorizedException('AUTH_REQUIRED');
+
+    const updated = await this.service.update(id, dto);
+
+    return {
+      success: true,
+      statusCode: HttpStatus.OK,
+      timestamp: new Date().toISOString(),
+      path: req.url,
+      code: 'UPDATE_ANALYZE_NEWS',
+      message: 'Success!',
+      data: updated,
     };
   }
 }

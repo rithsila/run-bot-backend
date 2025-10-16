@@ -173,7 +173,7 @@ export class RetailerService {
   @Cron('*/5 * * * *')
   async cronRefresh() {
     const start = Date.now();
-    this.log.log('RetailerService cron: FXSSI refresh tick (3m)…');
+    this.log.log('RetailerService cron refresh tick 5m');
 
     // 1) Preflight health (skip tick if scraper is down)
     try {
@@ -222,53 +222,50 @@ export class RetailerService {
         const rightChanged = !nearlyEqual(prev?.avgRight, d.right_pct);
         const sigChanged = prevSignal !== nextSignal;
 
-        if (sigChanged || !prev) {
-          // Write only when something meaningful changed (or first insert)
-          await this.upsertLatest({
-            pair: sym,
-            avgLeft: d.left_pct,
-            avgRight: d.right_pct,
-            dividerLeftPct: d.divider_left_pct ?? null,
-            signal: nextSignal,
-            rowLabel: 'Average',
-            sourceUrl: d.sourceUrl,
-            fetchedAt: d.fetchedAt,
-            rendered: !!d.rendered,
-            runAt: new Date(),
-          });
-          changes++;
+        await this.upsertLatest({
+          pair: sym,
+          avgLeft: d.left_pct,
+          avgRight: d.right_pct,
+          dividerLeftPct: d.divider_left_pct ?? null,
+          signal: nextSignal,
+          rowLabel: 'Average',
+          sourceUrl: d.sourceUrl,
+          fetchedAt: d.fetchedAt,
+          rendered: !!d.rendered,
+          runAt: new Date(),
+        });
 
-          if (sigChanged && prev) {
-            this.log.log(
-              `[signal-change] ${sym}: ${prevSignal ?? 'null'} -> ${nextSignal ?? 'null'} ` +
-              `(L=${d.left_pct} R=${d.right_pct})`
-            );
-            const title = `Retailer changed · ${sym} · ${prevSignal?.toUpperCase()} → ${nextSignal?.toUpperCase()}`;
-            const body = `Long ${d.left_pct}% · Short ${d.right_pct}%`;
+        changes++;
 
-            const url = `/retail/latest/${sym}`;
+        if (sigChanged && prev) {
+          this.log.log(
+            `[signal-change] ${sym}: ${prevSignal ?? 'null'} -> ${nextSignal ?? 'null'} ` +
+            `(L=${d.left_pct} R=${d.right_pct})`
+          );
+          const title = `Retailer changed · ${sym} · ${prevSignal?.toUpperCase()} → ${nextSignal?.toUpperCase()}`;
+          const body = `Long ${d.left_pct}% · Short ${d.right_pct}%`;
 
-            void this.push.broadcast(
-              {
-                title,
-                body,
-                url,
-                ts: Date.now(),
-              },
-              60, // TTL seconds
-            );
+          const url = `/retail/latest/${sym}`;
 
-          } else if (!prev) {
-            this.log.debug(`[signal-init] ${sym}: ${nextSignal ?? 'null'} (first record)`);
-          } else {
-            this.log.debug(`[update] ${sym}: ${[
-              leftChanged && 'avgLeft',
-              rightChanged && 'avgRight',
-            ].filter(Boolean).join(', ')} changed`);
-          }
+          void this.push.broadcast(
+            {
+              title,
+              body,
+              url,
+              ts: Date.now(),
+            },
+            60, // TTL seconds
+          );
+
+        } else if (!prev) {
+          this.log.debug(`[signal-init] ${sym}: ${nextSignal ?? 'null'} (first record)`);
         } else {
-          this.log.debug(`[no-change] ${sym}`);
+          this.log.debug(`[update] ${sym}: ${[
+            leftChanged && 'avgLeft',
+            rightChanged && 'avgRight',
+          ].filter(Boolean).join(', ')} changed`);
         }
+        
       } catch (err: any) {
         const status = err?.response?.status;
         const detail = err?.response?.data?.detail ?? err?.message ?? String(err);
