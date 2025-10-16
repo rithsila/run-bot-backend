@@ -18,6 +18,7 @@ import { CreatePlanDto } from './dto/create-plan.dto';
 @Controller('plan')
 @UsePipes(new ValidationPipe({ transform: true, whitelist: true }))
 export class PlanController {
+    
     constructor(private readonly plans: PlanService) { }
 
     @Post()

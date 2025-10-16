@@ -20,8 +20,8 @@ export interface ListPlansOptions {
     q?: string;               // full-text search on title/description/features
     minPrice?: number;
     maxPrice?: number;
-    sortBy?: SortField;       // default 'createdAt'
-    order?: SortOrder;        // 1 asc, -1 desc; default -1
+    sortBy?: SortField;
+    order?: SortOrder;
 }
 
 @Injectable()
@@ -49,7 +49,6 @@ export class PlanService {
                 'A plan with the same title, billing period, and category already exists',
             );
         }
-
         const doc = new this.planModel({
             ...dto,
             title: dto.title?.trim(),

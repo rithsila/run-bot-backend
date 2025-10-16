@@ -5,7 +5,6 @@ import { PlanCategory } from './plan.enum';
 
 export type PlanDocument = Plan & Document;
 
-
 @Schema({ timestamps: true })
 export class Plan {
     @Prop({ type: String, required: true, trim: true, maxlength: 120 })
@@ -23,6 +22,9 @@ export class Plan {
     @Prop({ type: String, required: true, trim: true, maxlength: 500 })
     paymentUrl!: string;
 
+    @Prop({ type: String })
+    discountUrl!: string;
+
     @Prop({ type: String, enum: Object.values(PlanCategory), required: true })
     category!: PlanCategory;
 
@@ -31,6 +33,10 @@ export class Plan {
 
     @Prop({ type: String, default: '', trim: true, maxlength: 80 })
     marketingTagline!: string;
+
+    /** Whether this plan accepts coupon codes at checkout */
+    @Prop({ type: Boolean, default: true })
+    allowCoupons!: boolean;
 }
 
 export const PlanSchema = SchemaFactory.createForClass(Plan);

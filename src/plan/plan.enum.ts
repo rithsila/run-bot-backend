@@ -3,3 +3,8 @@ export enum PlanCategory {
     Course = 'Course',
     VPS = 'VPS',
 }
+
+export enum CouponStatus {
+    Active = 'Active',
+    Expired = 'Expired',
+}

@@ -52,14 +52,14 @@ export class CreatePlanDto {
     @trim()
     paymentUrl!: string;
 
+    @IsString()
+    @IsOptional()
+    discountUrl: string;
+
     /** category – service type (Indicator, Course, VPS, Bot) */
     @IsEnum(PlanCategory)
     category!: PlanCategory;
 
-    /**
-     * features – single string (comma- or newline-separated)
-     * Keep as one string to match schema; you can split in service layer if needed.
-     */
     @IsString()
     @IsOptional()
     @MaxLength(4000)
@@ -72,4 +72,7 @@ export class CreatePlanDto {
     @MaxLength(80)
     @trim()
     marketingTagline?: string;
+    
+    @IsOptional()
+    allowCoupons?: boolean
 }
