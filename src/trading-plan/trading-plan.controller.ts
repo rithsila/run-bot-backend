@@ -7,6 +7,7 @@ import {
     HttpCode,
     HttpStatus,
     Param,
+    Patch,
     Post,
     Req,
     UnauthorizedException,
@@ -78,6 +79,29 @@ export class TradingPlanController {
             timestamp: new Date().toISOString(),
             path: req.url,
             code: 'GET_TRADING_PLAN',
+            message: 'Success!',
+            data: plan,
+        };
+    }
+
+    @Patch(':id')
+    @HttpCode(HttpStatus.OK)
+    @UsePipes(new ValidationPipe({ whitelist: true, forbidNonWhitelisted: true }))
+    async update(
+        @Req() req: AuthRequest,
+        @Param('id') id: string,
+        @Body() dto: CreateTradingPlanDto,
+    ): Promise<ApiSuccess<unknown>> {
+        const uid = req?.user?.userId;
+        if (!uid) throw new UnauthorizedException('AUTH_REQUIRED');
+
+        const plan = await this.service.update(id, dto);
+        return {
+            success: true,
+            statusCode: HttpStatus.OK,
+            timestamp: new Date().toISOString(),
+            path: req.url,
+            code: 'UPDATE_TRADING_PLAN',
             message: 'Success!',
             data: plan,
         };

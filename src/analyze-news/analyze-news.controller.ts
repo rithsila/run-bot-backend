@@ -115,7 +115,6 @@ export class AnalyzeNewsController {
   ): Promise<ApiSuccess<unknown>> {
     const uid = req?.user?.userId;
     if (!uid) throw new UnauthorizedException('AUTH_REQUIRED');
-
     const updated = await this.service.update(id, dto);
 
     return {

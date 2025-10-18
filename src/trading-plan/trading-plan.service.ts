@@ -141,6 +141,35 @@ export class TradingPlanService {
 
     return { ok: true, id: String(deleted._id) };
   }
+
+  async update(planId: string, dto: CreateTradingPlanDto) {
+    if (!Types.ObjectId.isValid(planId)) {
+      throw new BadRequestException('Invalid trading plan id');
+    }
+
+
+    const updated = await this.planModel
+      .findByIdAndUpdate(planId, {
+        pair: dto?.pair,
+        direction: dto?.direction,
+        description: dto?.description,
+        thumbnailUrl: dto?.thumbnailUrl,
+        tradingViewId: dto?.tradingViewId
+      }, { new: true, runValidators: true })
+      .lean<TradingPlanLean>()
+      .exec();
+
+    if (!updated) {
+      throw new NotFoundException('Trading plan not found');
+    }
+
+    // Optional: publish any badges/updates on edit as well
+    this.realtime.publishBadge('trading-plans');
+
+    return updated;
+  }
+
+
   // --- helpers ---
   private asObjectId(id: string) {
     if (!Types.ObjectId.isValid(id)) {

@@ -158,20 +158,36 @@ export class AnalyzeNewsService {
         return { ok: true, id: String(deleted._id) };
     }
 
-    async update(id: string, dto: CreateAnalyzeNewsDto): Promise<AnalyzeNewsLean> {
+    async update(id: string, dto: CreateAnalyzeNewsDto) {
         const _id = this.asObjectId(id, 'analysis id');
 
+        let finalThumb = (dto.thumbnailUrl ?? '').trim();
 
+        if (finalThumb) {
+            try {
+                const up = await this.img.uploadFromUrl(finalThumb, {
+                    folder: 'analyze-news',
+                });
+                finalThumb = up.secure_url; // <- permanent URL
+            } catch (e) {
+                console.warn('[AnalyzeNews.create] thumbnail persist failed:', e);
+                finalThumb = '';
+            }
+        }
 
-
-        // Execute the update and return the fresh doc
+      
         const updated = await this.newsModel
-            .findOneAndUpdate(
-                { _id },
-                { dto },
+            .findByIdAndUpdate(_id,
+                {
+                    title: dto?.title,
+                    description: dto?.description,
+                    pair: dto?.pair,
+                    impact: dto?.impact,
+                    thumbnailUrl: finalThumb
+                },
                 { new: true, lean: true },
             )
-            .lean<AnalyzeNewsLean | null>();
+    
 
         if (!updated) throw new NotFoundException('Analyze news not found');
         return updated;
