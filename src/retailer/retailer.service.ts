@@ -133,7 +133,7 @@ export class RetailerService {
       const { data } = await firstValueFrom(
         this.http.get<ScraperResponse>(url, {
           params: { symbol: sym },
-          timeout: 15_000, // ms
+          timeout: 5_000, // ms
         }),
       );
 
@@ -208,7 +208,7 @@ export class RetailerService {
         const { data } = await firstValueFrom(
           this.http.get<ScraperResponse>(`${SCRAPER_BASE.replace(/\/+$/, '')}/fxssi/current-ratio`, {
             params: { symbol: sym },
-            timeout: 15_000,
+            timeout: 5_000,
           }),
         );
         if (!data?.ok || !data.data) {

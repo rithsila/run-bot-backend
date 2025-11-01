@@ -16,7 +16,7 @@ import { RealtimeModule } from 'src/real-time/real-time.module';
     ]),
     ScheduleModule.forRoot(),
     HttpModule.register({
-      timeout: 15_000,
+      timeout: 5_000,
       maxRedirects: 2,
       headers: {
         'User-Agent':
