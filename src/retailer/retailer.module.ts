@@ -7,13 +7,13 @@ import { RetailerController } from './retailer.controller';
 import { RetailerService } from './retailer.service';
 import { RetailLatest, RetailLatestSchema } from './retailer.schema';
 import { WebPushSubModule } from 'src/web-push-sub/web-push-sub.module';
+import { RealtimeModule } from 'src/real-time/real-time.module';
 
 @Module({
   imports: [
     MongooseModule.forFeature([
       { name: RetailLatest.name, schema: RetailLatestSchema },
     ]),
-
     ScheduleModule.forRoot(),
     HttpModule.register({
       timeout: 15_000,
@@ -24,7 +24,8 @@ import { WebPushSubModule } from 'src/web-push-sub/web-push-sub.module';
         Accept: 'application/json,text/*,*/*;q=0.9',
       },
     }),
-    WebPushSubModule
+    WebPushSubModule,
+    RealtimeModule
   ],
   controllers: [RetailerController],
   providers: [

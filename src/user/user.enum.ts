@@ -5,3 +5,10 @@ export enum Role {
     Creator = 'Creator',
     User = "User"
 }
+
+export enum AffiliatesStatus {
+    Request = 'Request',
+    Verified = 'Verified',
+    Rejected = 'Rejected',
+    Ended = 'Ended',
+}

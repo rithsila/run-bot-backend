@@ -1,19 +1,13 @@
-// src/coupons/dto/create-coupon.dto.ts
-import { IsEnum, IsNumber, IsOptional, IsString, Min } from 'class-validator';
-import { CouponStatus } from '../plan.enum';
+import { Transform } from 'class-transformer';
+import {
+  IsString,
+  Length,
+} from 'class-validator';
 
 export class CreateCouponDto {
-  @IsString()
-  owner!: string;
 
   @IsString()
+  @Length(4, 6, { message: 'Code must be 4–6 characters' })
+  @Transform(({ value }) => String(value).trim().toUpperCase())
   code!: string;
-
-  @IsNumber()
-  @Min(0)
-  discount!: number;
-
-  @IsOptional()
-  @IsEnum(CouponStatus)
-  status?: CouponStatus;
 }

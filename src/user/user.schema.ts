@@ -2,7 +2,7 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { HydratedDocument } from 'mongoose';
 import paginate from 'mongoose-paginate-v2';
-import { Role } from './roles.enum';
+import { AffiliatesStatus, Role } from './user.enum';
 import { SignInMethod } from '../auth/signin-method.enum';
 
 export type UserDocument = HydratedDocument<User>;
@@ -55,6 +55,9 @@ export class User {
   @Prop({ type: Boolean, default: false })
   emailVerified?: boolean;
 
+  @Prop({ type: String, enum: AffiliatesStatus })
+  affiliates?: AffiliatesStatus
+
   @Prop()
   photoURL?: string;
 
@@ -93,7 +96,7 @@ export class User {
 export const UserSchema = SchemaFactory.createForClass(User);
 
 // ---------- Plugins ----------
-UserSchema.plugin(paginate); // <-- enable mongoose-paginate-v2
+UserSchema.plugin(paginate); 
 
 // ---------- Middleware ----------
 UserSchema.pre('validate', function (next) {
@@ -101,11 +104,9 @@ UserSchema.pre('validate', function (next) {
   if (this.lastName) this.lastName = this.lastName.trim();
   if (this.email) this.email = this.email.trim().toLowerCase();
 
-  // Keep emailCanonical in sync. Replace with your smarter canonicalizer if you have one.
   const raw = (this as any).email as string | undefined;
   if (raw) {
-    // const canon = canonicalizeEmail(raw); // preferred if you have it
-    const canon = raw; // simple mirror; replace with real canonicalization logic if desired
+    const canon = raw; 
     (this as any).emailCanonical = canon;
   }
   next();

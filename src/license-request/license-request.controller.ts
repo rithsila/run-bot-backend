@@ -25,6 +25,7 @@ import { Throttle } from '@nestjs/throttler';
 import { CreateLicenseRequestDto } from './dto/create-license-request.dto';
 import { LicenseRequestsPaginateDto } from './dto/license-requests-paginate.dto';
 import { AdminUpdateLicenseRequestDto } from './dto/admin-update-license-request.dto';
+import { Types } from 'mongoose';
 
 export type LicenseRequestLean = Record<string, any>;
 type LicenseRequestPage = PaginatedResult<LicenseRequestLean>;
@@ -45,7 +46,7 @@ export class LicenseRequestController {
         const uid = req?.user?.userId;
         if (!uid) throw new UnauthorizedException('AUTH_REQUIRED');
 
-        await this.service.requestLicense(uid, dto);
+        await this.service.requestLicense(new Types.ObjectId(uid), dto);
 
         return {
             success: true,
@@ -82,7 +83,7 @@ export class LicenseRequestController {
         const uid = req?.user?.userId;
         if (!uid) throw new UnauthorizedException('AUTH_REQUIRED');
 
-        const data = await this.service.myLicenseRequest(uid);
+        const data = await this.service.myLicenseRequest(new Types.ObjectId(uid));
         return {
             success: true,
             statusCode: HttpStatus.OK,
@@ -92,10 +93,10 @@ export class LicenseRequestController {
         };
     }
 
-    
+
     @Patch('status/:id')
     async adminUpdateById(
-        @Param('id') id: string,
+        @Param('id') id: Types.ObjectId,
         @Body(new ValidationPipe({
             transform: true,
             whitelist: true,

@@ -1,10 +1,9 @@
 // src/analyze-news/analyze-news.service.ts
 import {
-    BadRequestException,
     Injectable,
     NotFoundException,
 } from '@nestjs/common';
-import { InjectModel } from '@nestjs/mongoose';
+import { InjectModel, ParseObjectIdPipe } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 
 import { AnalyzeNews, AnalyzeNewsDocument } from './analyze-news.schema';
@@ -12,6 +11,7 @@ import { CreateAnalyzeNewsDto } from './dto/create-analyze-news.dto';
 import { WebPushSubService } from 'src/web-push-sub/web-push-sub.service';
 import { Direction } from 'src/trading-plan/trading-plan.enum';
 import { PersistImageService } from 'src/common/persist-image.service';
+import { RealtimeGateway } from 'src/real-time/realtime.gateway';
 
 export type AnalyzeNewsLean = {
     _id: Types.ObjectId;
@@ -32,6 +32,7 @@ export class AnalyzeNewsService {
         private readonly newsModel: Model<AnalyzeNewsDocument>,
         private readonly push: WebPushSubService,
         private readonly img: PersistImageService,
+        private readonly realtime: RealtimeGateway
     ) { }
 
     async create(dto: CreateAnalyzeNewsDto) {
@@ -83,8 +84,9 @@ export class AnalyzeNewsService {
                     }
                 }
 
-                // IMPORTANT: use payload (NOT raw dto)
+
                 const [doc] = await this.newsModel.create([payload], { session });
+
 
                 created = await this.newsModel
                     .findById(doc._id)
@@ -137,6 +139,8 @@ export class AnalyzeNewsService {
             60,
         );
 
+        this.realtime.publishBadge('news');
+
         return created;
     }
 
@@ -144,22 +148,20 @@ export class AnalyzeNewsService {
         return this.newsModel.find({}).sort({ createdAt: -1 }).lean<AnalyzeNewsLean[]>();
     }
 
-    async findById(id: string) {
-        const _id = this.asObjectId(id, 'analysis id');
+    async findById(_id: Types.ObjectId) {
         const doc = await this.newsModel.findById(_id).lean<AnalyzeNewsLean | null>();
         if (!doc) throw new NotFoundException('Analyze news not found');
         return doc;
     }
 
-    async remove(id: string) {
-        const _id = this.asObjectId(id, 'analysis id');
+    async remove(_id: Types.ObjectId) {
         const deleted = await this.newsModel.findOneAndDelete({ _id }).lean<AnalyzeNewsLean | null>();
         if (!deleted) throw new NotFoundException('Analyze news not found');
         return { ok: true, id: String(deleted._id) };
     }
 
-    async update(id: string, dto: CreateAnalyzeNewsDto) {
-        const _id = this.asObjectId(id, 'analysis id');
+    async update(_id: Types.ObjectId, dto: CreateAnalyzeNewsDto) {
+
 
         let finalThumb = (dto.thumbnailUrl ?? '').trim();
 
@@ -175,7 +177,7 @@ export class AnalyzeNewsService {
             }
         }
 
-      
+
         const updated = await this.newsModel
             .findByIdAndUpdate(_id,
                 {
@@ -187,16 +189,10 @@ export class AnalyzeNewsService {
                 },
                 { new: true, lean: true },
             )
-    
+
 
         if (!updated) throw new NotFoundException('Analyze news not found');
         return updated;
     }
 
-    private asObjectId(id: string, label = 'id') {
-        if (!Types.ObjectId.isValid(id)) {
-            throw new BadRequestException(`Invalid ${label}`);
-        }
-        return new Types.ObjectId(id);
-    }
 }

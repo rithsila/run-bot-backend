@@ -6,7 +6,7 @@ import { Model, Types } from 'mongoose';
 import pLimit from 'p-limit';
 import webpush, { PushSubscription } from 'web-push';
 import { WebPushSub, WebPushSubDocument } from './web-push-sub.schema';
-import { Role } from 'src/user/roles.enum';
+import { Role } from 'src/user/user.enum';
 import { User, UserDocument } from 'src/user/user.schema';
 
 

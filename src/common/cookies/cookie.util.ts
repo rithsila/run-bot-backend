@@ -7,9 +7,9 @@ export function cookieBase(): CookieOptions {
   const domain = process.env.COOKIE_DOMAIN || undefined;
 
   return {
-    sameSite: isProd ? "none" : "lax", // ✅ must be 'none' in prod for OAuth
-    secure: isProd,                    // ✅ required with SameSite=None
-    httpOnly: true,                    // you override to false for XSRF cookie where needed
+    sameSite: isProd ? "none" : "lax", 
+    secure: isProd,                   
+    httpOnly: true,                   
     path: "/",
     ...(domain ? { domain } : {}),
   };

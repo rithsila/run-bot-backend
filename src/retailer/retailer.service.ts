@@ -7,6 +7,7 @@ import { HttpService } from '@nestjs/axios';
 import { firstValueFrom } from 'rxjs';
 import { RetailLatest } from './retailer.schema';
 import { WebPushSubService } from 'src/web-push-sub/web-push-sub.service';
+import { RealtimeGateway } from 'src/real-time/realtime.gateway';
 
 // Symbols to refresh
 const SYMBOLS = ['XAUUSD', 'EURUSD', 'GBPJPY', 'US30', 'NAS100', 'SP500', 'BTCUSD', 'ETHUSD'];
@@ -66,6 +67,7 @@ export class RetailerService {
     private readonly latestModel: Model<RetailLatest>,
     private readonly http: HttpService,
     private readonly push: WebPushSubService,
+    private readonly realtime: RealtimeGateway
   ) { }
 
   private sleep(ms: number) {
@@ -116,6 +118,8 @@ export class RetailerService {
       },
       { upsert: true },
     ).exec();
+    this.realtime.publishBadge('retailer');
+
   }
 
   async getLatest() {
@@ -265,7 +269,7 @@ export class RetailerService {
             rightChanged && 'avgRight',
           ].filter(Boolean).join(', ')} changed`);
         }
-        
+
       } catch (err: any) {
         const status = err?.response?.status;
         const detail = err?.response?.data?.detail ?? err?.message ?? String(err);

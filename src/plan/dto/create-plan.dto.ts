@@ -11,7 +11,7 @@ import {
     MaxLength,
     Min,
 } from 'class-validator';
-import { PlanCategory } from '../plan.enum';
+import { PlanCategory, PlanProducts } from '../plan.enum';
 
 const trim = () =>
     Transform(({ value }) =>
@@ -62,6 +62,11 @@ export class CreatePlanDto {
 
     @IsString()
     @IsOptional()
+    product?: string;
+
+
+    @IsString()
+    @IsOptional()
     @MaxLength(4000)
     @trim()
     features?: string;
@@ -72,7 +77,7 @@ export class CreatePlanDto {
     @MaxLength(80)
     @trim()
     marketingTagline?: string;
-    
+
     @IsOptional()
     allowCoupons?: boolean
 }

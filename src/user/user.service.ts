@@ -4,17 +4,21 @@ import {
   ConflictException,
   Injectable,
   Logger,
+  NotFoundException,
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
-import { Model, Types } from 'mongoose';
+import { FilterQuery, PaginateModel, PaginateOptions, PaginateResult, Types } from 'mongoose';
 import * as argon2 from 'argon2';
 import { promises as dns } from 'dns';
 import { SignupMeta, User, UserDocument } from './user.schema';
 import { SignInMethod } from '../auth/signin-method.enum';
 import { setTimeout as delay } from 'timers/promises';
 import { canonicalizeEmail, maskEmail } from 'src/common/utils/email.util';
-import { Role } from './roles.enum';
+import { UserQueryDto } from './dto/user-query.dto';
+import { UpdateUserAffiliatesDto } from './dto/update-user-affiliates.dto';
+import { AdminSetPasswordDto } from './dto/admin-set-password.dto';
 
+type UserPaginateModel = PaginateModel<UserDocument>;
 
 @Injectable()
 export class UserService {
@@ -28,8 +32,8 @@ export class UserService {
     'user.com',
     'test.com',
   ]);
+  constructor(@InjectModel(User.name) private readonly model: UserPaginateModel,
 
-  constructor(@InjectModel(User.name) private readonly model: Model<UserDocument>
   ) { }
 
   // -------------------------
@@ -52,7 +56,6 @@ export class UserService {
     this.logger.debug(`Looking up user by email=${maskEmail(norm)}`);
     return this.model.findOne({ email: norm }).lean();
   }
-
 
 
   async getAuthForLoginByEmail(email: string) {
@@ -124,7 +127,7 @@ export class UserService {
     await user.save();
     return user;
   }
-  
+
 
   async recordFailedLogin(
     userId: string,
@@ -178,6 +181,111 @@ export class UserService {
         { new: false },
       ).lean();
     }
+  }
+
+  async paginate(query: UserQueryDto): Promise<PaginateResult<UserDocument>> {
+    const { q, affiliates, role, page = 1, limit = 10 } = query;
+
+    const filter: FilterQuery<UserDocument> = {};
+
+    if (q && q.trim()) {
+      const rx = new RegExp(this.escapeRegex(q.trim()), 'i');
+      filter.$or = [{ firstName: rx }, { lastName: rx }, { email: rx }];
+    }
+
+    if (affiliates) filter.affiliates = affiliates;
+    if (role) filter.role = role; // ✅ add role filter
+
+    const options: PaginateOptions = {
+      page,
+      limit,
+      sort: { createdAt: -1 },
+      lean: true,
+      leanWithId: false,
+      select: [
+        'firstName',
+        'lastName',
+        'email',
+        'emailVerified',
+        'affiliates',
+        'photoURL',
+        'role',
+        'lastActiveAt',
+        'lastLoginAt',
+        'failedLoginAttempts',
+        'lockedUntil',
+        'passwordChangedAt',
+        'createdAt',
+        'updatedAt',
+      ].join(' '),
+    };
+
+    return this.model.paginate(filter, options);
+  }
+
+
+  async deleteById(id: string | Types.ObjectId): Promise<void> {
+    if (!Types.ObjectId.isValid(String(id))) {
+      throw new NotFoundException('User not found');
+    }
+
+    const deleted = await this.model.findByIdAndDelete(id);
+    if (!deleted) throw new NotFoundException('User not found');
+  }
+
+  async updateAffiliates(id: string, dto: UpdateUserAffiliatesDto): Promise<void> {
+    if (!Types.ObjectId.isValid(id)) throw new BadRequestException('Invalid user id');
+
+    const update: Record<string, any> = { affiliates: dto.affiliates };
+
+
+    const res = await this.model.updateOne({ _id: id }, { $set: update }).lean();
+    if (res.matchedCount === 0) throw new NotFoundException('User not found');
+  }
+
+  async adminSetPassword(targetUserId: string, dto: AdminSetPasswordDto): Promise<void> {
+    if (!Types.ObjectId.isValid(targetUserId)) {
+      throw new BadRequestException('Invalid user id');
+    }
+
+    const user = await this.model
+      .findById(targetUserId)
+      .select('_id email +passwordHash')
+      .lean();
+
+    if (!user) throw new NotFoundException('User not found');
+
+    // prevent reusing the same password
+    if ((user as any).passwordHash) {
+      const isSame = await argon2.verify((user as any).passwordHash, dto.password);
+      if (isSame) {
+        throw new BadRequestException('New password must be different from the current password');
+      }
+    }
+
+    const newHash = await argon2.hash(dto.password, {
+      type: argon2.argon2id,
+      memoryCost: 2 ** 16,
+      timeCost: 3,
+      parallelism: 1,
+    });
+
+    await this.model.updateOne(
+      { _id: targetUserId },
+      {
+        $set: {
+          passwordHash: newHash,
+          passwordChangedAt: new Date(),
+          signInMethod: SignInMethod.Password,
+          failedLoginAttempts: 0,
+          lockedUntil: null,
+        },
+      },
+    ).lean();
+  }
+
+  private escapeRegex(s: string) {
+    return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   }
 
   // -------------------------
@@ -319,13 +427,5 @@ export class UserService {
     return doc ? this.toPublicUser(doc) : null;
   }
 
-  async findCreators() {
 
-    return this.model
-      .find({ role: Role.Creator })
-      .sort({ createdAt: -1 })
-      .select('-passwordHash') // extra safety; it's select:false already
-      .lean()
-      .exec();
-  }
 }
