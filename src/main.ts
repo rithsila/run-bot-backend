@@ -15,10 +15,9 @@ import hpp from 'hpp';
 import compression from 'compression';
 import { buildAllowedOrigins } from './common/security/origin';
 import { SocketIoAdapter } from './real-time/socketio.adapter';
-import { bypassCorsFor } from './common/cors/bypass-cors.util';
+import { RequiredHeadersMiddleware } from './middleware/required-headers.middleware';
 
 async function bootstrap() {
-
   const app = await NestFactory.create<NestExpressApplication>(AppModule, { bufferLogs: true });
 
   app.useLogger(app.get(PinoLogger));
@@ -32,6 +31,22 @@ async function bootstrap() {
 
   logger.log(`[CORS] allowed origins: ${allowedOrigins.join(', ')}`);
 
+  app.enableCors({
+    origin: allowedOrigins,
+    credentials: true,
+    methods: ['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+    allowedHeaders: [
+      'content-type', 'accept', 'authorization',
+      'x-csrf-token', 'x-client-device-id', 'x-device-id', 'x-device-hash',
+      'x-internal-signature', 'x-internal-timestamp',
+      'x-idempotency-key', 'idempotency-key', 'x-api-key',
+      'x-request-id', 
+    ],
+    optionsSuccessStatus: 204,
+    maxAge: 86400,
+  });
+
+  // WebSocket adapter (after CORS config)
   const wsAdapter = new SocketIoAdapter(app, allowedOrigins);
   await wsAdapter.connectToRedisIfNeeded();
   app.useWebSocketAdapter(wsAdapter);
@@ -39,8 +54,12 @@ async function bootstrap() {
   app.set('trust proxy', 1);
   app.useGlobalFilters(new HttpErrorFilter());
 
+  // ---- Body parsers (must come before any middleware that inspects body/cookies) ----
   const express = app.getHttpAdapter().getInstance();
-  express.use('/retailer', bodyParser.json({ limit: '1mb', verify: (req: any, _r, buf) => { req.rawBody = buf; } }));
+  express.use(
+    '/retailer',
+    bodyParser.json({ limit: '1mb', verify: (req: any, _r, buf) => { req.rawBody = buf; } }),
+  );
   app.use(bodyParser.json({ limit: '64kb', verify: (req: any, _res, buf) => { req.rawBody = buf; } }));
   app.use(bodyParser.urlencoded({ extended: false, limit: '16kb', verify: (req: any, _res, buf) => { req.rawBody = buf; } }));
 
@@ -55,6 +74,7 @@ async function bootstrap() {
     next();
   });
 
+  // Global validation
   app.useGlobalPipes(new ValidationPipe({
     whitelist: true,
     forbidNonWhitelisted: true,
@@ -63,36 +83,21 @@ async function bootstrap() {
     validationError: { target: false, value: false },
   }));
 
+  // Security / hardening
   app.use(helmet({ contentSecurityPolicy: false, crossOriginEmbedderPolicy: false }));
   app.use(hpp());
   app.use(compression({ threshold: '1kb' }));
   app.use(cookieParser());
 
+  // ✅ Global required headers (placed AFTER parsers, BEFORE everything else)
+  app.use(new RequiredHeadersMiddleware().use);
+
   app.disable('x-powered-by');
   app.set('etag', 'strong');
 
-  // ---- HTTP CORS: use the ARRAY (no callback, no throws) ----
-  app.enableCors({
-    origin: allowedOrigins,
-    credentials: true,
-    methods: ['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-    allowedHeaders: [
-      'content-type', 'accept', 'authorization',
-      'x-csrf-token', 'x-client-device-id', 'x-device-id', 'x-device-hash',
-      'x-internal-signature', 'x-internal-timestamp',
-      'x-idempotency-key', 'idempotency-key', 'x-api-key',
-    ],
-    optionsSuccessStatus: 204,
-    maxAge: 86400,
-  });
-
-  bypassCorsFor(app, [
-    '/retailer',          // if your controller is @Controller('retailer')
-    // '/webhook/retailer' // use this instead if your path is /webhook/retailer
-  ]);
-
   app.enableShutdownHooks();
 
+  // ---- Redis health ping (non-fatal) ----
   try {
     const redis = app.get<Redis>(REDIS);
     const pong = await redis.ping();

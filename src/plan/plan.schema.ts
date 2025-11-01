@@ -1,7 +1,7 @@
 // src/plans/plan.schema.ts
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { Document } from 'mongoose';
-import { PlanCategory } from './plan.enum';
+import { PlanCategory, PlanProducts } from './plan.enum';
 
 export type PlanDocument = Plan & Document;
 
@@ -27,6 +27,9 @@ export class Plan {
 
     @Prop({ type: String, enum: Object.values(PlanCategory), required: true })
     category!: PlanCategory;
+
+    @Prop({ type: String, enum: Object.values(PlanProducts) })
+    product?: string;
 
     @Prop({ type: String, default: '', maxlength: 4000 })
     features!: string;

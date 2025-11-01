@@ -35,6 +35,7 @@ import { cookieBase } from 'src/common/cookies/cookie.util';
 import { TurnstileGuard } from 'src/turnstile/turnstile.guard';
 import { TurnstileAction } from 'src/turnstile/turnstile.decorator';
 import { MembershipsService } from 'src/referrals/memberships.service';
+import { MembershipStatus } from 'src/referrals/memberships.enum';
 
 @Controller('auth')
 export class AuthController {
@@ -166,7 +167,6 @@ export class AuthController {
     const user = await this.users.findById(uid);
     if (!user) throw new UnauthorizedException('USER_NOT_FOUND');
 
-    const membership = await this.membership.getMembership(uid);
 
     // Build a plain payload — avoid spreading a Document
     const data: PublicUser = {
@@ -177,7 +177,6 @@ export class AuthController {
       role: user?.role,
       emailVerified: false,
       photoURL: user.photoURL,
-      isMembership: membership?.status,
     };
 
     return {

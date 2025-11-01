@@ -2,49 +2,53 @@
 import {
     Body,
     Controller,
-    Delete,
     Get,
     HttpCode,
-    HttpStatus,
+    NotFoundException,
     Param,
-    Patch,
     Post,
+    Req,
+    UnauthorizedException,
     UsePipes,
     ValidationPipe,
 } from '@nestjs/common';
 import { CouponService } from './coupon.service';
 import { CreateCouponDto } from './dto/create-coupon.dto';
+import { Coupon } from './coupon.schema';
+import type { AuthRequest } from 'src/common/types/auth-request.type';
+import { Types } from 'mongoose';
 
-@Controller('coupon')
+@Controller('coupons')
 @UsePipes(new ValidationPipe({ transform: true, whitelist: true }))
 export class CouponController {
-    constructor(private readonly coupons: CouponService) { }
 
-    @Post()
-    @HttpCode(HttpStatus.CREATED)
-    create(@Body() dto: CreateCouponDto) {
-        return this.coupons.create(dto);
+    constructor(private readonly couponService: CouponService) { }
+
+    @Post('upsert')
+    @HttpCode(200)
+    async upsertByCode(@Req() req: AuthRequest, @Body() dto: CreateCouponDto): Promise<Coupon> {
+
+        const ownerId = req?.user?.userId;
+        if (!ownerId) throw new UnauthorizedException('AUTH_REQUIRED');
+
+        return this.couponService.upsertByCode(new Types.ObjectId(ownerId), dto);
     }
 
-    @Get()
-    list() {
-        return this.coupons.findAll();
+    @Post('find')
+    async findByCode(@Body('code') code: string): Promise<Coupon> {
+        const coupon = await this.couponService.findByCode(code);
+        if (!coupon) {
+            throw new NotFoundException('Coupon not found');
+        }
+        return coupon;
     }
 
-    @Post('code')
-    @HttpCode(HttpStatus.OK)
-    getByCode(@Body('code') code: string) {
-        return this.coupons.findByCode(code);
-    }
-
-    @Patch(':id')
-    update(@Param('id') id: string, @Body() dto: CreateCouponDto) {
-        return this.coupons.update(id, dto);
-    }
-
-    @Delete(':id')
-    @HttpCode(HttpStatus.NO_CONTENT)
-    async remove(@Param('id') id: string) {
-        await this.coupons.remove(id);
+    @Get('me')
+    async getMyCoupon(@Req() req: AuthRequest): Promise<Coupon | null> {
+        const userId = req?.user?.userId;
+        if (!userId) throw new NotFoundException('Missing user id');
+        const coupon = await this.couponService.findByOwner(userId);
+        if (!coupon) throw new NotFoundException('You have no coupon yet');
+        return coupon;
     }
 }

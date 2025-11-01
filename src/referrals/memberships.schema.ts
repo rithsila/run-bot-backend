@@ -1,4 +1,3 @@
-// src/memberships/schemas/membership.schema.ts
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { Document, Schema as MongooseSchema } from 'mongoose';
 import paginate from 'mongoose-paginate-v2';
@@ -26,16 +25,31 @@ export class Membership {
   referral!: string;
 
   @Prop({
-    type: [{ type: String, trim: true, maxlength: 50 }],
-    default: [],
-    validate: {
-      validator: (arr: string[]) =>
-        Array.isArray(arr) &&
-        arr.every((s) => typeof s === 'string' && /^[A-Za-z0-9._-]{3,50}$/.test(s.trim())),
-      message: 'Each account number must be 3–50 chars, alphanumeric plus . _ - only.',
-    },
+    type: String,
+    trim: true,
+    maxlength: 60,
+    match: [/^[A-Za-z0-9._-]{1,60}$/, 'Invalid Sn1p3r Concept account'],
+    index: true,
   })
-  accountNumbers!: string[];
+  sn1p3rConceptAccount?: string;
+
+  @Prop({
+    type: String,
+    trim: true,
+    maxlength: 60,
+    match: [/^[A-Za-z0-9._-]{1,60}$/, 'Invalid Risk Manager account'],
+    index: true,
+  })
+  riskManagerAccount?: string;
+
+  @Prop({
+    type: String,
+    trim: true,
+    maxlength: 60,
+    match: [/^[A-Za-z0-9._-]{1,60}$/, 'Invalid Sn1p3r Shot account'],
+    index: true,
+  })
+  sn1p3rShotAccount?: string;
 
   @Prop({ type: String, enum: MembershipStatus, default: MembershipStatus.Request, index: true })
   status!: MembershipStatus;
@@ -43,13 +57,11 @@ export class Membership {
   @Prop({ type: String, trim: true, maxlength: 2000 })
   notes?: string;
 
-  @Prop({ type: String, maxlength: 2000, default: '' })
-  adminNotes?: string;
-
   @Prop({ type: MongooseSchema.Types.ObjectId, ref: 'User' })
   approvedBy?: MongooseSchema.Types.ObjectId;
 }
 
 export const MembershipSchema = SchemaFactory.createForClass(Membership);
-
 MembershipSchema.plugin(paginate);
+MembershipSchema.index({ user: 1 }, { unique: true });
+MembershipSchema.index({ email: 1 }, { unique: true });

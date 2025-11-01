@@ -26,10 +26,8 @@ import { LoggerModule } from 'nestjs-pino';
 
 // ─── Controllers & Services ───────────────────────────────────────────────────
 import { AppController } from './app.controller';
-import { AppService } from './app.service';
 
 // ─── Feature Modules ──────────────────────────────────────────────────────────
-import { HealthModule } from './health/health.module';
 import { UserModule } from './user/user.module';
 import { MailModule } from './mail/mail.module';
 import { AuthModule } from './auth/auth.module';
@@ -46,9 +44,9 @@ import { TurnstileModule } from './turnstile/turnstile.module';
 import { AnalyzeNewsModule } from './analyze-news/analyze-news.module';
 import { LicenseRequestModule } from './license-request/license-request.module';
 import { RealtimeModule } from './real-time/real-time.module';
-import { PaymentModule } from './payment/payment.module';
 import { RetailerModule } from './retailer/retailer.module';
-import webhooksConfig from './config/webhooks.config';
+import { AffiliatesModule } from './affiliates/affiliates.module';
+import { SubscriptionModule } from './subscription/subscription.module';
 
 @Module({
   imports: [
@@ -149,9 +147,7 @@ import webhooksConfig from './config/webhooks.config';
       }),
     }),
 
-    ConfigModule.forFeature(webhooksConfig),
     // ─── Feature Modules ──────────────────────────────────────────────────────
-    HealthModule,
     UserModule,
     MailModule,
     AuthModule,
@@ -164,15 +160,14 @@ import webhooksConfig from './config/webhooks.config';
     AnalyzeNewsModule,
     LicenseRequestModule,
     RealtimeModule,
-    PaymentModule,
     RetailerModule,
+    AffiliatesModule,
+    SubscriptionModule,
   ],
 
   controllers: [AppController],
 
   providers: [
-    AppService,
-    // Global Guards
     { provide: APP_GUARD, useClass: ThrottlerGuard },
     { provide: APP_GUARD, useClass: JwtAuthGuard },
     { provide: APP_GUARD, useClass: CsrfGuard },

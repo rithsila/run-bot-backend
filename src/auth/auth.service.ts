@@ -21,7 +21,7 @@ import { LoginDto } from './dto/login.dto';
 import { LoginTelemetry } from 'src/common/types/login-telemetry.type';
 import { formatRemainingLockTime } from 'src/common/utils/time.util';
 import { GoogleUserPayload } from 'src/common/types/google-auth.type';
-import { Role } from 'src/user/roles.enum';
+import { Role } from 'src/user/user.enum';
 
 
 @Injectable()

@@ -4,7 +4,7 @@ import { PassportStrategy } from '@nestjs/passport';
 import { ExtractJwt, Strategy, StrategyOptions } from 'passport-jwt';
 import { Request } from 'express';
 import { ConfigService } from '@nestjs/config';
-import { Role } from 'src/user/roles.enum';
+import { Role } from 'src/user/user.enum';
 
 function cookieExtractor(req: Request) {
   return (req?.cookies?.accessToken as string) || null;
@@ -84,9 +84,9 @@ export class JwtStrategy extends PassportStrategy(Strategy, 'jwt-bearer') {
     return {
       userId: payload.sub,
       email: payload.email,
-      role,                 // for RolesGuard
+      role,                
       perms: payload.perms ?? [],
-      aud,                  // for AppGuard (may be undefined if issuer omitted it)
+      aud,                 
     };
   }
 }

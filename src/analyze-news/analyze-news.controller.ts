@@ -20,6 +20,7 @@ import { ApiSuccess } from 'src/common/types/api-response.type';
 
 import { AnalyzeNewsService } from './analyze-news.service';
 import { CreateAnalyzeNewsDto } from './dto/create-analyze-news.dto';
+import { Types } from 'mongoose';
 
 @Controller('analyze-news')
 export class AnalyzeNewsController {
@@ -68,7 +69,7 @@ export class AnalyzeNewsController {
   @HttpCode(HttpStatus.OK)
   async findOne(
     @Req() req: AuthRequest,
-    @Param('id') id: string,
+    @Param('id') id: Types.ObjectId,
   ): Promise<ApiSuccess<unknown>> {
     const uid = req?.user?.userId;
     if (!uid) throw new UnauthorizedException('AUTH_REQUIRED');
@@ -90,7 +91,7 @@ export class AnalyzeNewsController {
   @HttpCode(HttpStatus.OK)
   async remove(
     @Req() req: AuthRequest,
-    @Param('id') id: string,
+    @Param('id') id: Types.ObjectId,
   ): Promise<ApiSuccess<{ ok: true; id: string }>> {
     const uid = req?.user?.userId;
     if (!uid) throw new UnauthorizedException('AUTH_REQUIRED');
@@ -110,7 +111,7 @@ export class AnalyzeNewsController {
   @HttpCode(HttpStatus.OK)
   async update(
     @Req() req: AuthRequest,
-    @Param('id') id: string,
+    @Param('id') id: Types.ObjectId,
     @Body() dto: CreateAnalyzeNewsDto, // reuse Create DTO as partial
   ): Promise<ApiSuccess<unknown>> {
     const uid = req?.user?.userId;

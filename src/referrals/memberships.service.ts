@@ -11,7 +11,7 @@ import { Membership, MembershipDocument } from './memberships.schema';
 import { CreateMembershipDto } from './dto/create-membership.dto';
 import { MembershipStatus } from './memberships.enum';
 import { WebPushSubService } from 'src/web-push-sub/web-push-sub.service';
-import { Role } from 'src/user/roles.enum';
+import { Role } from 'src/user/user.enum';
 import type {
     PaginateModel,
     PaginateResult,
@@ -61,7 +61,7 @@ export class MembershipsService {
     constructor(
         @InjectModel(Membership.name) private readonly membershipModel: PaginateModel<MembershipDocument>,
         private readonly push: WebPushSubService,
-        
+
     ) { }
 
     private ensureId(id?: string, name = 'id') {
@@ -78,11 +78,17 @@ export class MembershipsService {
                 throw new ConflictException('You can only request a membership once.');
             }
 
+            const existingByEmail = await this.membershipModel.findOne({
+                email: dto.email.toLowerCase().trim(),
+            });
+            if (existingByEmail) {
+                throw new ConflictException('This email is already registered.');
+            }
+
             const doc = await this.membershipModel.create({
                 email: dto.email,
                 user: new Types.ObjectId(userId),
                 referral: dto.referral,
-                accountNumbers: dto.accountNumbers,
                 notes: dto.notes,
                 status: MembershipStatus.Request,
             });
@@ -250,14 +256,14 @@ export class MembershipsService {
 
         return this.membershipModel
             .findOne({
-                user: new Types.ObjectId(userId)})
+                user: new Types.ObjectId(userId)
+            })
             .select('email referral accountNumbers status notes createdAt adminNotes approvedBy')
             .populate({
                 path: 'referral',
                 select: 'title logoUrl broker',
                 populate: { path: 'broker', model: 'Broker', select: 'name logo' },
             })
-            .exec(); 
+            .exec();
     }
 }
-

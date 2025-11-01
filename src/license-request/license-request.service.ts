@@ -8,15 +8,15 @@ import {
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import type { FilterQuery, PaginateModel, PaginateResult } from 'mongoose';
-import { Types, isValidObjectId } from 'mongoose';
+import { Types } from 'mongoose';
 import { LicenseRequest, LicenseRequestDocument } from './license-request.schema';
 import { CreateLicenseRequestDto } from './dto/create-license-request.dto';
 import { AdminUpdateLicenseRequestDto } from './dto/admin-update-license-request.dto';
 import { LicenseRequestsPaginateDto } from './dto/license-requests-paginate.dto';
 import { MembershipStatus } from 'src/referrals/memberships.enum';
 import { WebPushSubService } from 'src/web-push-sub/web-push-sub.service';
-import { Role } from 'src/user/roles.enum';
-import { Membership, MembershipDocument, MembershipSchema } from 'src/referrals/memberships.schema';
+import { Role } from 'src/user/user.enum';
+import { Membership, MembershipDocument, } from 'src/referrals/memberships.schema';
 
 function escapeRegex(str: string) {
     return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -62,15 +62,7 @@ export class LicenseRequestService {
         private readonly push: WebPushSubService,
     ) { }
 
-    private ensureId(id?: string, name = 'id') {
-        if (!id || !isValidObjectId(id)) throw new BadRequestException(`${name} is invalid`);
-    }
-
-    /**
-     * User creates a new license request (one active request per user).
-     */
-    async requestLicense(userId: string, dto: CreateLicenseRequestDto) {
-        this.ensureId(userId, 'user');
+    async requestLicense(userId: Types.ObjectId, dto: CreateLicenseRequestDto) {
 
         const verifiedExists = await this.membershipModel.exists({
             user: new Types.ObjectId(userId),
@@ -111,8 +103,7 @@ export class LicenseRequestService {
         return doc;
     }
 
-    async myLicenseRequest(currentUserId: string) {
-        this.ensureId(currentUserId, 'user');
+    async myLicenseRequest(currentUserId: Types.ObjectId) {
 
         return this.model
             .findOne({ user: new Types.ObjectId(currentUserId) })
@@ -125,8 +116,7 @@ export class LicenseRequestService {
     }
 
 
-    async adminUpdateById(id: string, dto: AdminUpdateLicenseRequestDto) {
-        this.ensureId(id);
+    async adminUpdateById(id: Types.ObjectId, dto: AdminUpdateLicenseRequestDto) {
 
         if (!dto || Object.keys(dto).length === 0) {
             throw new BadRequestException('Nothing to update');
@@ -178,7 +168,6 @@ export class LicenseRequestService {
     }
 
     async updateMyRequest(requestId: string, dto: CreateLicenseRequestDto) {
-        this.ensureId(requestId, 'requestId');
 
         const existing = await this.model
             .findById(requestId)

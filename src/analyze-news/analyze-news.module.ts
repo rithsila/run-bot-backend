@@ -5,11 +5,13 @@ import { MongooseModule } from '@nestjs/mongoose';
 import { AnalyzeNews, AnalyzeNewsSchema } from './analyze-news.schema';
 import { WebPushSubModule } from 'src/web-push-sub/web-push-sub.module';
 import { PersistImageService } from 'src/common/persist-image.service';
+import { RealtimeModule } from 'src/real-time/real-time.module';
 
 @Module({
   imports: [
     MongooseModule.forFeature([{ name: AnalyzeNews.name, schema: AnalyzeNewsSchema }]),
-    WebPushSubModule
+    WebPushSubModule,
+    RealtimeModule
   ],
   providers: [AnalyzeNewsService,PersistImageService],
   controllers: [AnalyzeNewsController]
