@@ -12,6 +12,8 @@ import {
   UseGuards,
   UsePipes,
   ValidationPipe,
+  Param,
+  Patch,
 } from '@nestjs/common';
 import { Throttle } from '@nestjs/throttler';
 import type { AuthRequest } from 'src/common/types/auth-request.type';
@@ -22,6 +24,7 @@ import type { Subscription } from './subscription.schema';
 import { SubscriptionService } from './subscription.service';
 import { Types } from 'mongoose';
 import { SubscriptionsPaginateDto } from './dto/subscriptions-paginate.dto';
+import { UpdateSubscriptionDto } from './dto/update-subscription.dto';
 
 @Controller('subscriptions')
 @UseGuards(JwtAuthGuard)
@@ -83,6 +86,27 @@ export class SubscriptionsController {
       timestamp: new Date().toISOString(),
       path: "/subscriptions/me",
       data: sub,
+    };
+  }
+
+  @Patch(':id')
+  @HttpCode(HttpStatus.OK)
+  async updatePartial(
+    @Param('id') id: string,
+    @Body() dto: UpdateSubscriptionDto,
+  ) {
+   
+
+    const updated = await this.subscriptions.updatePartial(id, dto);
+
+    return {
+      success: true,
+      statusCode: HttpStatus.OK,
+      code: 'SUBSCRIPTION_UPDATED',
+      message: 'Subscription updated successfully.',
+      timestamp: new Date().toISOString(),
+      path: `/subscriptions/${id}`,
+      data: updated,
     };
   }
 }

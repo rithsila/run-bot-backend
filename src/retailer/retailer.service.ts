@@ -133,7 +133,7 @@ export class RetailerService {
       const { data } = await firstValueFrom(
         this.http.get<ScraperResponse>(url, {
           params: { symbol: sym },
-          timeout: 5_000, // ms
+          timeout: 15_000, // ms
         }),
       );
 
@@ -174,110 +174,110 @@ export class RetailerService {
   }
 
   // Every 3 minutes (update message to match)
-  @Cron('*/5 * * * *')
-  async cronRefresh() {
-    const start = Date.now();
-    this.log.log('RetailerService cron refresh tick 5m');
+  // @Cron('*/5 * * * *')
+  // async cronRefresh() {
+  //   const start = Date.now();
+  //   this.log.log('RetailerService cron refresh tick 5m');
 
-    // 1) Preflight health (skip tick if scraper is down)
-    try {
-      await firstValueFrom(this.http.get(`${SCRAPER_BASE.replace(/\/+$/, '')}/health`, { timeout: 5_000 }));
-    } catch (e: any) {
-      const status = e?.response?.status;
-      const detail = e?.response?.data?.detail ?? e?.message ?? String(e);
-      this.log.warn(`Scraper health failed: ${status ?? ''} ${detail}`);
-      return;
-    }
+  //   // 1) Preflight health (skip tick if scraper is down)
+  //   try {
+  //     await firstValueFrom(this.http.get(`${SCRAPER_BASE.replace(/\/+$/, '')}/health`, { timeout: 5_000 }));
+  //   } catch (e: any) {
+  //     const status = e?.response?.status;
+  //     const detail = e?.response?.data?.detail ?? e?.message ?? String(e);
+  //     this.log.warn(`Scraper health failed: ${status ?? ''} ${detail}`);
+  //     return;
+  //   }
 
-    // 2) Snapshot current DB state for all symbols (for comparisons)
-    const prevDocs = await this.latestModel
-      .find({ pair: { $in: SYMBOLS } })
-      .lean()
-      .exec();
-    const prevMap = new Map(prevDocs.map(d => [String(d.pair).toUpperCase(), d]));
+  //   // 2) Snapshot current DB state for all symbols (for comparisons)
+  //   const prevDocs = await this.latestModel
+  //     .find({ pair: { $in: SYMBOLS } })
+  //     .lean()
+  //     .exec();
+  //   const prevMap = new Map(prevDocs.map(d => [String(d.pair).toUpperCase(), d]));
 
-    let changes = 0;
-    let errors = 0;
+  //   let changes = 0;
+  //   let errors = 0;
 
-    // 3) Iterate symbols with small stagger so we don't hammer the scraper
-    for (const sym of SYMBOLS) {
-      const jitter = Math.floor(Math.random() * 400);
-      await this.sleep(1500 + jitter);
+  //   // 3) Iterate symbols with small stagger so we don't hammer the scraper
+  //   for (const sym of SYMBOLS) {
+  //     const jitter = Math.floor(Math.random() * 400);
+  //     await this.sleep(1500 + jitter);
 
-      try {
-        const { data } = await firstValueFrom(
-          this.http.get<ScraperResponse>(`${SCRAPER_BASE.replace(/\/+$/, '')}/fxssi/current-ratio`, {
-            params: { symbol: sym },
-            timeout: 5_000,
-          }),
-        );
-        if (!data?.ok || !data.data) {
-          const detail = (data as any)?.detail || 'bad payload';
-          throw new Error(`Scraper bad response for ${sym}: ${detail}`);
-        }
+  //     try {
+  //       const { data } = await firstValueFrom(
+  //         this.http.get<ScraperResponse>(`${SCRAPER_BASE.replace(/\/+$/, '')}/fxssi/current-ratio`, {
+  //           params: { symbol: sym },
+  //           timeout: 15_000,
+  //         }),
+  //       );
+  //       if (!data?.ok || !data.data) {
+  //         const detail = (data as any)?.detail || 'bad payload';
+  //         throw new Error(`Scraper bad response for ${sym}: ${detail}`);
+  //       }
 
-        const d = data.data;
-        const prev = prevMap.get(sym);
+  //       const d = data.data;
+  //       const prev = prevMap.get(sym);
 
-        const nextSignal = sanitizeSignal(d.signal);
-        const prevSignal = sanitizeSignal(prev?.signal ?? null);
+  //       const nextSignal = sanitizeSignal(d.signal);
+  //       const prevSignal = sanitizeSignal(prev?.signal ?? null);
 
-        const leftChanged = !nearlyEqual(prev?.avgLeft, d.left_pct);
-        const rightChanged = !nearlyEqual(prev?.avgRight, d.right_pct);
-        const sigChanged = prevSignal !== nextSignal;
+  //       const leftChanged = !nearlyEqual(prev?.avgLeft, d.left_pct);
+  //       const rightChanged = !nearlyEqual(prev?.avgRight, d.right_pct);
+  //       const sigChanged = prevSignal !== nextSignal;
 
-        await this.upsertLatest({
-          pair: sym,
-          avgLeft: d.left_pct,
-          avgRight: d.right_pct,
-          dividerLeftPct: d.divider_left_pct ?? null,
-          signal: nextSignal,
-          rowLabel: 'Average',
-          sourceUrl: d.sourceUrl,
-          fetchedAt: d.fetchedAt,
-          rendered: !!d.rendered,
-          runAt: new Date(),
-        });
+  //       await this.upsertLatest({
+  //         pair: sym,
+  //         avgLeft: d.left_pct,
+  //         avgRight: d.right_pct,
+  //         dividerLeftPct: d.divider_left_pct ?? null,
+  //         signal: nextSignal,
+  //         rowLabel: 'Average',
+  //         sourceUrl: d.sourceUrl,
+  //         fetchedAt: d.fetchedAt,
+  //         rendered: !!d.rendered,
+  //         runAt: new Date(),
+  //       });
 
-        changes++;
+  //       changes++;
 
-        if (sigChanged && prev) {
-          this.log.log(
-            `[signal-change] ${sym}: ${prevSignal ?? 'null'} -> ${nextSignal ?? 'null'} ` +
-            `(L=${d.left_pct} R=${d.right_pct})`
-          );
-          const title = `Retailer changed · ${sym} · ${prevSignal?.toUpperCase()} → ${nextSignal?.toUpperCase()}`;
-          const body = `Long ${d.left_pct}% · Short ${d.right_pct}%`;
+  //       if (sigChanged && prev) {
+  //         this.log.log(
+  //           `[signal-change] ${sym}: ${prevSignal ?? 'null'} -> ${nextSignal ?? 'null'} ` +
+  //           `(L=${d.left_pct} R=${d.right_pct})`
+  //         );
+  //         const title = `Retailer changed · ${sym} · ${prevSignal?.toUpperCase()} → ${nextSignal?.toUpperCase()}`;
+  //         const body = `Long ${d.left_pct}% · Short ${d.right_pct}%`;
 
-          const url = `/retail/latest/${sym}`;
+  //         const url = `/retail/latest/${sym}`;
 
-          void this.push.broadcast(
-            {
-              title,
-              body,
-              url,
-              ts: Date.now(),
-            },
-            60, // TTL seconds
-          );
+  //         void this.push.broadcast(
+  //           {
+  //             title,
+  //             body,
+  //             url,
+  //             ts: Date.now(),
+  //           },
+  //           60, // TTL seconds
+  //         );
 
-        } else if (!prev) {
-          this.log.debug(`[signal-init] ${sym}: ${nextSignal ?? 'null'} (first record)`);
-        } else {
-          this.log.debug(`[update] ${sym}: ${[
-            leftChanged && 'avgLeft',
-            rightChanged && 'avgRight',
-          ].filter(Boolean).join(', ')} changed`);
-        }
+  //       } else if (!prev) {
+  //         this.log.debug(`[signal-init] ${sym}: ${nextSignal ?? 'null'} (first record)`);
+  //       } else {
+  //         this.log.debug(`[update] ${sym}: ${[
+  //           leftChanged && 'avgLeft',
+  //           rightChanged && 'avgRight',
+  //         ].filter(Boolean).join(', ')} changed`);
+  //       }
 
-      } catch (err: any) {
-        const status = err?.response?.status;
-        const detail = err?.response?.data?.detail ?? err?.message ?? String(err);
-        this.log.warn(`refreshOne ${sym} failed: ${status ?? ''} ${detail}`);
-        errors++;
-      }
-    }
+  //     } catch (err: any) {
+  //       const status = err?.response?.status;
+  //       const detail = err?.response?.data?.detail ?? err?.message ?? String(err);
+  //       this.log.warn(`refreshOne ${sym} failed: ${status ?? ''} ${detail}`);
+  //       errors++;
+  //     }
+  //   }
 
-    this.log.log(`RetailerService cron done in ${Date.now() - start}ms — changes=${changes}, errors=${errors}`);
-  }
+  //   this.log.log(`RetailerService cron done in ${Date.now() - start}ms — changes=${changes}, errors=${errors}`);
+  // }
 }

@@ -2,6 +2,7 @@
 import {
   BadRequestException,
   ConflictException,
+  ForbiddenException,
   Injectable,
   Logger,
   NotFoundException,
@@ -17,6 +18,7 @@ import { canonicalizeEmail, maskEmail } from 'src/common/utils/email.util';
 import { UserQueryDto } from './dto/user-query.dto';
 import { UpdateUserAffiliatesDto } from './dto/update-user-affiliates.dto';
 import { AdminSetPasswordDto } from './dto/admin-set-password.dto';
+import { Role } from './user.enum';
 
 type UserPaginateModel = PaginateModel<UserDocument>;
 
@@ -282,6 +284,84 @@ export class UserService {
         },
       },
     ).lean();
+  }
+
+  async updateRole(input: {
+    targetUserId: string;
+    newRole: Role;
+    actingUserId?: string;
+    actingUserRole?: Role;
+  }): Promise<void> {
+    const { targetUserId, newRole, actingUserId, actingUserRole } = input;
+
+    // 1. Validate ObjectId again at service layer (defense-in-depth)
+    if (!Types.ObjectId.isValid(targetUserId)) {
+      throw new BadRequestException('Invalid user id');
+    }
+
+    // 2. Check caller permission
+    // If you only want Admins to do this:
+    if (actingUserRole && actingUserRole !== Role.Admin) {
+      // If actingUserRole is undefined (no auth wired yet), we skip this block.
+      throw new ForbiddenException('You are not allowed to change roles');
+    }
+
+    // 3. Load target user
+    const targetUser = await this.model
+      .findById(targetUserId)
+      .select('_id role')
+      .lean();
+
+    if (!targetUser) {
+      throw new NotFoundException('User not found');
+    }
+
+    // 4. Prevent demoting yourself out of Admin (optional but smart)
+    // Example rule:
+    // - If I'm editing myself
+    // - I'm currently Admin
+    // - And I'm trying to drop below Admin
+    if (
+      actingUserId &&
+      new Types.ObjectId(actingUserId).equals(targetUserId) &&
+      targetUser.role === Role.Admin &&
+      newRole !== Role.Admin
+    ) {
+      throw new ForbiddenException(
+        'You cannot remove your own admin role',
+      );
+    }
+
+    // 5. No-op check
+    if (targetUser.role === newRole) {
+      // nothing to do
+      return;
+    }
+
+    // 6. Actually update
+    const res = await this.model
+      .updateOne(
+        { _id: targetUserId },
+        {
+          $set: {
+            role: newRole,
+            // you could also track audit info here if you have audit fields
+            // updatedBy: actingUserId,
+            // updatedAt: new Date(),
+          },
+        },
+      )
+      .lean();
+
+    if (res.matchedCount === 0) {
+      // super edge: race condition where user got deleted
+      throw new NotFoundException('User not found');
+    }
+
+    this.logger.log(
+      `Role updated: user=${targetUserId} ${targetUser.role} -> ${newRole} by ${actingUserId ?? 'system'
+      }`,
+    );
   }
 
   private escapeRegex(s: string) {

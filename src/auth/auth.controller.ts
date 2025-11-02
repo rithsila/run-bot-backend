@@ -35,7 +35,6 @@ import { cookieBase } from 'src/common/cookies/cookie.util';
 import { TurnstileGuard } from 'src/turnstile/turnstile.guard';
 import { TurnstileAction } from 'src/turnstile/turnstile.decorator';
 import { MembershipsService } from 'src/referrals/memberships.service';
-import { MembershipStatus } from 'src/referrals/memberships.enum';
 
 @Controller('auth')
 export class AuthController {

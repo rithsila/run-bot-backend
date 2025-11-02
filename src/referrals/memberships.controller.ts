@@ -104,6 +104,7 @@ export class MembershipsController {
     ) {
         return this.service.updateById(id, dto);
     }
+
     @Patch(':id')
     async updateMembership(
         @Req() req: AuthRequest,

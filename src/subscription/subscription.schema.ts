@@ -3,14 +3,12 @@ import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { Document, PaginateModel, Types } from 'mongoose';
 import paginate from 'mongoose-paginate-v2';
 
-
 export type SubscriptionStatus =
   | 'init'
   | 'active'
   | 'past_due'
   | 'paused'
   | 'cancelled';
-
 
 export type SubscriptionDocument = Subscription & Document;
 export type SubscriptionPaginateModel = PaginateModel<SubscriptionDocument>;
@@ -78,6 +76,36 @@ export class Subscription {
   })
   sn1p3rShotAccount?: string;
 
+  @Prop({
+    type: String,
+  })
+  noted?: string;
+
+  // 🔑 NEW FIELDS: license keys
+  @Prop({
+    type: String,
+    trim: true,
+    maxlength: 120,
+    index: true,
+  })
+  sn1p3rConceptKey?: string;
+
+  @Prop({
+    type: String,
+    trim: true,
+    maxlength: 120,
+    index: true,
+  })
+  riskManagerKey?: string;
+
+  @Prop({
+    type: String,
+    trim: true,
+    maxlength: 120,
+    index: true,
+  })
+  sn1p3rShotKey?: string;
+
   @Prop({ type: Date, required: true, index: true })
   nextInvoiceAt!: Date;
 }
@@ -85,7 +113,4 @@ export class Subscription {
 export const SubscriptionSchema = SchemaFactory.createForClass(Subscription);
 
 SubscriptionSchema.plugin(paginate);
-SubscriptionSchema.index(
-  { user: 1, plan: 1 },
-  { name: 'uniq_user_plan', unique: false }
-);
+

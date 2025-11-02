@@ -14,6 +14,7 @@ import { Coupon, CouponDocument } from 'src/plan/coupon.schema';
 import { Plan, PlanDocument } from 'src/plan/plan.schema';
 import { CouponStatus } from 'src/plan/plan.enum';
 import { SubscriptionsPaginateDto } from './dto/subscriptions-paginate.dto';
+import { UpdateSubscriptionDto } from './dto/update-subscription.dto';
 
 function escapeRegex(str: string) {
     return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -293,5 +294,86 @@ export class SubscriptionService {
             .exec();
 
         return latest || null;
+    }
+
+    async updatePartial(
+        subId: string,
+        dto: UpdateSubscriptionDto,
+    ) {
+        // validate subId
+        if (!subId || !Types.ObjectId.isValid(subId)) {
+            throw new BadRequestException('Invalid subscription id');
+        }
+
+        // Build $set only with provided keys
+        const $set: Record<string, any> = {};
+
+        if (dto.status !== undefined) {
+            // sanity check: do not allow setting back to 'init' via this endpoint
+            const allowed: subscriptionSchema.SubscriptionStatus[] = [
+                'active',
+                'past_due',
+                'paused',
+                'cancelled',
+            ];
+            if (!allowed.includes(dto.status)) {
+                throw new BadRequestException(
+                    "Status can only be 'active', 'past_due', 'paused', or 'cancelled'"
+                );
+            }
+            $set.status = dto.status;
+        }
+
+        if (dto.sn1p3rConceptKey !== undefined) {
+            $set.sn1p3rConceptKey = dto.sn1p3rConceptKey?.trim();
+        }
+
+        if (dto.riskManagerKey !== undefined) {
+            $set.riskManagerKey = dto.riskManagerKey?.trim();
+        }
+
+        if (dto.sn1p3rShotKey !== undefined) {
+            $set.sn1p3rShotKey = dto.sn1p3rShotKey?.trim();
+        }
+
+        if (dto.noted !== undefined) {
+            $set.noted = dto.noted?.trim();
+        }
+
+        if (Object.keys($set).length === 0) {
+            throw new BadRequestException('No valid fields to update');
+        }
+
+        const updated = await this.subscriptionModel
+            .findByIdAndUpdate(
+                subId,
+                { $set },
+                {
+                    new: true, // return updated doc
+                    runValidators: true, // respect schema validators
+                },
+            )
+            .populate([
+                {
+                    path: 'user',
+                    select: 'firstName lastName email photoURL',
+                },
+                {
+                    path: 'plan',
+                    select: 'title billingPeriod price product',
+                },
+                {
+                    path: 'coupon',
+                    select: 'code discount',
+                },
+            ])
+            .lean({ virtuals: true })
+            .exec();
+
+        if (!updated) {
+            throw new NotFoundException('Subscription not found');
+        }
+
+        return updated;
     }
 }
