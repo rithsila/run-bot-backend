@@ -18,7 +18,6 @@ export class SubscriptionsPaginateDto {
     // "active" | "past_due" | "paused" | "canceled"
     @IsOptional()
     @IsString()
-    @IsIn(['active', 'past_due', 'paused', 'canceled'])
     status?: SubscriptionStatus;
 
     // search by user firstName / lastName

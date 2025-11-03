@@ -32,6 +32,7 @@ export class SubscriptionsController {
   constructor(private readonly subscriptions: SubscriptionService) { }
 
   @Get()
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
   list(@Query() query: SubscriptionsPaginateDto) {
     return this.subscriptions.paginate(query);
   }
@@ -95,7 +96,7 @@ export class SubscriptionsController {
     @Param('id') id: string,
     @Body() dto: UpdateSubscriptionDto,
   ) {
-   
+
 
     const updated = await this.subscriptions.updatePartial(id, dto);
 

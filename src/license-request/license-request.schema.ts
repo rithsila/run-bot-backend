@@ -64,6 +64,9 @@ export class LicenseRequest {
   // Admin-only notes (internal)
   @Prop({ type: String, trim: true, maxlength: 500, default: '' })
   adminNotes!: string;
+
+  @Prop({ type: Date, required: true, index: true })
+  createdAt!: Date;
 }
 
 export const LicenseRequestSchema = SchemaFactory.createForClass(LicenseRequest);

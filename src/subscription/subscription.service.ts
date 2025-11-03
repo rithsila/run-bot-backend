@@ -159,6 +159,7 @@ export class SubscriptionService {
         // status filter (exact match)
         if (dto.status) {
             const allowed: subscriptionSchema.SubscriptionStatus[] = [
+                'init',
                 'active',
                 'past_due',
                 'paused',
@@ -311,6 +312,7 @@ export class SubscriptionService {
         if (dto.status !== undefined) {
             // sanity check: do not allow setting back to 'init' via this endpoint
             const allowed: subscriptionSchema.SubscriptionStatus[] = [
+                'init',
                 'active',
                 'past_due',
                 'paused',

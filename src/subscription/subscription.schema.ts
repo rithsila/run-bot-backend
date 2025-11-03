@@ -23,10 +23,10 @@ export class Subscription {
 
   @Prop({
     type: String,
-    enum: ['init', 'active', 'past_due', 'paused', 'cancelled'],
-    default: 'init',
+    // enum: ['init', 'active', 'past_due', 'paused', 'cancelled'],
+    // default: 'init',
   })
-  status!: SubscriptionStatus;
+  status!: string;
 
   @Prop({ type: Date, required: true, default: () => new Date() })
   startAt!: Date;
@@ -108,6 +108,8 @@ export class Subscription {
 
   @Prop({ type: Date, required: true, index: true })
   nextInvoiceAt!: Date;
+
+ 
 }
 
 export const SubscriptionSchema = SchemaFactory.createForClass(Subscription);

@@ -17,6 +17,7 @@ import { MembershipStatus } from 'src/referrals/memberships.enum';
 import { WebPushSubService } from 'src/web-push-sub/web-push-sub.service';
 import { Role } from 'src/user/user.enum';
 import { Membership, MembershipDocument, } from 'src/referrals/memberships.schema';
+import { Subscription, SubscriptionDocument } from 'src/subscription/subscription.schema';
 
 function escapeRegex(str: string) {
     return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -57,6 +58,8 @@ export class LicenseRequestService {
     constructor(
         @InjectModel(LicenseRequest.name)
         private readonly model: PaginateModel<LicenseRequestDocument>,
+        @InjectModel(Subscription.name)
+        private readonly subscriptionModel: PaginateModel<SubscriptionDocument>,
         @InjectModel(Membership.name)
         private readonly membershipModel: PaginateModel<MembershipDocument>,
         private readonly push: WebPushSubService,
@@ -205,6 +208,53 @@ export class LicenseRequestService {
     }
 
     async paginate(dto: LicenseRequestsPaginateDto) {
+
+        const licenses = await this.model.find()
+
+
+        await licenses.map(async (l) => {
+            // accountRiskManager
+            // accountSn1p3rConcept
+            // accountSn1p3rShot
+            // bankAccountName
+            // tradingViewUsername
+            // licenseRiskManager
+            // licenseSn1p3rConcept
+            // licenseSn1p3rShot
+            // user
+// .
+            const nextInvoiceAt = this.addMonthsSafe(l.createdAt, 12);
+            type SubscriptionStatus =
+                | 'init'
+                | 'active'
+                | 'past_due'
+                | 'paused'
+                | 'cancelled';
+
+            await new this.subscriptionModel({
+                user: l.user,
+                plan: new Types.ObjectId('68f5c0ba19ce47608c0f2f19'),
+                status: 'active' as SubscriptionStatus,
+                startAt: l.createdAt,
+                billingPeriod: 12,
+                amount: 199.99,
+                bankAccountName: l.bankAccountName,
+                tradingViewUsername: l.tradingViewUsername,
+                sn1p3rConceptAccount: l.accountSn1p3rConcept,
+                riskManagerAccount: l.accountRiskManager,
+                sn1p3rShotAccount: l.accountSn1p3rShot,
+                sn1p3rConceptKey: l.licenseSn1p3rConcept,
+                riskManagerKey: l.licenseRiskManager,
+                sn1p3rShotKey: l.licenseSn1p3rShot,
+                nextInvoiceAt
+            }).save()
+
+        })
+
+
+
+
+
         const page = Math.max(1, dto.page || 1);
         const limit = Math.min(100, Math.max(1, dto.limit || 20));
 
@@ -251,5 +301,20 @@ export class LicenseRequestService {
             hasPrev: result.hasPrevPage,
             hasNext: result.hasNextPage,
         };
+    }
+
+    private addMonthsSafe(date: Date, months: number): Date {
+        const d = new Date(date.getTime());
+        const targetMonth = d.getMonth() + months;
+        const targetYear = d.getFullYear() + Math.floor(targetMonth / 12);
+        const month = ((targetMonth % 12) + 12) % 12;
+
+        // Keep day where possible; clamp to end of month
+        const day = Math.min(d.getDate(), daysInMonth(targetYear, month));
+        return new Date(targetYear, month, day, d.getHours(), d.getMinutes(), d.getSeconds(), d.getMilliseconds());
+
+        function daysInMonth(year: number, monthZeroBased: number) {
+            return new Date(year, monthZeroBased + 1, 0).getDate();
+        }
     }
 }
