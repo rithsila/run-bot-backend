@@ -93,18 +93,6 @@ export class TradingPlanService {
       session.endSession();
     }
 
-    // push…
-    void this.push.broadcast(
-      {
-        title: 'New Trading Plan 📈',
-        body: `${created.pair} • ${created.direction}`,
-        url: `/trading-plans/${created._id}`,
-        ts: Date.now(),
-      },
-      60,
-    );
-    this.realtime.publishBadge('trading-plans');
-
     return created;
   }
 

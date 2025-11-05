@@ -46,6 +46,7 @@ import { RetailerModule } from './retailer/retailer.module';
 import { SubscriptionModule } from './subscription/subscription.module';
 import { MembershipsModule } from './memberships/memberships.module';
 import { CouponsModule } from './coupons/coupons.module';
+import { QueueModule } from './queue/queue.module';
 
 @Module({
   imports: [
@@ -161,6 +162,7 @@ import { CouponsModule } from './coupons/coupons.module';
     SubscriptionModule,
     MembershipsModule,
     CouponsModule,
+    QueueModule,
   ],
 
   controllers: [AppController],

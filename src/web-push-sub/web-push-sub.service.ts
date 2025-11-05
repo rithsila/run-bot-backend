@@ -1,17 +1,12 @@
 // src/push/web-push-sub.service.ts
 import { Injectable, Logger } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
-import { Cron } from '@nestjs/schedule';
 import { Model, Types } from 'mongoose';
 import pLimit from 'p-limit';
 import webpush, { PushSubscription } from 'web-push';
 import { WebPushSub, WebPushSubDocument } from './web-push-sub.schema';
-import { Role } from 'src/user/user.enum';
-import { User, UserDocument } from 'src/user/user.schema';
 
-
-const CONCURRENCY = 25;                  // parallel calls to push gateways
-const INACTIVE_PRUNE_DAYS = 30;          // hard-delete after N days of failure
+const CONCURRENCY = 25;
 
 @Injectable()
 export class WebPushSubService {
@@ -20,12 +15,9 @@ export class WebPushSubService {
 
   constructor(
     @InjectModel(WebPushSub.name)
-    private readonly sub: Model<WebPushSubDocument>,
-
-    @InjectModel(User.name)
-    private readonly users: Model<UserDocument>,
+    private readonly sub: Model<WebPushSubDocument>
   ) {
-    // Initialise VAPID credentials once
+
     webpush.setVapidDetails(
       process.env.PUSH_VAPID_SUBJECT!,
       process.env.PUSH_VAPID_PUBLIC_KEY!,
@@ -41,16 +33,11 @@ export class WebPushSubService {
         active: true,
         userId: { $ne: exclude },
       })
-      .exec()) as Types.ObjectId[];       // <- now the cast is safe
+      .exec()) as Types.ObjectId[];
 
     return ids;
   }
-  /* ────────── CRUD ────────── */
 
-  /**
-   * Insert or update a browser-subscription for a user.
-   * Called from `/push/subscribe` controller.
-   */
   async upsertSubscription(
     userId: Types.ObjectId,
     data: {
@@ -82,21 +69,6 @@ export class WebPushSubService {
     );
   }
 
-  /**
-   * Mark one endpoint inactive (called on user “unsubscribe” or local errors).
-   */
-  async deactivateEndpoint(userId: Types.ObjectId, endpoint: string) {
-    await this.sub.updateOne(
-      { userId, endpoint },
-      { $set: { active: false, lastFailedAt: new Date() } },
-    );
-  }
-
-  /* ────────── Sending helpers ────────── */
-
-  /**
-   * Fan-out to every active subscription belonging to the given user IDs.
-   */
   async sendToUsers(
     userIds: Types.ObjectId[],
     payload: unknown,
@@ -107,102 +79,45 @@ export class WebPushSubService {
       .lean()
       .cursor();
 
-    const errors: { endpoint: string; code: number }[] = [];
+    const tasks: Promise<{ endpoint: string; ok: boolean; code?: number }>[] = [];
 
     for await (const s of cursor) {
-      this.limit(async () => {
-        try {
-          await webpush.sendNotification(
-            <PushSubscription>{
-              endpoint: s.endpoint,
-              expirationTime: null,
-              keys: { p256dh: s.p256dh, auth: s.auth },
-            },
-            JSON.stringify(payload),
-            { TTL: ttl },
-          );
-        } catch (e: any) {
-          // 404 / 410 → endpoint is gone
-          const gone = e.statusCode === 404 || e.statusCode === 410;
-          if (gone) {
-            await this.sub.updateOne(
-              { _id: s._id },
-              { $set: { active: false, lastFailedAt: new Date() } },
+      tasks.push(
+        this.limit(async () => {
+          try {
+            await webpush.sendNotification(
+              {
+                endpoint: s.endpoint,
+                expirationTime: null,
+                keys: { p256dh: s.p256dh, auth: s.auth },
+              } as PushSubscription,
+              JSON.stringify(payload),
+              {
+                TTL: ttl,          // ✔ TTL in seconds (offline retention)
+                urgency: 'normal', // optional: 'very-low' | 'low' | 'normal' | 'high'
+                // topic: 'updates', // optional: collapse by topic if your push service supports it
+              } as any
             );
-            this.log.debug(`Deactivated gone endpoint ${s.endpoint}`);
-          } else {
-            errors.push({ endpoint: s.endpoint, code: e.statusCode ?? 0 });
+            return { endpoint: s.endpoint, ok: true as const };
+          } catch (e: any) {
+            const code = e?.statusCode ?? 0;
+            // 404/410 = subscription no longer valid
+            if (code === 404 || code === 410) {
+              await this.sub.updateOne(
+                { _id: s._id },
+                { $set: { active: false, lastFailedAt: new Date() } },
+              );
+              this.log.debug(`Deactivated gone endpoint ${s.endpoint}`);
+            }
+            return { endpoint: s.endpoint, ok: false as const, code };
           }
-        }
-      });
+        })
+      );
     }
-    await this.limit.clearQueue();
-    return { ok: true, failed: errors.length, errors };
+
+    const results = await Promise.all(tasks);
+    const errors = results.filter(r => !r.ok).map(({ endpoint, code }) => ({ endpoint, code }));
+    return { ok: errors.length === 0, failed: errors.length, errors };
   }
 
-  async broadcast(payload: unknown, ttl = 60) {
-    const userIds = await this.sub.distinct('userId', { active: true });
-    return this.sendToUsers(userIds as Types.ObjectId[], payload, ttl);
-  }
-
-  async sendToRoles(
-    roles: Role[],
-    payload: unknown,
-    ttl = 60,
-    exclude?: Types.ObjectId,
-  ) {
-    const userIds = await this.getUserIdsByRoles(roles, exclude);
-    if (!userIds.length) return { ok: true, failed: 0, errors: [] };
-
-    return this.sendToUsers(userIds, payload, ttl);
-  }
-
-  async getUserIdsByRoles(
-    roles: Role[],
-    exclude?: Types.ObjectId,
-  ): Promise<Types.ObjectId[]> {
-    const query: any = { role: { $in: roles } };
-    if (exclude) query._id = { $ne: exclude };
-
-    const ids = (await this.users
-      .find(query)
-      .distinct('_id')
-      .exec()) as Types.ObjectId[];
-
-    return ids;
-  }
-
-  // src/push/web-push-sub.service.ts (near the top of the class)
-  private toObjectId(id: string | Types.ObjectId): Types.ObjectId {
-    return typeof id === 'string' ? new Types.ObjectId(id) : id;
-  }
-
-
-  async sendToUser(
-    userId: string | Types.ObjectId,
-    payload: unknown,
-    ttl = 60,
-  ) {
-    const oid = this.toObjectId(userId);
-    // reuse your existing fan-out logic
-    return this.sendToUsers([oid], payload, ttl);
-  }
-
-  /* ────────── Nightly cleanup ────────── */
-
-  // @Cron('17 2 * * *')
-  // async pruneOldInactive() {
-  //   const cutoff = new Date(
-  //     Date.now() - INACTIVE_PRUNE_DAYS * 24 * 60 * 60 * 1000,
-  //   );
-  //   const res = await this.sub.deleteMany({
-  //     active: false,
-  //     lastFailedAt: { $lt: cutoff },
-  //   });
-  //   if (res.deletedCount) {
-  //     this.log.log(
-  //       `Pruned ${res.deletedCount} inactive Web-Push subscriptions.`,
-  //     );
-  //   }
-  // }
 }

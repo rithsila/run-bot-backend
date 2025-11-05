@@ -45,19 +45,6 @@ export class WebPushSubController {
     return { ok: true };
   }
 
-  /* ───────── Auth required: deactivate an endpoint ───────── */
-  @UseGuards(JwtAuthGuard)
-  @Delete('unsubscribe')
-  async unsubscribe(
-    @Req() req: any,
-    @Body() dto: UnsubscribeWebPushDto,
-  ) {
-    await this.push.deactivateEndpoint(
-      new Types.ObjectId(req.user._id),
-      dto.endpoint,
-    );
-    return { ok: true };
-  }
-
+  
 
 }

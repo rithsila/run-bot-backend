@@ -251,16 +251,7 @@ export class RetailerService {
 
           const url = `/retail/latest/${sym}`;
 
-          void this.push.broadcast(
-            {
-              title,
-              body,
-              url,
-              ts: Date.now(),
-            },
-            60, // TTL seconds
-          );
-
+        
         } else if (!prev) {
           this.log.debug(`[signal-init] ${sym}: ${nextSignal ?? 'null'} (first record)`);
         } else {

@@ -3,15 +3,15 @@ import {
     Injectable,
     NotFoundException,
 } from '@nestjs/common';
-import { InjectModel, ParseObjectIdPipe } from '@nestjs/mongoose';
+import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
-
 import { AnalyzeNews, AnalyzeNewsDocument } from './analyze-news.schema';
 import { CreateAnalyzeNewsDto } from './dto/create-analyze-news.dto';
-import { WebPushSubService } from 'src/web-push-sub/web-push-sub.service';
 import { Direction } from 'src/trading-plan/trading-plan.enum';
 import { PersistImageService } from 'src/common/persist-image.service';
 import { RealtimeGateway } from 'src/real-time/realtime.gateway';
+import { WebPushSubService } from 'src/web-push-sub/web-push-sub.service';
+import { PushProducer } from 'src/queue/push.producer';
 
 export type AnalyzeNewsLean = {
     _id: Types.ObjectId;
@@ -30,9 +30,10 @@ export class AnalyzeNewsService {
     constructor(
         @InjectModel(AnalyzeNews.name)
         private readonly newsModel: Model<AnalyzeNewsDocument>,
-        private readonly push: WebPushSubService,
         private readonly img: PersistImageService,
-        private readonly realtime: RealtimeGateway
+        private readonly realtime: RealtimeGateway,
+        private readonly pushProducer: PushProducer,
+        private readonly webPushSubService: WebPushSubService
     ) { }
 
     async create(dto: CreateAnalyzeNewsDto) {
@@ -84,9 +85,7 @@ export class AnalyzeNewsService {
                     }
                 }
 
-
                 const [doc] = await this.newsModel.create([payload], { session });
-
 
                 created = await this.newsModel
                     .findById(doc._id)
@@ -127,22 +126,49 @@ export class AnalyzeNewsService {
             session.endSession();
         }
 
-        void this.push.broadcast(
-            {
-                title: 'New Analysis 📰',
-                body: created.pair
-                    ? `${created.title} • ${created.pair} • ${created.impact}`
-                    : `${created.title} • ${created.impact}`,
-                url: `/analyze-news/${created._id}`,
-                ts: Date.now(),
-            },
-            60,
-        );
+        // ---- Push notification (tiny payload; SW will fetch full content by id) ----
+        try {
+            const previewBody = (created.description || '').slice(0, 140);
+            const tinyPayload = {
+                type: 'news',
+                id: String(created._id),
+                preview: {
+                    title: created.title,
+                    body: previewBody,
+                    image: created.thumbnailUrl || undefined,
+                },
+            };
+
+            // Exclude author if provided on dto (optional)
+            let excludeId: Types.ObjectId | null = null;
+            const maybeAuthorId = (dto as any)?.authorId;
+            if (maybeAuthorId) {
+                try { excludeId = new Types.ObjectId(String(maybeAuthorId)); } catch { /* ignore bad id */ }
+            }
+
+            // Get recipients (all active users, optionally excluding author).
+            const recipients = await this.webPushSubService.getUserIdsExcept(
+                excludeId ?? new Types.ObjectId('000000000000000000000000') // excludes no one if author unknown
+            );
+
+            if (recipients.length) {
+                await this.pushProducer.enqueueSendToUsers(
+                    recipients,
+                    tinyPayload,
+                    { ttl: 3600, chunkSize: 500 } // keep for 1h; tune chunk size as needed
+                );
+            }
+        } catch (e) {
+            // Don’t block creation on push failures
+            console.warn('[AnalyzeNews.create] push enqueue failed:', e);
+        }
+        // ---------------------------------------------------------------------------
 
         this.realtime.publishBadge('news');
 
         return created;
     }
+
 
     async findAll() {
         return this.newsModel.find({}).sort({ createdAt: -1 }).lean<AnalyzeNewsLean[]>();
