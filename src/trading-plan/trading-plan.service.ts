@@ -15,6 +15,7 @@ import { CreateTradingPlanDto } from './dto/create-trading-plan.dto';
 import { WebPushSubService } from 'src/web-push-sub/web-push-sub.service';
 import { TradingPlanLean } from 'src/common/types/trading.type';
 import { RealtimeGateway } from 'src/real-time/realtime.gateway';
+import { PushProducer } from 'src/queue/push.producer';
 
 
 const MAX_PLANS_PER_USER = 6;
@@ -25,13 +26,15 @@ export class TradingPlanService {
   constructor(
     @InjectModel(TradingPlan.name)
     private readonly planModel: Model<TradingPlanDocument>,
-    private readonly push: WebPushSubService,
-    private readonly realtime: RealtimeGateway
+    private readonly realtime: RealtimeGateway,
+    private readonly pushProducer: PushProducer,              // +++
+    private readonly webPushSubService: WebPushSubService
   ) { }
 
   async create(currentUserId: string, dto: CreateTradingPlanDto) {
     const userId = this.asObjectId(currentUserId);
     let created!: TradingPlanLean;
+
     const session = await this.planModel.db.startSession();
     try {
       await session.withTransaction(async () => {
@@ -57,7 +60,6 @@ export class TradingPlanService {
 
         const [doc] = await this.planModel.create([{ ...dto, publishedBy: userId }], { session });
 
-        // ⬇️ Re-fetch as lean to get proper types (including _id: ObjectId)
         created = await this.planModel
           .findById(doc._id)
           .lean<TradingPlanLean>()
@@ -83,8 +85,6 @@ export class TradingPlanService {
         }
 
         const doc = await this.planModel.create({ ...dto, publishedBy: userId });
-
-        // ⬇️ Re-fetch as lean (no session here)
         created = await this.planModel.findById(doc._id).lean<TradingPlanLean>().orFail();
       } else {
         throw err;
@@ -92,6 +92,42 @@ export class TradingPlanService {
     } finally {
       session.endSession();
     }
+
+    // --- enqueue push (tiny payload; SW fetches full plan by id) ---
+    try {
+      // Build a compact preview (adjust fields to your DTO)
+      const title = `New Trading Plan${dto?.pair ? `: ${dto.pair}` : ''}`;
+      const desc = [
+        dto?.direction ? `Direction: ${dto.direction}` : null,
+        (dto as any)?.entryPrice ? `Entry: ${(dto as any).entryPrice}` : null,
+        (dto as any)?.tp ? `TP: ${(dto as any).tp}` : null,
+        (dto as any)?.sl ? `SL: ${(dto as any).sl}` : null,
+      ].filter(Boolean).join(' • ');
+
+      const tinyPayload = {
+        type: 'plan',
+        id: String(created._id),
+        preview: {
+          title,
+          body: desc || 'Tap to view the plan details',
+        },
+      };
+
+      // All active users except the author
+      const recipients = await this.webPushSubService.getUserIdsExcept(userId);
+
+      if (recipients.length) {
+        await this.pushProducer.enqueueSendToUsers(
+          recipients,
+          tinyPayload,
+          { ttl: 1800, chunkSize: 500 } // 30m retention; tune as needed
+        );
+      }
+    } catch (e) {
+      // don’t block creation on push issues
+      console.warn('[TradingPlan.create] push enqueue failed:', e);
+    }
+    // ---------------------------------------------------------------
 
     return created;
   }

@@ -5,12 +5,14 @@ import { MongooseModule } from '@nestjs/mongoose';
 import { TradingPlan, TradingPlanSchema } from './trading-plan.schema';
 import { WebPushSubModule } from 'src/web-push-sub/web-push-sub.module';
 import { RealtimeModule } from 'src/real-time/real-time.module';
+import { QueueModule } from 'src/queue/queue.module';
 
 @Module({
   imports: [
     MongooseModule.forFeature([{ name: TradingPlan.name, schema: TradingPlanSchema }]),
     WebPushSubModule,
-    RealtimeModule
+    RealtimeModule,
+    QueueModule
   ],
   providers: [TradingPlanService],
   controllers: [TradingPlanController]
