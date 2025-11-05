@@ -109,7 +109,6 @@ export class Subscription {
   @Prop({ type: Date, required: true, index: true })
   nextInvoiceAt!: Date;
 
- 
 }
 
 export const SubscriptionSchema = SchemaFactory.createForClass(Subscription);

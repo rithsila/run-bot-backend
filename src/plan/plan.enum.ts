@@ -4,10 +4,6 @@ export enum PlanCategory {
     VPS = 'VPS'
 }
 
-export enum CouponStatus {
-    Active = 'Active',
-    Expired = 'Expired'
-}
 
 export enum PlanProducts {
     Indicator = 'Indicator',

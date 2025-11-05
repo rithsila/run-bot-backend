@@ -36,17 +36,16 @@ import { AuthModule } from './auth/auth.module';
 import { JwtAuthGuard } from './auth/guard/jwt-auth.guard';
 import { CsrfGuard } from './auth/guard/csrf.guard';
 import { MediaModule } from './media/media.module';
-import { ReferralModule } from './referrals/referrals.module';
 import { PlanModule } from './plan/plan.module';
 import { TradingPlanModule } from './trading-plan/trading-plan.module';
 import { WebPushSubModule } from './web-push-sub/web-push-sub.module';
 import { TurnstileModule } from './turnstile/turnstile.module';
 import { AnalyzeNewsModule } from './analyze-news/analyze-news.module';
-import { LicenseRequestModule } from './license-request/license-request.module';
 import { RealtimeModule } from './real-time/real-time.module';
 import { RetailerModule } from './retailer/retailer.module';
-import { AffiliatesModule } from './affiliates/affiliates.module';
 import { SubscriptionModule } from './subscription/subscription.module';
+import { MembershipsModule } from './memberships/memberships.module';
+import { CouponsModule } from './coupons/coupons.module';
 
 @Module({
   imports: [
@@ -152,17 +151,16 @@ import { SubscriptionModule } from './subscription/subscription.module';
     MailModule,
     AuthModule,
     MediaModule,
-    ReferralModule,
     PlanModule,
     TradingPlanModule,
     WebPushSubModule,
     TurnstileModule,
     AnalyzeNewsModule,
-    LicenseRequestModule,
     RealtimeModule,
     RetailerModule,
-    AffiliatesModule,
     SubscriptionModule,
+    MembershipsModule,
+    CouponsModule,
   ],
 
   controllers: [AppController],

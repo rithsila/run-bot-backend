@@ -2,7 +2,7 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { HydratedDocument } from 'mongoose';
 import paginate from 'mongoose-paginate-v2';
-import { AffiliatesStatus, Role } from './user.enum';
+import { Role } from './user.enum';
 import { SignInMethod } from '../auth/signin-method.enum';
 
 export type UserDocument = HydratedDocument<User>;
@@ -55,8 +55,6 @@ export class User {
   @Prop({ type: Boolean, default: false })
   emailVerified?: boolean;
 
-  @Prop({ type: String, enum: AffiliatesStatus })
-  affiliates?: AffiliatesStatus
 
   @Prop()
   photoURL?: string;
@@ -96,7 +94,7 @@ export class User {
 export const UserSchema = SchemaFactory.createForClass(User);
 
 // ---------- Plugins ----------
-UserSchema.plugin(paginate); 
+UserSchema.plugin(paginate);
 
 // ---------- Middleware ----------
 UserSchema.pre('validate', function (next) {
@@ -106,7 +104,7 @@ UserSchema.pre('validate', function (next) {
 
   const raw = (this as any).email as string | undefined;
   if (raw) {
-    const canon = raw; 
+    const canon = raw;
     (this as any).emailCanonical = canon;
   }
   next();

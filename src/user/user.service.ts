@@ -16,7 +16,6 @@ import { SignInMethod } from '../auth/signin-method.enum';
 import { setTimeout as delay } from 'timers/promises';
 import { canonicalizeEmail, maskEmail } from 'src/common/utils/email.util';
 import { UserQueryDto } from './dto/user-query.dto';
-import { UpdateUserAffiliatesDto } from './dto/update-user-affiliates.dto';
 import { AdminSetPasswordDto } from './dto/admin-set-password.dto';
 import { Role } from './user.enum';
 
@@ -186,7 +185,7 @@ export class UserService {
   }
 
   async paginate(query: UserQueryDto): Promise<PaginateResult<UserDocument>> {
-    const { q, affiliates, role, page = 1, limit = 10 } = query;
+    const { q,  role, page = 1, limit = 10 } = query;
 
     const filter: FilterQuery<UserDocument> = {};
 
@@ -195,7 +194,6 @@ export class UserService {
       filter.$or = [{ firstName: rx }, { lastName: rx }, { email: rx }];
     }
 
-    if (affiliates) filter.affiliates = affiliates;
     if (role) filter.role = role; // ✅ add role filter
 
     const options: PaginateOptions = {
@@ -209,7 +207,6 @@ export class UserService {
         'lastName',
         'email',
         'emailVerified',
-        'affiliates',
         'photoURL',
         'role',
         'lastActiveAt',
@@ -235,15 +232,7 @@ export class UserService {
     if (!deleted) throw new NotFoundException('User not found');
   }
 
-  async updateAffiliates(id: string, dto: UpdateUserAffiliatesDto): Promise<void> {
-    if (!Types.ObjectId.isValid(id)) throw new BadRequestException('Invalid user id');
 
-    const update: Record<string, any> = { affiliates: dto.affiliates };
-
-
-    const res = await this.model.updateOne({ _id: id }, { $set: update }).lean();
-    if (res.matchedCount === 0) throw new NotFoundException('User not found');
-  }
 
   async adminSetPassword(targetUserId: string, dto: AdminSetPasswordDto): Promise<void> {
     if (!Types.ObjectId.isValid(targetUserId)) {

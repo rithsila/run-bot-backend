@@ -34,7 +34,6 @@ import { GoogleUserPayload } from 'src/common/types/google-auth.type';
 import { cookieBase } from 'src/common/cookies/cookie.util';
 import { TurnstileGuard } from 'src/turnstile/turnstile.guard';
 import { TurnstileAction } from 'src/turnstile/turnstile.decorator';
-import { MembershipsService } from 'src/referrals/memberships.service';
 
 @Controller('auth')
 export class AuthController {
@@ -42,7 +41,6 @@ export class AuthController {
   constructor(
     private readonly auth: AuthService,
     private readonly users: UserService,
-    private readonly membership: MembershipsService
   ) { }
 
   @UseGuards(TurnstileGuard)

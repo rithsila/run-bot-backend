@@ -10,11 +10,10 @@ import { InjectModel } from '@nestjs/mongoose';
 import { FilterQuery, Model, Types } from 'mongoose';
 import { CreateSubscriptionDto } from './dto/create-subscription.dto';
 import * as subscriptionSchema from './subscription.schema';
-import { Coupon, CouponDocument } from 'src/plan/coupon.schema';
 import { Plan, PlanDocument } from 'src/plan/plan.schema';
-import { CouponStatus } from 'src/plan/plan.enum';
 import { SubscriptionsPaginateDto } from './dto/subscriptions-paginate.dto';
 import { UpdateSubscriptionDto } from './dto/update-subscription.dto';
+import { Coupon, CouponDocument, CouponStatus } from 'src/coupons/coupon.schema';
 
 function escapeRegex(str: string) {
     return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -32,96 +31,91 @@ export class SubscriptionService {
     async createPayment(userId: Types.ObjectId, dto: CreateSubscriptionDto) {
         // ---------- 1) Validate plan ----------
         const plan = await this.planModel.findById(dto.plan).lean();
+        if (!plan) throw new NotFoundException('Plan not found.');
 
-        if (!plan) {
-            throw new NotFoundException('Plan not found.');
-        }
-
-        // decide billingPeriod
-        // either dto.billingPeriod or plan.billingPeriod (your current code uses plan.billingPeriod)
         const billingPeriod = plan.billingPeriod;
         if (![1, 3, 6, 12].includes(billingPeriod)) {
             throw new BadRequestException('Invalid billing period.');
         }
 
-        // ---------- 2) Optional coupon ----------
-        const couponDoc = dto.couponCode
-            ? await this.couponModel
+        // ---------- 2) If coupon code provided, validate + load ----------
+        let couponDoc: CouponDocument | null = null;
+        let discount = 0;
+
+        if (dto.couponCode) {
+            const code = dto.couponCode.trim().toUpperCase();
+
+            couponDoc = await this.couponModel
                 .findOne({
-                    code: dto.couponCode.trim(),
-                    status: CouponStatus.Active,
+                    code,
+                    status: { $in: [CouponStatus.Active] }, // adjust if only Active is allowed
                 })
-                .select('_id discount') // only what we need
-                .lean()
-            : null;
+                .lean() as CouponDocument | null;
 
-        // ---------- 3) Compute base amount ----------
-        // ---------- 4) Apply coupon (if any) ----------
-        const discount = couponDoc?.discount ? couponDoc.discount : 0;
+            if (!couponDoc) {
+                throw new NotFoundException('COUPON_NOT_FOUND_OR_INACTIVE');
+            }
 
-        // ---------- 5) Check for existing sub for THIS plan ----------
-        // We only care about subs where user + plan match.
-        // We'll grab the most recent one.
+            // clamp 0..100 defensively
+            const pct = Number(couponDoc.percent);
+            discount = Number.isFinite(pct) ? Math.min(100, Math.max(0, pct)) : 0;
+        }
+
+        // ---------- 3) Check existing subscription for this plan ----------
         const existingSub = await this.subscriptionModel
             .findOne({
                 user: userId,
                 plan: new Types.ObjectId(dto.plan),
             })
-            .sort({ createdAt: -1 }) // newest first just in case
+            .sort({ createdAt: -1 })
             .exec();
 
         const now = new Date();
         const nextInvoiceAt = this.addMonthsSafe(now, billingPeriod);
 
         if (existingSub) {
-            // cases:
-            // A) status = 'init'  -> block
-            // B) status = 'active' or 'paused' -> block
-            // C) status = 'canceled' or 'past_due' -> revive (set status='init', update fields)
-
-            if (
-                existingSub.status === 'init' ||
-                existingSub.status === 'active' ||
-                existingSub.status === 'paused'
-            ) {
-                // user is already holding / using this plan
-                throw new ConflictException(
-                    'You already have a subscription for this plan.'
-                );
+            if (existingSub.status === 'init' || existingSub.status === 'active' || existingSub.status === 'paused') {
+                // user is already holding/using this plan
+                throw new ConflictException('You already have a subscription for this plan.');
             }
 
-            if (
-                existingSub.status === 'cancelled' ||
-                existingSub.status === 'past_due'
-            ) {
-                // ---------- 5b) revive old row instead of creating new ----------
+            if (existingSub.status === 'cancelled' || existingSub.status === 'past_due') {
+                // ---------- revive old row ----------
                 existingSub.status = 'init';
                 existingSub.startAt = now;
                 existingSub.billingPeriod = billingPeriod;
                 existingSub.amount = plan.price;
-                existingSub.coupon = couponDoc ? couponDoc._id : null;
-                existingSub.discount = discount;
+
+                // write coupon/discount if provided (do NOT override if no coupon sent)
+                if (couponDoc) {
+                    existingSub.coupon = couponDoc._id as unknown as Types.ObjectId;
+                    existingSub.discount = discount;
+                }
+
                 existingSub.bankAccountName = dto.bankAccountName.trim();
+                existingSub.tradingViewUsername = dto.tradingViewUsername;
+                existingSub.sn1p3rShotAccount = dto.sn1p3rShotAccount;
+                existingSub.riskManagerAccount = dto.riskManagerAccount;
+                existingSub.sn1p3rConceptAccount = dto.sn1p3rConceptAccount;
                 existingSub.nextInvoiceAt = nextInvoiceAt;
 
                 await existingSub.save();
                 return existingSub;
             }
 
-            // Fallback safety: if we somehow get an unknown status
             throw new ForbiddenException('Subscription state not allowed.');
         }
 
-        // ---------- 6) No existing sub for this plan -> create fresh ----------
+        // ---------- 4) Create new subscription ----------
         const created = await this.subscriptionModel.create({
             user: userId,
             plan: new Types.ObjectId(dto.plan),
-            status: 'init', // <- new subscription always starts at init
+            status: 'init',
             startAt: now,
             billingPeriod,
             amount: plan.price,
-            coupon: couponDoc ? couponDoc._id : null,
-            discount,
+            coupon: couponDoc ? (couponDoc._id as unknown as Types.ObjectId) : null,
+            discount, // store percent (0..100)
             bankAccountName: dto.bankAccountName.trim(),
             tradingViewUsername: dto.tradingViewUsername,
             sn1p3rShotAccount: dto.sn1p3rShotAccount,

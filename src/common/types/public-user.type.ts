@@ -1,4 +1,3 @@
-import { MembershipStatus } from "src/referrals/memberships.enum";
 
 export type PublicUser = {
   _id: string;
@@ -8,5 +7,4 @@ export type PublicUser = {
   role: string;
   photoURL?: string;
   emailVerified: boolean;
-  isMembership?: MembershipStatus
 };

@@ -140,10 +140,6 @@ export class WebPushSubService {
     return { ok: true, failed: errors.length, errors };
   }
 
-  /**
-   * Broadcast to **all** active subscriptions in the collection.
-   * Wrap this in an admin-only controller endpoint.
-   */
   async broadcast(payload: unknown, ttl = 60) {
     const userIds = await this.sub.distinct('userId', { active: true });
     return this.sendToUsers(userIds as Types.ObjectId[], payload, ttl);
@@ -194,21 +190,19 @@ export class WebPushSubService {
 
   /* ────────── Nightly cleanup ────────── */
 
-  @Cron('17 2 * * *')
-  async pruneOldInactive() {
-    const cutoff = new Date(
-      Date.now() - INACTIVE_PRUNE_DAYS * 24 * 60 * 60 * 1000,
-    );
-    const res = await this.sub.deleteMany({
-      active: false,
-      lastFailedAt: { $lt: cutoff },
-    });
-    if (res.deletedCount) {
-      this.log.log(
-        `Pruned ${res.deletedCount} inactive Web-Push subscriptions.`,
-      );
-    }
-  }
-
-
+  // @Cron('17 2 * * *')
+  // async pruneOldInactive() {
+  //   const cutoff = new Date(
+  //     Date.now() - INACTIVE_PRUNE_DAYS * 24 * 60 * 60 * 1000,
+  //   );
+  //   const res = await this.sub.deleteMany({
+  //     active: false,
+  //     lastFailedAt: { $lt: cutoff },
+  //   });
+  //   if (res.deletedCount) {
+  //     this.log.log(
+  //       `Pruned ${res.deletedCount} inactive Web-Push subscriptions.`,
+  //     );
+  //   }
+  // }
 }

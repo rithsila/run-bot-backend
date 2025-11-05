@@ -1,16 +1,13 @@
 // src/user/dto/user-query.dto.ts
 import { IsEnum, IsInt, IsOptional, IsString, Min } from 'class-validator';
 import { Type } from 'class-transformer';
-import { AffiliatesStatus, Role } from '../user.enum';
+import {  Role } from '../user.enum';
 
 export class UserQueryDto {
   @IsOptional()
   @IsString()
   q?: string;
 
-  @IsOptional()
-  @IsEnum(AffiliatesStatus)
-  affiliates?: AffiliatesStatus;
 
   // ✅ new: filter by role
   @IsOptional()

@@ -2,7 +2,6 @@
 import { BadRequestException, Body, Controller, Delete, Get, HttpCode, Param, Patch, Query, Req, UnauthorizedException } from '@nestjs/common';
 import { UserService } from './user.service';
 import { UserQueryDto } from './dto/user-query.dto';
-import { UpdateUserAffiliatesDto } from './dto/update-user-affiliates.dto';
 import { AdminSetPasswordDto } from './dto/admin-set-password.dto';
 import { isValidObjectId } from 'mongoose';
 import { UpdateUserRoleDto } from './dto/update-user-role.dto';
@@ -21,14 +20,7 @@ export class UsersController {
         await this.service.deleteById(id);
     }
 
-    @Patch(':id/affiliates')
-    @HttpCode(204)
-    async updateAffiliates(
-        @Param('id') id: string,
-        @Body() dto: UpdateUserAffiliatesDto,
-    ): Promise<void> {
-        await this.service.updateAffiliates(id, dto);
-    }
+  
 
     @Patch(':id/password')
     async adminSetPassword(@Param('id') id: string, @Body() dto: AdminSetPasswordDto) {
