@@ -40,4 +40,9 @@ export class JoinMembershipDto {
   @IsString()
   @MaxLength(2000)
   notes?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(20)
+  referral?: string;
 }

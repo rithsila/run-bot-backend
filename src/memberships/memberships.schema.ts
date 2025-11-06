@@ -45,6 +45,9 @@ export class Membership {
   notes?: string;
 
   @Prop({ type: String, trim: true })
+  referral?: string;
+
+  @Prop({ type: String, trim: true })
   adminNotes?: string;
 
   @Prop({ type: [String], default: [] })
