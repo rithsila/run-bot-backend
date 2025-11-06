@@ -9,6 +9,7 @@ import { PushProducer } from './push.producer';
 import { PushWorker } from './push.worker';
 import { MongooseModule } from '@nestjs/mongoose';
 import { WebPushSub, WebPushSubSchema } from 'src/web-push-sub/web-push-sub.schema';
+import { User, UserSchema } from 'src/user/user.schema';
 
 @Module({
   imports: [
@@ -47,7 +48,7 @@ import { WebPushSub, WebPushSubSchema } from 'src/web-push-sub/web-push-sub.sche
     }),
     MongooseModule.forFeature([
       { name: WebPushSub.name, schema: WebPushSubSchema },
-      // { name: User.name, schema: UserSchema }
+      { name: User.name, schema: UserSchema }
     ]),
   ],
   providers: [

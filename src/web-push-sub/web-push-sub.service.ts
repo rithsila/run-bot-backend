@@ -5,6 +5,8 @@ import { Model, Types } from 'mongoose';
 import pLimit from 'p-limit';
 import webpush, { PushSubscription } from 'web-push';
 import { WebPushSub, WebPushSubDocument } from './web-push-sub.schema';
+import { Role } from 'src/user/user.enum';
+import { User, UserDocument } from 'src/user/user.schema';
 
 const CONCURRENCY = 25;
 
@@ -15,7 +17,9 @@ export class WebPushSubService {
 
   constructor(
     @InjectModel(WebPushSub.name)
-    private readonly sub: Model<WebPushSubDocument>
+    private readonly sub: Model<WebPushSubDocument>,
+    @InjectModel(User.name) private readonly users: Model<UserDocument>,
+
   ) {
 
     webpush.setVapidDetails(
@@ -35,6 +39,11 @@ export class WebPushSubService {
       })
       .exec()) as Types.ObjectId[];
 
+    return ids;
+  }
+
+  async getAdminIds(): Promise<Types.ObjectId[]> {
+    const ids = (await this.users.distinct('_id', { role: Role.Admin }).exec()) as Types.ObjectId[];
     return ids;
   }
 
@@ -71,7 +80,7 @@ export class WebPushSubService {
 
   async sendToUsers(
     userIds: Types.ObjectId[],
-    payload: unknown,
+    payload: string,
     ttl = 60,
   ) {
     const cursor = this.sub
@@ -80,7 +89,6 @@ export class WebPushSubService {
       .cursor();
 
     const tasks: Promise<{ endpoint: string; ok: boolean; code?: number }>[] = [];
-
     for await (const s of cursor) {
       tasks.push(
         this.limit(async () => {

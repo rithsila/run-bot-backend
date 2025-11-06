@@ -8,9 +8,8 @@ import { WebPushSub, WebPushSubDocument } from 'src/web-push-sub/web-push-sub.sc
 import { WebPushSubService } from 'src/web-push-sub/web-push-sub.service';
 
 
-type ObjectIdLike = string | Types.ObjectId;
 interface FanoutJob { contentId: string; segment: string; ttl?: number }
-interface SendToUsersJob { userIds: string[]; payload: unknown; ttl?: number }
+interface SendToUsersJob { userIds: string[]; payload: string; ttl?: number }
 
 const PAGE_SIZE = 1000;
 const PAGE_JITTER_MS: [number, number] = [120, 360];
@@ -45,6 +44,7 @@ export class PushWorker extends WorkerHost {
       this.log.warn(`sendToUsers: empty userIds (jobId=${job.id})`);
       return { ok: true, failed: 0, errors: [] };
     }
+
     const ids = userIds.map((id) => new Types.ObjectId(id));
     const res = await this.webPushSubSvc.sendToUsers(ids, payload, ttl);
     if (res.failed > 0) {
@@ -53,7 +53,7 @@ export class PushWorker extends WorkerHost {
       this.log.log(`sendToUsers: sent to ${ids.length} users (jobId=${job.id})`);
     }
     return res;
-    }
+  }
 
   private async handleFanout(job: Job<FanoutJob>) {
     const { contentId, segment, ttl = 3600 } = job.data;
@@ -77,7 +77,7 @@ export class PushWorker extends WorkerHost {
       const ids = Array.from(new Set(page.map(s => String(s.userId))))
         .map(id => new Types.ObjectId(id));
 
-      const res = await this.webPushSubSvc.sendToUsers(ids, tiny, ttl);
+      const res = await this.webPushSubSvc.sendToUsers(ids, "", ttl);
       sent += ids.length - res.failed;
       failed += res.failed;
 

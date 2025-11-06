@@ -125,7 +125,6 @@ export class CouponsController {
         }>
     > {
         const data = await this.coupons.apply(dto.code);
-        console.log("===============", data)
         return {
             success: true,
             statusCode: HttpStatus.OK,

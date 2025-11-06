@@ -2,6 +2,7 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { Document, PaginateModel, Types } from 'mongoose';
 import paginate from 'mongoose-paginate-v2';
+import { User } from 'src/user/user.schema';
 
 export type MembershipDocument = Membership & Document;
 export type MembershipPaginateModel = PaginateModel<MembershipDocument>;
@@ -31,7 +32,7 @@ export class Membership {
     index: true,
     required: true,
   })
-  user!: Types.ObjectId;
+  user!: User;
 
   @Prop({
     type: String,

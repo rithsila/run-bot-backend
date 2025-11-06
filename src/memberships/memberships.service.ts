@@ -9,31 +9,20 @@ import { PaginateMembershipsDto } from './dto/paginate-memberships.dto';
 import { PaginatedResult } from 'src/common/types/api-response.type';
 import { MembershipDocument } from './memberships.schema';
 import { UpdateMembershipAdminDto } from './dto/update-membership-admin.dto';
-
-
-function normalizeAccounts(input?: string[]): string[] | undefined {
-    if (!Array.isArray(input)) return undefined;
-    const cleaned = Array.from(
-        new Set(
-            input
-                .map(v => (typeof v === 'string' ? v.trim() : ''))
-                .filter(v => v.length > 0),
-        ),
-    );
-    if (cleaned.length === 0) return [];
-    if (cleaned.length > 3) throw new BadRequestException('accounts can have at most 3 entries');
-    return cleaned;
-}
-
+import { buildAdminTinyPayload, normalizeAccounts } from './memberships.helper';
+import { PushProducer } from 'src/queue/push.producer';
+import { WebPushSubService } from 'src/web-push-sub/web-push-sub.service';
 
 @Injectable()
 export class MembershipsService {
     constructor(
         @InjectModel(membershipsSchema.Membership.name)
         private readonly membershipModel: membershipsSchema.MembershipPaginateModel,
-
         @InjectModel(User.name)
         private readonly userModel: Model<UserDocument>,
+        private readonly pushProducer: PushProducer,
+        private readonly webPushSubService: WebPushSubService
+
     ) { }
 
     async findByUserId(userId: string): Promise<MembershipDocument | null> {
@@ -44,6 +33,7 @@ export class MembershipsService {
         // user is required (schema requires it)
         if (!currentUserId) throw new BadRequestException('USER_REQUIRED');
 
+        const user = await this.userModel.findById(currentUserId)
         // email is required (schema + DTO require it). Normalize.
         const emailRaw = dto.email;
         const email =
@@ -64,6 +54,7 @@ export class MembershipsService {
             throw new ConflictException('A membership for this user or email already exists.');
         }
 
+
         try {
             const created = await this.membershipModel.create({
                 user: new Types.ObjectId(currentUserId),
@@ -74,7 +65,42 @@ export class MembershipsService {
                 referral: dto?.referral
             });
 
+
+            try {
+                const tinyPayload = {
+                    title: 'New membership request',
+                    body: `${user?.firstName} ${user?.lastName} just asked to join`,
+                };
+
+                // Exclude author if provided on dto (optional)
+                let excludeId: Types.ObjectId | null = null;
+                const maybeAuthorId = (dto as any)?.authorId;
+                if (maybeAuthorId) {
+
+                    try { excludeId = new Types.ObjectId(String(maybeAuthorId)); } catch { /* ignore bad id */ }
+                }
+
+
+
+                // Get recipients (all active users, optionally excluding author).
+                const recipients = await this.webPushSubService.getAdminIds();
+
+                if (recipients.length) {
+                    await this.pushProducer.enqueueSendToUsers(
+                        recipients,
+                        tinyPayload,
+                        { ttl: 3600, chunkSize: 500 }
+                    );
+                }
+            } catch (e) {
+                // Don’t block creation on push failures
+                console.warn('[AnalyzeNews.create] push enqueue failed:', e);
+            }
+            // --
+
             return this.membershipModel.findById(created._id).lean();
+
+
         } catch (err: any) {
             if (err?.code === 11000) {
                 // unique index collision (race)
@@ -84,10 +110,9 @@ export class MembershipsService {
         }
     }
 
-    /** APPEAL **/
     async appeal(userId: string, dto: JoinMembershipDto) {
         const membership = await this.membershipModel
-            .findOne({ user: new Types.ObjectId(userId) })
+            .findOne({ user: new Types.ObjectId(userId) }).populate('user')
             .exec();
 
         if (!membership) throw new NotFoundException('MEMBERSHIP_NOT_FOUND');
@@ -137,8 +162,39 @@ export class MembershipsService {
         membership.referral = referral;
 
         try {
+            try {
+                const tinyPayload = {
+                    title: 'Appeal membership request',
+                    body: `${membership?.user?.firstName} ${membership?.user?.lastName} just asked to Appeal`,
+                };
+
+                // Exclude author if provided on dto (optional)
+                let excludeId: Types.ObjectId | null = null;
+                const maybeAuthorId = (dto as any)?.authorId;
+                if (maybeAuthorId) {
+
+                    try { excludeId = new Types.ObjectId(String(maybeAuthorId)); } catch { /* ignore bad id */ }
+                }
+
+                // Get recipients (all active users, optionally excluding author).
+                const recipients = await this.webPushSubService.getAdminIds();
+
+                if (recipients.length) {
+                    await this.pushProducer.enqueueSendToUsers(
+                        recipients,
+                        tinyPayload,
+                        { ttl: 3600, chunkSize: 500 }
+                    );
+                }
+            } catch (e) {
+                // Don’t block creation on push failures
+                console.warn('[AnalyzeNews.create] push enqueue failed:', e);
+            }
+
             await membership.save();
+
             return this.membershipModel.findById(membership._id).lean().exec();
+
         } catch (err: any) {
             if (err?.code === 11000) {
                 throw new ConflictException('A membership with this email already exists.');
@@ -236,6 +292,20 @@ export class MembershipsService {
         }
         if (dto.adminNotes !== undefined) {
             membership.adminNotes = dto.adminNotes?.trim() || undefined;
+        }
+        try {
+            const tinyPayload = buildAdminTinyPayload(membership, dto, { maxReasonLength: 160 });
+            const userId = membership?.user || ''
+            const recipients = [new Types.ObjectId(userId?.toString())];
+            if (recipients.length) {
+                await this.pushProducer.enqueueSendToUsers(
+                    recipients,
+                    tinyPayload,
+                    { ttl: 3600, chunkSize: 500 }
+                );
+            }
+        } catch (e) {
+            console.warn('[Membership.updateAdmin] push enqueue failed:', e);
         }
 
         await membership.save();

@@ -5,6 +5,7 @@ import { MongooseModule } from '@nestjs/mongoose';
 import { WebPushSubModule } from 'src/web-push-sub/web-push-sub.module';
 import { Coupon, CouponSchema } from './coupon.schema';
 import { Membership, MembershipSchema } from 'src/memberships/memberships.schema';
+import { QueueModule } from 'src/queue/queue.module';
 
 @Module({
   imports: [
@@ -13,6 +14,7 @@ import { Membership, MembershipSchema } from 'src/memberships/memberships.schema
       { name: Membership.name, schema: MembershipSchema },
     ]),
     WebPushSubModule,
+    QueueModule
   ],
   providers: [CouponsService],
   controllers: [CouponsController]

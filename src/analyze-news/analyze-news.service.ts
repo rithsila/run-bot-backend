@@ -84,9 +84,7 @@ export class AnalyzeNewsService {
                             .session(session);
                     }
                 }
-
                 const [doc] = await this.newsModel.create([payload], { session });
-
                 created = await this.newsModel
                     .findById(doc._id)
                     .lean<AnalyzeNewsLean>()
@@ -97,6 +95,7 @@ export class AnalyzeNewsService {
             // Standalone Mongo fallback (no replica set)
             if (String(err?.message || '').includes('Transaction numbers are only allowed on a replica set')) {
                 const count = await this.newsModel.countDocuments({});
+
                 const toDelete = Math.max(0, count - MAX_ANALYZE_NEWS + 1);
 
                 if (toDelete > 0) {
@@ -128,23 +127,22 @@ export class AnalyzeNewsService {
 
         // ---- Push notification (tiny payload; SW will fetch full content by id) ----
         try {
-            const previewBody = (created.description || '').slice(0, 140);
             const tinyPayload = {
-                type: 'news',
-                id: String(created._id),
-                preview: {
-                    title: created.title,
-                    body: previewBody,
-                    image: created.thumbnailUrl || undefined,
-                },
+                title: 'New Analysis 📰',
+                body: created.pair
+                    ? `${created.title} • ${created.pair} • ${created.impact}`
+                    : `${created.title} • ${created.impact}`,
             };
 
             // Exclude author if provided on dto (optional)
             let excludeId: Types.ObjectId | null = null;
             const maybeAuthorId = (dto as any)?.authorId;
             if (maybeAuthorId) {
+                
                 try { excludeId = new Types.ObjectId(String(maybeAuthorId)); } catch { /* ignore bad id */ }
             }
+
+
 
             // Get recipients (all active users, optionally excluding author).
             const recipients = await this.webPushSubService.getUserIdsExcept(
@@ -155,7 +153,7 @@ export class AnalyzeNewsService {
                 await this.pushProducer.enqueueSendToUsers(
                     recipients,
                     tinyPayload,
-                    { ttl: 3600, chunkSize: 500 } // keep for 1h; tune chunk size as needed
+                    { ttl: 3600, chunkSize: 500 }
                 );
             }
         } catch (e) {

@@ -13,7 +13,6 @@ import { Types } from 'mongoose';
 import { WebPushSubService } from './web-push-sub.service';
 import {
   SubscribeWebPushDto,
-  UnsubscribeWebPushDto,
 } from './dto/web-push-sub.dto';
 import { JwtAuthGuard } from 'src/auth/guard/jwt-auth.guard';
 import type { AuthRequest } from 'src/common/types/auth-request.type';

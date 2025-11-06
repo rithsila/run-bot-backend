@@ -93,38 +93,35 @@ export class TradingPlanService {
       session.endSession();
     }
 
-    // --- enqueue push (tiny payload; SW fetches full plan by id) ---
+    // ---- Push notification (tiny payload; SW will fetch full content by id) ----
     try {
-      // Build a compact preview (adjust fields to your DTO)
-      const title = `New Trading Plan${dto?.pair ? `: ${dto.pair}` : ''}`;
-      const desc = [
-        dto?.direction ? `Direction: ${dto.direction}` : null,
-        (dto as any)?.entryPrice ? `Entry: ${(dto as any).entryPrice}` : null,
-        (dto as any)?.tp ? `TP: ${(dto as any).tp}` : null,
-        (dto as any)?.sl ? `SL: ${(dto as any).sl}` : null,
-      ].filter(Boolean).join(' • ');
-
       const tinyPayload = {
-        type: 'plan',
-        id: String(created._id),
-        preview: {
-          title,
-          body: desc || 'Tap to view the plan details',
-        },
+        title: 'New Trading Plan 📈',
+        body: `${created.pair} • ${created.direction}`
       };
 
-      // All active users except the author
-      const recipients = await this.webPushSubService.getUserIdsExcept(userId);
+      // Exclude author if provided on dto (optional)
+      let excludeId: Types.ObjectId | null = null;
+      const maybeAuthorId = (dto as any)?.authorId;
+      if (maybeAuthorId) {
+
+        try { excludeId = new Types.ObjectId(String(maybeAuthorId)); } catch { /* ignore bad id */ }
+      }
+
+      // Get recipients (all active users, optionally excluding author).
+      const recipients = await this.webPushSubService.getUserIdsExcept(
+        excludeId ?? new Types.ObjectId('000000000000000000000000') // excludes no one if author unknown
+      );
 
       if (recipients.length) {
         await this.pushProducer.enqueueSendToUsers(
           recipients,
           tinyPayload,
-          { ttl: 1800, chunkSize: 500 } // 30m retention; tune as needed
+          { ttl: 3600, chunkSize: 500 }
         );
       }
     } catch (e) {
-      // don’t block creation on push issues
+      // Don’t block creation on push failures
       console.warn('[TradingPlan.create] push enqueue failed:', e);
     }
     // ---------------------------------------------------------------

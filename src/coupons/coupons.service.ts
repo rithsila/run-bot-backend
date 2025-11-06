@@ -16,6 +16,9 @@ import { Coupon, CouponStatus } from './coupon.schema';
 import type { CouponPaginateModel } from './coupon.schema';
 import { PaginateCouponsDto } from './dto/paginate-coupons.dto';
 import { Membership, MembershipDocument, MembershipStatus } from 'src/memberships/memberships.schema';
+import { PushProducer } from 'src/queue/push.producer';
+import { WebPushSubService } from 'src/web-push-sub/web-push-sub.service';
+import { buildCouponAdminTinyPayload } from './coupon.helper';
 
 
 export type MyCouponLite = {
@@ -32,6 +35,8 @@ export class CouponsService {
         private readonly couponModel: CouponPaginateModel,
         @InjectModel(Membership.name)
         private readonly membershipModel: Model<MembershipDocument>,
+        private readonly pushProducer: PushProducer,
+        private readonly webPushSubService: WebPushSubService
     ) { }
 
     private normalizeCode(raw?: string): string | undefined {
@@ -50,7 +55,7 @@ export class CouponsService {
 
         // ✅ Membership gate: must exist and be Verified
         const membership = await this.membershipModel
-            .findOne({ user: userId }, { _id: 1, status: 1 })
+            .findOne({ user: userId }, { _id: 1, status: 1 }).populate('user')
             .lean()
             .exec();
 
@@ -91,6 +96,38 @@ export class CouponsService {
                 )
                 .exec();
 
+
+            try {
+                const tinyPayload = {
+                    title: 'New affiliate request',
+                    body: `${membership?.user?.firstName} ${membership?.user?.lastName} just asked to join`,
+                };
+
+                // Exclude author if provided on dto (optional)
+                let excludeId: Types.ObjectId | null = null;
+                const maybeAuthorId = (dto as any)?.authorId;
+                if (maybeAuthorId) {
+
+                    try { excludeId = new Types.ObjectId(String(maybeAuthorId)); } catch { /* ignore bad id */ }
+                }
+
+
+
+                // Get recipients (all active users, optionally excluding author).
+                const recipients = await this.webPushSubService.getAdminIds();
+
+                if (recipients.length) {
+                    await this.pushProducer.enqueueSendToUsers(
+                        recipients,
+                        tinyPayload,
+                        { ttl: 3600, chunkSize: 500 }
+                    );
+                }
+            } catch (e) {
+                // Don’t block creation on push failures
+                console.warn('[AnalyzeNews.create] push enqueue failed:', e);
+            }
+
             return doc;
         } catch (err: any) {
             if (err?.code === 11000) {
@@ -99,7 +136,6 @@ export class CouponsService {
             throw err;
         }
     }
-
 
     async getCodesByUserId(userId?: string): Promise<MyCouponLite | null> {
         if (!userId) throw new BadRequestException('USER_REQUIRED');
@@ -170,10 +206,7 @@ export class CouponsService {
 
         const { status, percent } = payload;
 
-        // Apply changes only if provided
         if (status !== undefined) {
-            // Optional rule: protect Expired/Scheduled from certain transitions if you need
-            // if (doc.status === CouponStatus.Expired) throw new BadRequestException('CANNOT_CHANGE_EXPIRED');
             doc.status = status;
         }
 
@@ -188,6 +221,28 @@ export class CouponsService {
         }
 
         await doc.save();
+
+        // Build the admin notification (optional)
+        try {
+            const tinyPayload = buildCouponAdminTinyPayload(doc, payload, {
+                includeValidity: true, // set false if you don't track validFrom/validTo
+                // formatDate: (d) => new Date(d).toLocaleDateString('en-US'), // custom if you prefer
+            });
+
+            const userId = doc?.createdBy || ''
+            const recipients = [new Types.ObjectId(userId?.toString())];
+
+            if (recipients.length) {
+                await this.pushProducer.enqueueSendToUsers(
+                    recipients,
+                    tinyPayload,
+                    { ttl: 3600, chunkSize: 500 },
+                );
+            }
+        } catch (e) {
+            console.warn('[Coupon.updateStatusById] push enqueue failed:', e);
+        }
+
         return this.couponModel.findById(doc._id).lean().exec();
     }
 
