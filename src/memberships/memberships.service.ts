@@ -71,6 +71,7 @@ export class MembershipsService {
                 accounts,
                 notes: dto.notes ?? undefined,
                 status: membershipsSchema.MembershipStatus.Request,
+                referral: dto?.referral
             });
 
             return this.membershipModel.findById(created._id).lean();
@@ -106,6 +107,7 @@ export class MembershipsService {
 
         const accountsProvided = Object.prototype.hasOwnProperty.call(dto, 'accounts');
         const accounts = normalizeAccounts(dto.accounts);
+        const referral = dto?.referral
 
         // If email is provided, validate
         if (emailProvided) {
@@ -132,6 +134,7 @@ export class MembershipsService {
         // Reset status/admin note for re-review
         membership.status = membershipsSchema.MembershipStatus.Request;
         membership.adminNotes = undefined;
+        membership.referral = referral;
 
         try {
             await membership.save();
