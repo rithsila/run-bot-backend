@@ -6,40 +6,124 @@ import * as nodemailer from 'nodemailer';
 @Injectable()
 export class MailService {
   private readonly logger = new Logger(MailService.name);
-  private transporter!: nodemailer.Transporter;
+  private transporter?: nodemailer.Transporter;
+  private fromName: string;
+  private fromEmail: string;
+
 
   constructor(private readonly config: ConfigService) {
-    this.init().catch(err =>
-      this.logger.error('Mail transporter init failed', err),
-    );
+    this.fromName = this.config.get<string>('MAIL_FROM_NAME') || 'No-Reply';
+    this.fromEmail = this.config.get<string>('MAIL_FROM_EMAIL')!;
+
+    // initialize once on startup; keep a single pooled transporter
+    this.init().catch((err) => {
+      this.logger.error('Mail transporter init failed', err as any);
+    });
   }
 
   private async init() {
-    const user = this.config.get<string>('MAIL_FROM_EMAIL')!;
-    const pass = this.config.get<string>('GMAIL_APP_PASSWORD')!;
-    // Port 465 (secure) or 587 (STARTTLS). Either works.
+    const user = this.config.get<string>('MAIL_FROM_EMAIL');
+    const pass = this.config.get<string>('GMAIL_APP_PASSWORD');
+
+    if (!user || !pass) {
+      this.logger.warn('MAIL_FROM_EMAIL / GMAIL_APP_PASSWORD not set — Mail disabled.');
+      return;
+    }
+
     this.transporter = nodemailer.createTransport({
       host: 'smtp.gmail.com',
       port: 465,
-      secure: true, // true = 465, false = 587
+      secure: true, // 465
       auth: { user, pass },
+      pool: true,
+      maxConnections: 3,
+      maxMessages: 100,
+      // Production-friendly timeouts
+      connectionTimeout: 15_000,
+      greetingTimeout: 10_000,
+      socketTimeout: 30_000,
     });
-    this.logger.log('Nodemailer set up with Gmail App Password (SMTP).');
+
+    try {
+      await this.transporter.verify();
+      this.logger.log('Nodemailer SMTP verified (Gmail App Password).');
+    } catch (e) {
+      this.logger.error('SMTP verify failed', e as any);
+      // Keep instance but mark transporter undefined so sends no-op/fail fast
+      this.transporter = undefined;
+    }
   }
 
-  async send(opts: { to: string | string[]; subject: string; text?: string; html?: string }) {
-    if (!this.transporter) await this.init();
+  private ensureTransport() {
+    if (!this.transporter) {
+      throw new Error('Mail transport unavailable (bad creds or init failed).');
+    }
+    return this.transporter;
+  }
 
-    const fromName = this.config.get<string>('MAIL_FROM_NAME') || 'No-Reply';
-    const fromEmail = this.config.get<string>('MAIL_FROM_EMAIL')!;
-    const info = await this.transporter.sendMail({
-      from: `${fromName} <${fromEmail}>`,
+  async send(opts: {
+    to: string | string[];
+    subject: string;
+    text?: string;
+    html?: string;
+    replyTo?: string;
+    headers?: Record<string, string>;
+  }) {
+    const tx = this.ensureTransport();
+
+    // Provide minimal plain text if only HTML is supplied
+    const text = opts.text ?? (opts.html ? this.stripHtml(opts.html) : undefined);
+
+    const info = await tx.sendMail({
+      from: `${this.fromName} <${this.fromEmail}>`,
       to: opts.to,
       subject: opts.subject,
-      text: opts.text,
+      text,
       html: opts.html,
+      replyTo: opts.replyTo,
+      headers: {
+        // Helps deliverability & unsub flows if you add them later
+        'List-Unsubscribe-Post': 'List-Unsubscribe=One-Click',
+        ...opts.headers,
+      },
     });
+
     this.logger.debug(`Mail sent: ${info.messageId}`);
     return info;
+  }
+
+  // ---- Convenience methods you'll call from AuthService ----
+
+  async sendEmailVerification(to: string, link: string) {
+    const subject = 'Verify your email';
+    const html = `
+      <h2>Confirm your email</h2>
+      <p>This link expires in 24 hours.</p>
+      <p><a href="${link}" target="_blank" rel="noopener">Verify email</a></p>
+      <p>If the button doesn’t work, paste this URL into your browser:</p>
+      <p>${link}</p>
+    `;
+    return this.send({ to, subject, html });
+  }
+
+  async sendPasswordReset(to: string, link: string) {
+
+    const subject = 'Reset your password';
+    const html = `
+      <h2>Reset your password</h2>
+      <p>This link expires in 20 minutes.</p>
+      <p><a href="${link}" target="_blank" rel="noopener">Reset password</a></p>
+      <p>If the button doesn’t work, paste this URL into your browser:</p>
+      <p>${link}</p>
+    `;
+    return this.send({ to, subject, html });
+  }
+
+  // ---- tiny utility ----
+  private stripHtml(html: string) {
+    return html.replace(/<style[\s\S]*?<\/style>/gi, '')
+      .replace(/<[^>]+>/g, '')
+      .replace(/\s+/g, ' ')
+      .trim();
   }
 }

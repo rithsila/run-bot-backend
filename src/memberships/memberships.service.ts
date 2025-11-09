@@ -12,6 +12,7 @@ import { UpdateMembershipAdminDto } from './dto/update-membership-admin.dto';
 import { buildAdminTinyPayload, normalizeAccounts } from './memberships.helper';
 import { PushProducer } from 'src/queue/push.producer';
 import { WebPushSubService } from 'src/web-push-sub/web-push-sub.service';
+import { Subscription, SubscriptionDocument } from 'src/subscription/subscription.schema';
 
 @Injectable()
 export class MembershipsService {
@@ -20,12 +21,14 @@ export class MembershipsService {
         private readonly membershipModel: membershipsSchema.MembershipPaginateModel,
         @InjectModel(User.name)
         private readonly userModel: Model<UserDocument>,
+        @InjectModel(Subscription.name)
         private readonly pushProducer: PushProducer,
         private readonly webPushSubService: WebPushSubService
 
     ) { }
 
     async findByUserId(userId: string): Promise<MembershipDocument | null> {
+    
         return this.membershipModel.findOne({ user: new Types.ObjectId(userId) }).exec();
     }
 

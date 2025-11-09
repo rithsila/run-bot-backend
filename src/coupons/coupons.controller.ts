@@ -22,12 +22,15 @@ import { Throttle } from '@nestjs/throttler';
 import { PaginateCouponsDto } from './dto/paginate-coupons.dto';
 import { UpdateCouponStatusAdminDto } from './dto/update-coupon-status.dto';
 import { ApplyCouponDto } from './dto/apply-coupon.dto';
+import { Roles } from 'src/auth/decorators/roles.decorator';
+import { Role } from 'src/user/user.enum';
 
 @Controller('coupons')
 export class CouponsController {
     constructor(private readonly coupons: CouponsService) { }
 
     @Get()
+    @Roles(Role.Admin)
     @HttpCode(HttpStatus.OK)
     async list(
         @Query() q: PaginateCouponsDto,
@@ -90,6 +93,7 @@ export class CouponsController {
 
 
     @Patch(':id/status')
+    @Roles(Role.Admin)
     @HttpCode(HttpStatus.OK)
     async updateStatusById(
         @Param('id') id: string,

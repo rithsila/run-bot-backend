@@ -19,15 +19,17 @@ import { TradingPlanService } from './trading-plan.service';
 import { CreateTradingPlanDto } from './dto/create-trading-plan.dto';
 import type { AuthRequest } from 'src/common/types/auth-request.type';
 import { ApiSuccess } from 'src/common/types/api-response.type';
+import { Role } from 'src/user/user.enum';
+import { Roles } from 'src/auth/decorators/roles.decorator';
 
 @Controller('trading-plan')
 export class TradingPlanController {
     constructor(private readonly service: TradingPlanService) { }
 
     @Post()
+    @Roles(Role.Creator, Role.Admin)
     @HttpCode(HttpStatus.CREATED)
     @Throttle({ default: { limit: 5, ttl: 30_000 } })
-    @UsePipes(new ValidationPipe({ whitelist: true, forbidNonWhitelisted: true }))
     async create(
         @Req() req: AuthRequest,
         @Body() dto: CreateTradingPlanDto,
@@ -85,6 +87,7 @@ export class TradingPlanController {
     }
 
     @Patch(':id')
+    @Roles(Role.Creator, Role.Admin)
     @HttpCode(HttpStatus.OK)
     @UsePipes(new ValidationPipe({ whitelist: true, forbidNonWhitelisted: true }))
     async update(
@@ -108,6 +111,7 @@ export class TradingPlanController {
     }
 
     @Delete(':id')
+    @Roles(Role.Creator, Role.Admin)
     async remove(@Param('id') id: string, @Req() req: any) {
         return this.service.remove(id);
     }

@@ -21,12 +21,15 @@ import { MembershipDocument } from './memberships.schema';
 import { PaginateMembershipsDto } from './dto/paginate-memberships.dto';
 import { Throttle } from '@nestjs/throttler';
 import { UpdateMembershipAdminDto } from './dto/update-membership-admin.dto';
+import { Roles } from 'src/auth/decorators/roles.decorator';
+import { Role } from 'src/user/user.enum';
 
 @Controller('memberships')
 export class MembershipsController {
     constructor(private readonly memberships: MembershipsService) { }
 
     @Get()
+    @Roles(Role.Admin)
     @Throttle({ default: { limit: 30, ttl: 60_000 } })
     @HttpCode(HttpStatus.OK)
     async list(
@@ -107,6 +110,7 @@ export class MembershipsController {
     }
 
     @Patch(':id/admin')
+    @Roles(Role.Admin)
     @HttpCode(HttpStatus.OK)
     async adminUpdate(
         @Param('id') id: string,

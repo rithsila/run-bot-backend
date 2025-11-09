@@ -7,9 +7,7 @@ import {
   Post,
   Req,
   UnauthorizedException,
-  UseGuards,
-  UsePipes,
-  ValidationPipe,
+  UseGuards
 } from '@nestjs/common';
 import type { Request } from 'express';
 import { Throttle } from '@nestjs/throttler';
@@ -27,13 +25,14 @@ import type { Response } from 'express';
 import { UserService } from 'src/user/user.service';
 import { AuthGuard } from '@nestjs/passport';
 import { Public } from './guard/public.decorator';
-import { JwtAuthGuard } from './guard/jwt-auth.guard';
 import { SkipCsrf } from './guard/skip-csrf.decorator';
 import crypto from 'crypto';
 import { GoogleUserPayload } from 'src/common/types/google-auth.type';
 import { cookieBase } from 'src/common/cookies/cookie.util';
 import { TurnstileGuard } from 'src/turnstile/turnstile.guard';
 import { TurnstileAction } from 'src/turnstile/turnstile.decorator';
+import { VerifyEmailDto } from './dto/verify-email.dto';
+import { ResendVerificationDto } from './dto/resend-verification.dto';
 
 @Controller('auth')
 export class AuthController {
@@ -46,15 +45,8 @@ export class AuthController {
   @UseGuards(TurnstileGuard)
   @TurnstileAction('register')
   @Public()
-  @SkipCsrf()
   @Post('signup')
   @Throttle({ default: { limit: 5, ttl: 60_000 } })
-  @UsePipes(new ValidationPipe({
-    whitelist: true,
-    forbidNonWhitelisted: false,
-    transform: true,
-    transformOptions: { enableImplicitConversion: true },
-  }))
   @HttpCode(HttpStatus.CREATED)
   async signup(
     @Body() dto: SignupDto,
@@ -92,22 +84,17 @@ export class AuthController {
       path: req.url,
     };
   }
+
   @Public()
   @Post('login')
   @UseGuards(TurnstileGuard)
   @TurnstileAction('login')
   @Throttle({ default: { limit: 5, ttl: 60_000 } })
-  @UsePipes(new ValidationPipe({
-    whitelist: true,
-    forbidNonWhitelisted: false,
-    transform: true,
-    transformOptions: { enableImplicitConversion: true },
-  }))
   @HttpCode(HttpStatus.OK)
   async login(
     @Body() dto: LoginDto,
     @Req() req: Request,
-    @Res({ passthrough: true }) res: Response,   // 👈 allow setting cookie
+    @Res({ passthrough: true }) res: Response,
   ): Promise<ApiSuccess<{ tokenType: 'Bearer'; accessToken: string; expiresIn: number; user?: PublicUser }>> {
 
     const ip = getClientIp(req);
@@ -154,7 +141,6 @@ export class AuthController {
     };
   }
 
-  @UseGuards(JwtAuthGuard)
   @Get('me')
   async getMe(@Req() req: AuthRequest): Promise<ApiSuccess<PublicUser>> {
     const uid = req?.user?.userId;
@@ -187,7 +173,32 @@ export class AuthController {
     };
   }
 
+  @Public()
+  @Post('verify-email')
+  @Throttle({ default: { limit: 10, ttl: 60_000 } }) // 10 requests/min per IP (tune as you like)
+  @HttpCode(HttpStatus.NO_CONTENT)
+  async verifyEmail(@Body() dto: VerifyEmailDto): Promise<void> {
+    await this.auth.verifyEmail(dto.token);
+  }
 
+  /**
+   * (Optional) Resend verification email.
+   * Always returns a generic 200 to avoid account enumeration.
+   */
+  @Public()
+  @Post('resend-verification')
+  @Throttle({ default: { limit: 5, ttl: 60_000 } }) // 5/min
+  @HttpCode(HttpStatus.OK)
+  async resendVerification(@Body() dto: ResendVerificationDto, @Req() req: Request) {
+    await this.auth.resendVerification(
+      dto.email,
+      req.ip,
+      req.get('user-agent') ?? undefined,
+    );
+    return { message: 'If an account exists, we’ve sent a new verification email.' };
+  }
+
+  
   @Public()
   @SkipCsrf()
   @Get('google')

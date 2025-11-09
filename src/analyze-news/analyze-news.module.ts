@@ -11,8 +11,8 @@ import { QueueModule } from 'src/queue/queue.module';
 @Module({
   imports: [
     MongooseModule.forFeature([{ name: AnalyzeNews.name, schema: AnalyzeNewsSchema }]),
-    WebPushSubModule,
     RealtimeModule,
+    WebPushSubModule,
     QueueModule
   ],
   providers: [AnalyzeNewsService, PersistImageService],

@@ -136,12 +136,7 @@ export class AnalyzeNewsService {
 
             // Exclude author if provided on dto (optional)
             let excludeId: Types.ObjectId | null = null;
-            const maybeAuthorId = (dto as any)?.authorId;
-            if (maybeAuthorId) {
-                
-                try { excludeId = new Types.ObjectId(String(maybeAuthorId)); } catch { /* ignore bad id */ }
-            }
-
+           
 
 
             // Get recipients (all active users, optionally excluding author).

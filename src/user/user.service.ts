@@ -129,7 +129,6 @@ export class UserService {
     return user;
   }
 
-
   async recordFailedLogin(
     userId: string,
     opts?: { maxAttempts?: number; lockMs?: number }
@@ -185,7 +184,7 @@ export class UserService {
   }
 
   async paginate(query: UserQueryDto): Promise<PaginateResult<UserDocument>> {
-    const { q,  role, page = 1, limit = 10 } = query;
+    const { q, role, page = 1, limit = 10 } = query;
 
     const filter: FilterQuery<UserDocument> = {};
 
@@ -231,8 +230,6 @@ export class UserService {
     const deleted = await this.model.findByIdAndDelete(id);
     if (!deleted) throw new NotFoundException('User not found');
   }
-
-
 
   async adminSetPassword(targetUserId: string, dto: AdminSetPasswordDto): Promise<void> {
     if (!Types.ObjectId.isValid(targetUserId)) {
@@ -355,6 +352,23 @@ export class UserService {
 
   private escapeRegex(s: string) {
     return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  }
+
+  async setEmailVerified(userId: string, verified = true): Promise<void> {
+    if (!Types.ObjectId.isValid(userId)) {
+      throw new BadRequestException('Invalid user id');
+    }
+
+    const res = await this.model
+      .updateOne(
+        { _id: new Types.ObjectId(userId) },
+        { $set: { emailVerified: !!verified } },
+      )
+      .lean();
+
+    if (res.matchedCount === 0) {
+      throw new NotFoundException('User not found');
+    }
   }
 
   // -------------------------

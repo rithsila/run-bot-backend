@@ -2,27 +2,36 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { HydratedDocument } from 'mongoose';
 
-export type RetailLatestDocument = HydratedDocument<RetailLatest>;
+export type RetailerDocument = HydratedDocument<Retailer>;
 
-@Schema({ timestamps: true })
-export class RetailLatest {
-  @Prop({ required: true, unique: true, index: true, uppercase: true, trim: true })
+export type Signal = 'buy' | 'sell' | 'neutral';
+
+@Schema({ collection: 'retailers' }) // collection name
+export class Retailer {
+  @Prop({ type: String, required: true, trim: true, uppercase: true })
   pair!: string;
 
-  @Prop({ type: Number, min: 0, max: 100 })
-  avgLeft?: number;
+  @Prop({ type: Number, min: 0, max: 100, required: true })
+  avgLeft!: number;
 
-  @Prop({ type: Number, min: 0, max: 100 })
-  avgRight?: number;
+  @Prop({ type: Number, min: 0, max: 100, required: true })
+  avgRight!: number;
 
-  @Prop({ type: String, enum: ['buy', 'sell', 'neutral'], default: null })
-  signal?: 'buy' | 'sell' | 'neutral' | null;
+  @Prop({
+    type: String,
+    enum: ['buy', 'sell', 'neutral'],
+    required: true,
+  })
+  signal!: Signal;
 
-  @Prop({ type: Date, required: true })
+  @Prop({ type: Date, required: true, index: true })
   runAt!: Date;
 }
 
-export const RetailLatestSchema = SchemaFactory.createForClass(RetailLatest);
+export const RetailerSchema = SchemaFactory.createForClass(Retailer);
 
-RetailLatestSchema.index({ runAt: -1 });
+// Prevent duplicates for the same pair at the same timestamp
+RetailerSchema.index({ pair: 1, runAt: 1 }, { unique: true });
 
+// Optional: if you often query the latest per pair
+RetailerSchema.index({ pair: 1, runAt: -1 });

@@ -135,16 +135,25 @@ export class TradingPlanService {
       .sort({ createdAt: -1 })
       .lean();
   }
+
   async findById(id: string) {
     if (!Types.ObjectId.isValid(id)) {
       throw new BadRequestException('Invalid trading plan id');
     }
-    const doc = await this.planModel.findById(id).lean();
+
+    const doc = await this.planModel
+      .findById(id)
+      .populate({ path: 'publishedBy', select: 'firstName lastName -_id' }) // <- only these fields
+      .lean();
+
     if (!doc) {
       throw new NotFoundException('Trading plan not found');
     }
+
     return doc;
   }
+
+
   async remove(planId: string) {
     if (!Types.ObjectId.isValid(planId)) {
       throw new BadRequestException('Invalid trading plan id');

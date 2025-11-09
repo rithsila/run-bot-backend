@@ -2,34 +2,39 @@
 import { Injectable, UnauthorizedException } from '@nestjs/common';
 import { PassportStrategy } from '@nestjs/passport';
 import { ExtractJwt, Strategy, StrategyOptions } from 'passport-jwt';
-import { Request } from 'express';
+import type { Request } from 'express';
 import { ConfigService } from '@nestjs/config';
 import { Role } from 'src/user/user.enum';
 
+// Read access token from Authorization: Bearer <token> or cookie "accessToken"
 function cookieExtractor(req: Request) {
   return (req?.cookies?.accessToken as string) || null;
 }
 
-// Decode base64 → utf8 string, no PEM enforcement
+// Decode base64 -> utf8 string (no PEM enforcement)
 function fromB64EnvOrThrow(cfg: ConfigService, name: string): string {
   const v = cfg.get<string>(name);
   if (!v) throw new Error(`Missing env ${name}`);
   return Buffer.from(v, 'base64').toString('utf8').trim();
 }
 
-export type AppAudience = 'admin' | 'student' | 'instructor';
-
 export interface AccessJwtPayload {
   sub: string;
   email: string;
-  role?: Role;
+  role: Role;              // exactly one role required
   perms?: string[];
-  // allow array just in case other issuers send aud as an array
-  aud?: AppAudience | AppAudience[] | string | string[];
-  typ?: 'access' | string;
+  typ?: 'access' | string; // must be "access" if present
   iat?: number;
   exp?: number;
   iss?: string;
+}
+
+// Shape of req.user (helps TS in guards/controllers)
+export interface AuthUser {
+  userId: string;
+  email: string;
+  role: Role;
+  perms: string[];
 }
 
 @Injectable()
@@ -48,45 +53,33 @@ export class JwtStrategy extends PassportStrategy(Strategy, 'jwt-bearer') {
         cookieExtractor,
       ]),
       ignoreExpiration: false,
-      secretOrKey: publicKey,            // must be valid RSA public key content
+      secretOrKey: publicKey,     // RSA public key content (PEM)
       algorithms: [alg],
       issuer: cfg.get<string>('JWT_ISSUER') || undefined,
-      // audience: (omit; we enforce per route with AppGuard)
       passReqToCallback: false,
     };
 
     super(opts);
   }
 
-  async validate(payload: AccessJwtPayload) {
+  async validate(payload: AccessJwtPayload): Promise<AuthUser> {
+    // Basic token sanity checks
     if (!payload?.sub) {
       throw new UnauthorizedException('Invalid token (sub missing)');
     }
     if (payload.typ && payload.typ !== 'access') {
       throw new UnauthorizedException('Invalid token type');
     }
-
-    // Normalize role (single enum)
-    const role: Role = payload.role ?? Role.Student;
-
-    // Normalize aud (string | string[])
-    let aud: AppAudience | undefined;
-    if (Array.isArray(payload.aud)) {
-      aud = payload.aud[0] as AppAudience;
-    } else if (typeof payload.aud === 'string') {
-      // coerce to our union if an arbitrary string was provided
-      const lower = payload.aud.toLowerCase();
-      if (lower === 'admin' || lower === 'student' || lower === 'instructor') {
-        aud = lower as AppAudience;
-      }
+    // Enforce exactly-one-role presence
+    if (!payload.role) {
+      throw new UnauthorizedException('Invalid token (role missing)');
     }
 
     return {
       userId: payload.sub,
       email: payload.email,
-      role,                
+      role: payload.role,           // single role exposed here
       perms: payload.perms ?? [],
-      aud,                 
     };
   }
 }

@@ -42,11 +42,13 @@ import { WebPushSubModule } from './web-push-sub/web-push-sub.module';
 import { TurnstileModule } from './turnstile/turnstile.module';
 import { AnalyzeNewsModule } from './analyze-news/analyze-news.module';
 import { RealtimeModule } from './real-time/real-time.module';
-import { RetailerModule } from './retailer/retailer.module';
 import { SubscriptionModule } from './subscription/subscription.module';
 import { MembershipsModule } from './memberships/memberships.module';
 import { CouponsModule } from './coupons/coupons.module';
 import { QueueModule } from './queue/queue.module';
+import { RolesGuard } from './auth/guard/roles.guard';
+import { RetailerModule } from './retailer/retailer.module';
+import { ScheduleModule } from '@nestjs/schedule';
 
 @Module({
   imports: [
@@ -146,7 +148,7 @@ import { QueueModule } from './queue/queue.module';
         },
       }),
     }),
-
+    ScheduleModule.forRoot(),
     // ─── Feature Modules ──────────────────────────────────────────────────────
     UserModule,
     MailModule,
@@ -158,11 +160,11 @@ import { QueueModule } from './queue/queue.module';
     TurnstileModule,
     AnalyzeNewsModule,
     RealtimeModule,
-    RetailerModule,
     SubscriptionModule,
     MembershipsModule,
     CouponsModule,
     QueueModule,
+    RetailerModule,
   ],
 
   controllers: [AppController],
@@ -170,6 +172,7 @@ import { QueueModule } from './queue/queue.module';
   providers: [
     { provide: APP_GUARD, useClass: ThrottlerGuard },
     { provide: APP_GUARD, useClass: JwtAuthGuard },
+    { provide: APP_GUARD, useClass: RolesGuard },
     { provide: APP_GUARD, useClass: CsrfGuard },
   ],
 })

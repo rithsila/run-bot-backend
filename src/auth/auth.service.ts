@@ -22,32 +22,91 @@ import { LoginTelemetry } from 'src/common/types/login-telemetry.type';
 import { formatRemainingLockTime } from 'src/common/utils/time.util';
 import { GoogleUserPayload } from 'src/common/types/google-auth.type';
 import { Role } from 'src/user/user.enum';
+import { InjectModel } from '@nestjs/mongoose';
+import { EmailVerificationToken, EmailVerificationTokenDocument } from './email-verification-token.schema';
+import { MailService } from 'src/mail/mail.service';
+import { ConfigService } from '@nestjs/config';
+import { Model, Types } from 'mongoose';
+import { sha256Hex } from 'src/common/crypto/hash.util';
+import { randomBytes } from 'crypto';
 
 
 @Injectable()
 export class AuthService {
+  // ---- private fields (constants & logger first) -------------------------------
   private readonly logger = new Logger(AuthService.name);
 
-  // ── NEW: single source of truth for TTL (seconds) + JWT settings ─────────────
-  private readonly ACCESS_TTL_SEC = Number(process.env.JWT_ACCESS_TTL ?? 900); // 15m default
+  private readonly ACCESS_TTL_SEC = Number(process.env.JWT_ACCESS_TTL ?? 900); // 15m
   private readonly JWT_ALG = (process.env.JWT_ALG as 'RS256' | 'HS256' | undefined) ?? 'RS256';
   private readonly JWT_ISSUER = process.env.JWT_ISSUER;
+  private readonly VERIFY_TTL_MS = 24 * 60 * 60 * 1000; // 24h
 
+  // config-backed value (initialized in constructor)
+  private appHost!: string;
 
+  // ---- constructor (DI + config init) ------------------------------------------
   constructor(
     private readonly users: UserService,
-    private readonly jwt: JwtService
-  ) { }
+    private readonly jwt: JwtService,
+    @InjectModel(EmailVerificationToken.name)
+    private readonly verifyModel: Model<EmailVerificationTokenDocument>,
+    private readonly mail: MailService,
+    private readonly config: ConfigService,
+  ) {
+    // safe place to read from ConfigService
+    this.appHost = this.config.get<string>('FRONTEND_URL') || 'https://app.example.com';
+  }
 
+  // ---- small helpers -----------------------------------------------------------
+  private newToken() {
+    return randomBytes(32).toString('base64url');
+  }
+
+  // single-responsibility: create token, store hash, email user
+  private async issueAndSendEmailVerification(
+    userId: Types.ObjectId,
+    email: string,
+    ip?: string,
+    ua?: string,
+  ) {
+    // invalidate any active tokens
+    await this.verifyModel.updateMany(
+      { userId, usedAt: null, expiresAt: { $gt: new Date() } },
+      { $set: { expiresAt: new Date() } },
+    );
+
+    const raw = this.newToken();
+    const tokenHash = sha256Hex(raw);
+
+    await this.verifyModel.create({
+      userId,
+      tokenHash,
+      expiresAt: new Date(Date.now() + this.VERIFY_TTL_MS),
+      issuedIp: ip,
+      issuedUa: ua,
+    });
+    const link = `${this.appHost}/verify-email?token=${raw}`;
+    try {
+      await this.mail.sendEmailVerification(email, link);
+    } catch (e) {
+      // best-effort: don't fail signup just because email send errored
+      this.logger.warn(
+        `sendEmailVerification failed for ${maskEmail(email)}: ${(e as Error)?.message}`,
+      );
+    }
+  }
+
+  // ---- signup (unchanged logic + added email verification call) ----------------
   async signup(
     dto: SignupDto,
     reqMeta: Partial<SignupMeta> = {},
   ): Promise<PublicUser> {
     const email = this.users.normalizeEmail(dto.email);
-    const isExisting = await this.users.findByEmail(email)
+    const isExisting = await this.users.findByEmail(email);
     if (isExisting) {
       throw new ConflictException('Email already registered!');
     }
+
     try {
 
       this.logger.debug(`Signup attempt email=${maskEmail(email)}`);
@@ -60,7 +119,6 @@ export class AuthService {
         signInMethod: SignInMethod.Password,
         emailVerified: false,
         signupMeta: {
-          // Only server/meta fields here; DTO no longer has userAgent/referer
           userAgent: reqMeta.userAgent ?? null,
           referer: reqMeta.referer ?? null,
           deviceIdHash: reqMeta.deviceIdHash ?? null,
@@ -69,6 +127,14 @@ export class AuthService {
           submittedAtMs: reqMeta.submittedAtMs ?? Date.now(),
         },
       });
+
+      // NEW: issue token + send verification email (best-effort)
+      await this.issueAndSendEmailVerification(
+        new Types.ObjectId((user as any)._id ?? (user as any).id),
+        user.email,
+        undefined, // pass raw IP if you capture it elsewhere
+        reqMeta.userAgent ?? undefined,
+      );
 
       const publicUser: PublicUser = {
         _id: String((user as any).id ?? (user as any)._id),
@@ -86,12 +152,9 @@ export class AuthService {
       return publicUser;
     } catch (err: any) {
       if (err?.status && err?.response) {
-        this.logger.warn(
-          `Signup rejected: ${err.status} ${JSON.stringify(err.response)}`,
-        );
+        this.logger.warn(`Signup rejected: ${err.status} ${JSON.stringify(err.response)}`);
         throw err;
       }
-
       this.logger.error(
         `Signup failed for email=${maskEmail(dto.email)}: ${err?.message || err}`,
         err?.stack,
@@ -144,6 +207,22 @@ export class AuthService {
           }),
         );
         throw new UnauthorizedException('The password you entered is incorrect. Please try again or reset your password.');
+      }
+
+      if (!authDoc.emailVerified) {
+        try {
+          await this.issueAndSendEmailVerification(
+            // ensure ObjectId type
+            new (require('mongoose').Types.ObjectId)(String(authDoc._id)),
+            authDoc.email,
+            undefined
+          );
+        } catch (e) {
+          this.logger.warn(`auto-resend verify failed for ${maskEmail(authDoc.email)}: ${(e as Error)?.message}`);
+        }
+        throw new UnauthorizedException(
+          'Please verify your email to continue. We just sent you a new verification link.'
+        );
       }
 
       await this.users.recordSuccessfulLogin(String(authDoc._id));
@@ -237,6 +316,58 @@ export class AuthService {
       accessToken,
       expiresIn: this.ACCESS_TTL_SEC,
     };
+  }
+
+  async verifyEmail(rawToken: string): Promise<void> {
+
+    if (!rawToken || typeof rawToken !== 'string') {
+      throw new BadRequestException('Invalid or expired token');
+    }
+
+    const tokenHash = sha256Hex(rawToken);
+    const now = new Date();
+
+    // Atomically consume the token (single-use)
+    const rec = await this.verifyModel.findOneAndUpdate(
+      { tokenHash, usedAt: null, expiresAt: { $gt: now } },
+      { $set: { usedAt: now } },
+      { new: false } // we only need the pre-update doc to get userId
+    );
+
+    if (!rec) {
+      throw new BadRequestException('Invalid or expired token');
+    }
+    // Mark user as verified
+    await this.users.setEmailVerified(String(rec.userId), true);
+
+    // Optional: log success (never log raw token)
+    this.logger.log(
+      JSON.stringify({ evt: 'verify_email_success', userId: String(rec.userId) }),
+    );
+  }
+
+  /**
+   * Resends a verification email (generic outward behavior).
+   * - If user not found or already verified -> silently return.
+   * - Otherwise invalidates prior tokens and emails a new one.
+   */
+  async resendVerification(email: string, ip?: string, ua?: string): Promise<void> {
+    if (!email) return;
+    const normalized = this.users.normalizeEmail(email);
+    const user = await this.users.findByEmail(normalized);
+    if (!user) return;                 // generic outward response
+    if (user.emailVerified) return;    // already verified
+
+    await this.issueAndSendEmailVerification(
+      new Types.ObjectId((user as any)._id ?? (user as any).id),
+      user.email,
+      ip,
+      ua,
+    );
+
+    this.logger.debug(
+      JSON.stringify({ evt: 'verify_email_resent', userId: String((user as any)._id) }),
+    );
   }
 
   // -----------------------------

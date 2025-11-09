@@ -9,14 +9,23 @@ import { UserModule } from 'src/user/user.module';
 import { JwtStrategy } from './strategies/jwt.strategy';
 import { GoogleStrategy } from './strategies/google.strategy';
 import { TurnstileModule } from 'src/turnstile/turnstile.module';
+import { MongooseModule } from '@nestjs/mongoose';
+import { User, UserSchema } from 'src/user/user.schema';
+import { EmailVerificationToken, EmailVerificationTokenSchema } from './email-verification-token.schema';
+import { MailModule } from 'src/mail/mail.module';
 
 @Module({
   imports: [
     ConfigModule,
     UserModule,
+    MailModule,
     PassportModule.register({ defaultStrategy: 'jwt-bearer', session: false }),
     JwtModule.register({}),
     TurnstileModule,
+    MongooseModule.forFeature([
+      { name: User.name, schema: UserSchema },
+      { name: EmailVerificationToken.name, schema: EmailVerificationTokenSchema },
+    ])
   ],
   controllers: [AuthController],
   providers: [

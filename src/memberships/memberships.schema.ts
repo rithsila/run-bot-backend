@@ -51,8 +51,26 @@ export class Membership {
   @Prop({ type: String, trim: true })
   adminNotes?: string;
 
-  @Prop({ type: [String], default: [] })
-  accounts?: string[];
+  @Prop({
+    type: [String],
+    default: [],
+    validate: {
+      validator: (v: string[] | undefined) => Array.isArray(v),
+      message: 'accounts must be an array',
+    },
+  })
+  accounts!: string[];
+
+  @Prop({
+    type: [String],
+    default: [],
+    validate: {
+      validator: (v: string[] | undefined) => Array.isArray(v),
+      message: 'accounts must be an array',
+    },
+  })
+  accountNumbers: string[];
+
 }
 
 export const MembershipSchema = SchemaFactory.createForClass(Membership);

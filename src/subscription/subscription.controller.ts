@@ -25,6 +25,8 @@ import { SubscriptionService } from './subscription.service';
 import { Types } from 'mongoose';
 import { SubscriptionsPaginateDto } from './dto/subscriptions-paginate.dto';
 import { UpdateSubscriptionDto } from './dto/update-subscription.dto';
+import { Role } from 'src/user/user.enum';
+import { Roles } from 'src/auth/decorators/roles.decorator';
 
 @Controller('subscriptions')
 @UseGuards(JwtAuthGuard)
@@ -32,6 +34,7 @@ export class SubscriptionsController {
   constructor(private readonly subscriptions: SubscriptionService) { }
 
   @Get()
+  @Roles(Role.Admin)
   @Throttle({ default: { limit: 10, ttl: 60_000 } })
   list(@Query() query: SubscriptionsPaginateDto) {
     return this.subscriptions.paginate(query);
@@ -91,6 +94,7 @@ export class SubscriptionsController {
   }
 
   @Patch(':id')
+  @Roles(Role.Admin)
   @HttpCode(HttpStatus.OK)
   async updatePartial(
     @Param('id') id: string,

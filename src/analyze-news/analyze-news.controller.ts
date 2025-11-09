@@ -11,25 +11,24 @@ import {
   Post,
   Req,
   UnauthorizedException,
-  UsePipes,
-  ValidationPipe,
 } from '@nestjs/common';
 import { Throttle } from '@nestjs/throttler';
 import type { AuthRequest } from 'src/common/types/auth-request.type';
 import { ApiSuccess } from 'src/common/types/api-response.type';
-
 import { AnalyzeNewsService } from './analyze-news.service';
 import { CreateAnalyzeNewsDto } from './dto/create-analyze-news.dto';
 import { Types } from 'mongoose';
+import { Roles } from 'src/auth/decorators/roles.decorator';
+import { Role } from 'src/user/user.enum';
 
 @Controller('analyze-news')
 export class AnalyzeNewsController {
   constructor(private readonly service: AnalyzeNewsService) { }
 
   @Post()
+  @Roles(Role.Creator, Role.Admin)
   @HttpCode(HttpStatus.CREATED)
   @Throttle({ default: { limit: 5, ttl: 30_000 } })
-  @UsePipes(new ValidationPipe({ whitelist: true, forbidNonWhitelisted: true }))
   async create(
     @Req() req: AuthRequest,
     @Body() dto: CreateAnalyzeNewsDto,
@@ -88,6 +87,7 @@ export class AnalyzeNewsController {
   }
 
   @Delete(':id')
+  @Roles(Role.Creator, Role.Admin)
   @HttpCode(HttpStatus.OK)
   async remove(
     @Req() req: AuthRequest,
@@ -108,6 +108,7 @@ export class AnalyzeNewsController {
   }
 
   @Patch(':id')
+  @Roles(Role.Creator, Role.Admin)
   @HttpCode(HttpStatus.OK)
   async update(
     @Req() req: AuthRequest,

@@ -8,6 +8,7 @@ import {
   MaxLength,
   IsArray,
   ArrayMaxSize,
+  ArrayMinSize,
 } from 'class-validator';
 
 export class JoinMembershipDto {
@@ -20,13 +21,13 @@ export class JoinMembershipDto {
   )
   email!: string;
 
-  @IsOptional()
   @IsArray()
+  @ArrayMinSize(1)
   @ArrayMaxSize(3)
   @IsString({ each: true })
   @MaxLength(120, { each: true })
   @Transform(({ value }) => {
-    if (typeof value === 'string') return [value.trim()];
+    if (typeof value === 'string') return [value.trim()].filter(Boolean);
     if (Array.isArray(value)) {
       return value
         .map(v => (typeof v === 'string' ? v.trim() : v))
@@ -34,7 +35,7 @@ export class JoinMembershipDto {
     }
     return value;
   })
-  accounts?: string[];
+  accounts!: string[];
 
   @IsOptional()
   @IsString()

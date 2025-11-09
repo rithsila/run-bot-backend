@@ -69,12 +69,7 @@ export class PlanService {
         return items
     }
 
-    async findOne(id: string): Promise<Plan> {
-        this.ensureId(id);
-        const doc = await this.planModel.findById(id).lean<Plan>().exec();
-        if (!doc) throw new NotFoundException('Plan not found');
-        return doc;
-    }
+
 
     async update(id: string, dto: CreatePlanDto): Promise<Plan> {
         this.ensureId(id);

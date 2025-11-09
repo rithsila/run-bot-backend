@@ -14,14 +14,17 @@ import {
 } from '@nestjs/common';
 import { PlanService } from './plan.service';
 import { CreatePlanDto } from './dto/create-plan.dto';
+import { Roles } from 'src/auth/decorators/roles.decorator';
+import { Role } from 'src/user/user.enum';
 
 @Controller('plan')
 @UsePipes(new ValidationPipe({ transform: true, whitelist: true }))
 export class PlanController {
-    
+
     constructor(private readonly plans: PlanService) { }
 
     @Post()
+    @Roles(Role.Admin)
     @HttpCode(HttpStatus.CREATED)
     create(@Body() dto: CreatePlanDto) {
         return this.plans.create(dto);
@@ -32,17 +35,14 @@ export class PlanController {
         return this.plans.findAll();
     }
 
-    @Get(':id')
-    getOne(@Param('id') id: string) {
-        return this.plans.findOne(id);
-    }
-
     @Patch(':id')
+    @Roles(Role.Admin)
     update(@Param('id') id: string, @Body() dto: CreatePlanDto) {
         return this.plans.update(id, dto);
     }
 
     @Delete(':id')
+    @Roles(Role.Admin)
     @HttpCode(HttpStatus.NO_CONTENT)
     async remove(@Param('id') id: string) {
         await this.plans.remove(id);

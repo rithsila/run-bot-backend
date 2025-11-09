@@ -1,274 +1,174 @@
 // src/retailer/retailer.service.ts
 import { Injectable, Logger } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
-import type { Model } from 'mongoose';
-import { Cron } from '@nestjs/schedule';
-import { HttpService } from '@nestjs/axios';
-import { firstValueFrom } from 'rxjs';
-import { RetailLatest } from './retailer.schema';
+import { Cron, CronExpression } from '@nestjs/schedule';
+import { Model, Types } from 'mongoose';
+import { Retailer } from './retailer.schema';
 import { WebPushSubService } from 'src/web-push-sub/web-push-sub.service';
-import { RealtimeGateway } from 'src/real-time/realtime.gateway';
+import { PushProducer } from 'src/queue/push.producer';
 
-// Symbols to refresh
-const SYMBOLS = ['XAUUSD', 'EURUSD', 'GBPJPY', 'US30', 'NAS100', 'SP500', 'BTCUSD', 'ETHUSD'];
+export type PairRow = Record<string, string | number>;
+export type PairsBlock = Record<string, PairRow>;
 
-type Signal = 'buy' | 'sell' | 'neutral' | null;
+export type FxssiResponse = {
+  pairs?: PairsBlock;
+  server_time?: number;
+  server_time_text?: string;
+};
 
-function toNumOrNull(v: unknown): number | null {
-  const n = typeof v === 'string' ? Number(v) : (v as number);
+export type RetailRow = {
+  pair?: string;
+  avgLeft?: number | null;   // 0..100
+  avgRight?: number | null;  // 0..100
+  signal?: 'buy' | 'sell' | 'neutral' | null;
+  runAt: string;
+};
+
+const currency_pairs = [
+  'BTCUSD', 'ETHUSD', 'GBPJPY',
+  'EURUSD', 'XAUUSD',
+  'US30', 'NAS100',
+  'SP500',
+];
+
+function toNum(v: unknown): number | null {
+  const n = Number(v);
   return Number.isFinite(n) ? n : null;
 }
-function toDateOrNull(v: unknown): Date | null {
-  if (v instanceof Date) return v;
-  if (typeof v === 'string') {
-    const d = new Date(v);
-    return Number.isNaN(d.getTime()) ? null : d;
-  }
-  return null;
-}
-function nearlyEqual(a: number | null | undefined, b: number | null | undefined, eps = 0.01) {
-  if (a == null && b == null) return true;
-  if (a == null || b == null) return false;
-  return Math.abs(Number(a) - Number(b)) <= eps;
-}
-function sanitizeSignal(s: any): Signal {
-  return s === 'buy' || s === 'sell' || s === 'neutral' ? s : null;
-}
 
-// --- Base URL handling ---
-const RAW_BASE = process.env.SCRAPER_BASE || 'http://127.0.0.1:8000';
-const SCRAPER_BASE = RAW_BASE.replace(/\/+$/, ''); // strip trailing '/'
-function buildUrl(path: string) {
-  const p = path.startsWith('/') ? path : `/${path}`;
-  return `${SCRAPER_BASE}${p}`;
+function getSignal(avgLeft: number): 'buy' | 'sell' | 'neutral' {
+  if (avgLeft >= 55) return 'buy';
+  if (avgLeft <= 45) return 'sell';
+  return 'neutral';
 }
-
-type ScraperResponse = {
-  ok: boolean;
-  data?: {
-    symbol: string;
-    left_pct: number;
-    right_pct: number;
-    divider_left_pct?: number | null;
-    signal: 'buy' | 'sell' | 'neutral';
-    sourceUrl: string;
-    fetchedAt: string;
-    rendered?: boolean;
-  };
-  error?: string;
-};
 
 @Injectable()
 export class RetailerService {
-  private readonly log = new Logger(RetailerService.name);
+  private readonly logger = new Logger(RetailerService.name);
+  private isRunning = false; // prevent overlap
 
   constructor(
-    @InjectModel(RetailLatest.name)
-    private readonly latestModel: Model<RetailLatest>,
-    private readonly http: HttpService,
-    private readonly push: WebPushSubService,
-    private readonly realtime: RealtimeGateway
-  ) { }
+    @InjectModel(Retailer.name)
+    private readonly retailerModel: Model<Retailer>,
+    private readonly pushProducer: PushProducer,
+    private readonly webPushSubService: WebPushSubService,
+  ) {}
 
-  private sleep(ms: number) {
-    return new Promise((r) => setTimeout(r, ms));
-  }
+  async fetchRetailRows(): Promise<RetailRow[]> {
+    const url = `https://fxssi.com/api/current-ratios?user_id=0&rand=${Math.random()}`;
 
-  async upsertLatest(params: {
-    pair: string;
-    avgLeft: number | null | undefined;
-    avgRight: number | null | undefined;
-    dividerLeftPct?: number | null | undefined;
-    signal: Signal | undefined;
-    rowLabel?: string | undefined;
-    sourceUrl?: string | undefined;
-    fetchedAt?: string | Date | null | undefined;
-    rendered?: boolean | undefined;
-    runAt: Date | string;
-  }): Promise<void> {
-    const pair = (params.pair || '').toUpperCase().trim();
-    if (!pair) return;
+    const upstream = await fetch(url, {
+      method: 'GET',
+      headers: { 'User-Agent': 'retailer-panel/1.0' },
+    });
 
-    const avgLeft = toNumOrNull(params.avgLeft);
-    const avgRight = toNumOrNull(params.avgRight);
-    const dividerLeftPct = toNumOrNull(params.dividerLeftPct);
-    const fetchedAt = toDateOrNull(params.fetchedAt);
-    const runAt = toDateOrNull(params.runAt) ?? new Date();
+    if (!upstream.ok) {
+      const err = new Error(`Upstream error ${upstream.status}`);
+      (err as any).statusCode = 502;
+      throw err;
+    }
 
-    const sig = ((): Signal => {
-      const s = (params.signal ?? null) as Signal;
-      return s === 'buy' || s === 'sell' || s === 'neutral' ? s : null;
-    })();
+    const data = (await upstream.json()) as FxssiResponse;
 
-    await this.latestModel.updateOne(
-      { pair },
-      {
-        $set: {
-          pair,
-          avgLeft,
-          avgRight,
-          dividerLeftPct: dividerLeftPct ?? null,
-          signal: sig,
-          rowLabel: params.rowLabel ?? 'Average',
-          sourceUrl: params.sourceUrl ?? undefined,
-          fetchedAt: fetchedAt ?? undefined,
-          rendered: params.rendered ?? false,
-          runAt,
+    const pairs = data.pairs ?? {};
+    const runAt = data.server_time
+      ? new Date(data.server_time * 1000).toISOString()
+      : new Date().toISOString();
+
+    const rows: RetailRow[] = [];
+    for (const desired of currency_pairs) {
+      const row = (pairs as any)[desired];
+      if (!row) continue;
+
+      const avg = toNum(row['average']);
+      if (avg === null) continue;
+
+      const avgLeft = Math.max(0, Math.min(100, Number(avg.toFixed(2))));
+      const avgRight = Number((100 - avgLeft).toFixed(2));
+
+      rows.push({
+        pair: desired,
+        avgLeft,
+        avgRight,
+        signal: getSignal(avgLeft),
+        runAt,
+      });
+    }
+
+    // Persist per pair: findOne -> upsert; log and notify if signal changed
+    for (const r of rows) {
+      const pair = r.pair!.toUpperCase();
+      const next = r.signal!;
+
+      const prevDoc = await this.retailerModel
+        .findOne({ pair })
+        .select('signal')
+        .lean();
+
+      const prev = prevDoc?.signal ?? null;
+
+      await this.retailerModel.updateOne(
+        { pair }, // keep one doc per pair (latest snapshot)
+        {
+          $set: {
+            pair,
+            avgLeft: r.avgLeft as number,
+            avgRight: r.avgRight as number,
+            signal: next,
+            runAt: new Date(r.runAt),
+          },
         },
-      },
-      { upsert: true },
-    ).exec();
-    this.realtime.publishBadge('retailer');
-
-  }
-
-  async getLatest() {
-    return this.latestModel.find().lean().exec();
-  }
-
-  async refreshOne(symbol: string): Promise<void> {
-    const sym = symbol.toUpperCase();
-    try {
-      const url = buildUrl('/fxssi/current-ratio');
-      const { data } = await firstValueFrom(
-        this.http.get<ScraperResponse>(url, {
-          params: { symbol: sym },
-          timeout: 15_000, // ms
-        }),
+        { upsert: true },
       );
 
-      if (!data?.ok || !data.data) {
-        const detail = (data as any)?.detail || 'bad payload';
-        throw new Error(`Scraper bad response for ${sym}: ${detail}`);
+      if (prev !== null && prev !== next) {
+        const at = new Date(r.runAt).toISOString();
+        const msg = `√ Signal change ${pair}: ${prev} -> ${next} @ ${at}`;
+        console.log(msg);
+        this.logger.log(msg);
+
+        try {
+          const tinyPayload = {
+            title: `Retailer changed · ${pair} · ${prev?.toUpperCase()} → ${next?.toUpperCase()}`,
+            body: `Retailer changed • ${pair} • ${next}`,
+          };
+          const excludeId: Types.ObjectId | null = null;
+          const recipients = await this.webPushSubService.getUserIdsExcept(
+            excludeId ?? new Types.ObjectId('000000000000000000000000'),
+          );
+          if (recipients.length) {
+            await this.pushProducer.enqueueSendToUsers(
+              recipients,
+              tinyPayload,
+              { ttl: 3600, chunkSize: 500 },
+            );
+          }
+        } catch (e) {
+          console.warn('[Retailer.changed] push enqueue failed:', e);
+        }
       }
-
-      const d = data.data;
-      await this.upsertLatest({
-        pair: sym,
-        avgLeft: d.left_pct,
-        avgRight: d.right_pct,
-        dividerLeftPct: d.divider_left_pct ?? null,
-        signal: d.signal,
-        rowLabel: 'Average',
-        sourceUrl: d.sourceUrl,
-        fetchedAt: d.fetchedAt,
-        rendered: !!d.rendered,
-        runAt: new Date(),
-      });
-
-      this.log.debug(`${sym} refreshed: ${d.left_pct}/${d.right_pct} signal=${d.signal} rendered=${d.rendered ?? false}`);
-    } catch (err: any) {
-      const status = err?.response?.status;
-      const detail = err?.response?.data?.detail ?? err?.message ?? String(err);
-      this.log.warn(`refreshOne ${sym} failed: ${status ?? ''} ${detail}`);
     }
+
+    return rows;
   }
 
-  async refreshMany(symbols: string[] = SYMBOLS): Promise<void> {
-    for (let i = 0; i < symbols.length; i++) {
-      const sym = symbols[i];
-      const jitter = Math.floor(Math.random() * 400);
-      await this.sleep(1500 + jitter);
-      await this.refreshOne(sym);
-    }
-  }
-
-  // Every 3 minutes (update message to match)
-  @Cron('*/5 * * * *')
+  // Run every 10 minutes (server time) — set timeZone if you want local
+  @Cron(CronExpression.EVERY_10_MINUTES, { timeZone: 'Asia/Phnom_Penh' })
   async cronRefresh() {
-    const start = Date.now();
-    this.log.log('RetailerService cron refresh tick 5m');
-
-    // 1) Preflight health (skip tick if scraper is down)
-    try {
-      await firstValueFrom(this.http.get(`${SCRAPER_BASE.replace(/\/+$/, '')}/health`, { timeout: 5_000 }));
-    } catch (e: any) {
-      const status = e?.response?.status;
-      const detail = e?.response?.data?.detail ?? e?.message ?? String(e);
-      this.log.warn(`Scraper health failed: ${status ?? ''} ${detail}`);
+    if (this.isRunning) {
+      this.logger.warn('Previous cron still running, skipping.');
       return;
     }
+    this.isRunning = true;
 
-    // 2) Snapshot current DB state for all symbols (for comparisons)
-    const prevDocs = await this.latestModel
-      .find({ pair: { $in: SYMBOLS } })
-      .lean()
-      .exec();
-    const prevMap = new Map(prevDocs.map(d => [String(d.pair).toUpperCase(), d]));
-
-    let changes = 0;
-    let errors = 0;
-
-    // 3) Iterate symbols with small stagger so we don't hammer the scraper
-    for (const sym of SYMBOLS) {
-      const jitter = Math.floor(Math.random() * 400);
-      await this.sleep(1500 + jitter);
-
-      try {
-        const { data } = await firstValueFrom(
-          this.http.get<ScraperResponse>(`${SCRAPER_BASE.replace(/\/+$/, '')}/fxssi/current-ratio`, {
-            params: { symbol: sym },
-            timeout: 15_000,
-          }),
-        );
-        if (!data?.ok || !data.data) {
-          const detail = (data as any)?.detail || 'bad payload';
-          throw new Error(`Scraper bad response for ${sym}: ${detail}`);
-        }
-
-        const d = data.data;
-        const prev = prevMap.get(sym);
-
-        const nextSignal = sanitizeSignal(d.signal);
-        const prevSignal = sanitizeSignal(prev?.signal ?? null);
-
-        const leftChanged = !nearlyEqual(prev?.avgLeft, d.left_pct);
-        const rightChanged = !nearlyEqual(prev?.avgRight, d.right_pct);
-        const sigChanged = prevSignal !== nextSignal;
-
-        await this.upsertLatest({
-          pair: sym,
-          avgLeft: d.left_pct,
-          avgRight: d.right_pct,
-          dividerLeftPct: d.divider_left_pct ?? null,
-          signal: nextSignal,
-          rowLabel: 'Average',
-          sourceUrl: d.sourceUrl,
-          fetchedAt: d.fetchedAt,
-          rendered: !!d.rendered,
-          runAt: new Date(),
-        });
-
-        changes++;
-
-        if (sigChanged && prev) {
-          this.log.log(
-            `[signal-change] ${sym}: ${prevSignal ?? 'null'} -> ${nextSignal ?? 'null'} ` +
-            `(L=${d.left_pct} R=${d.right_pct})`
-          );
-          const title = `Retailer changed · ${sym} · ${prevSignal?.toUpperCase()} → ${nextSignal?.toUpperCase()}`;
-          const body = `Long ${d.left_pct}% · Short ${d.right_pct}%`;
-
-          const url = `/retail/latest/${sym}`;
-
-        
-        } else if (!prev) {
-          this.log.debug(`[signal-init] ${sym}: ${nextSignal ?? 'null'} (first record)`);
-        } else {
-          this.log.debug(`[update] ${sym}: ${[
-            leftChanged && 'avgLeft',
-            rightChanged && 'avgRight',
-          ].filter(Boolean).join(', ')} changed`);
-        }
-
-      } catch (err: any) {
-        const status = err?.response?.status;
-        const detail = err?.response?.data?.detail ?? err?.message ?? String(err);
-        this.log.warn(`refreshOne ${sym} failed: ${status ?? ''} ${detail}`);
-        errors++;
-      }
+    const start = Date.now();
+    try {
+      const rows = await this.fetchRetailRows(); // <-- actually run it
+      this.logger.log(`Cron OK: fetched ${rows.length} pairs in ${Date.now() - start}ms`);
+    } catch (err: any) {
+      this.logger.error(`Cron failed in ${Date.now() - start}ms: ${err?.message ?? err}`);
+    } finally {
+      this.isRunning = false;
     }
-
-    this.log.log(`RetailerService cron done in ${Date.now() - start}ms — changes=${changes}, errors=${errors}`);
   }
 }
