@@ -138,19 +138,36 @@ export class MembershipsController {
         };
     }
 
+    // memberships.controller.ts
+
     @Post(':id/license')
-    async createLicense(@Param('id') id: string) {
-        // In real app, protect this with an admin guard
-        return this.memberships.createLicenseKeyForMembership(id);
+    @Roles(Role.Admin)  // ✅ Admin only
+    @Throttle({ default: { limit: 10, ttl: 60_000 } })  // ✅ Rate limit
+    @HttpCode(HttpStatus.CREATED)  // ✅ 201 status
+    async createLicense(
+        @Param('id') id: string,
+        @Req() req: AuthRequest,
+    ): Promise<ApiSuccess<MembershipDocument>> {
+        const membership = await this.memberships.createLicenseKeyForMembership(id);
+
+        return {
+            success: true,
+            statusCode: HttpStatus.CREATED,
+            code: 'LICENSE_CREATED',
+            message: 'License key generated successfully',
+            timestamp: new Date().toISOString(),
+            path: req.url,
+        };
     }
 
-    @Post('activate')
+    @Get('activate')
     @Public()
     @HttpCode(HttpStatus.OK)
     async activate(
         @Body() dto: ActivateLicenseDto,
-    ): Promise<ApiSuccess<ActivationResponseData>> { 
+    ): Promise<ApiSuccess<ActivationResponseData>> {
         const result = await this.memberships.activate(dto);
+        console.log("result", result)
         return {
             success: true,
             statusCode: HttpStatus.OK,
