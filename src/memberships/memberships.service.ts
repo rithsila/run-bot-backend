@@ -365,7 +365,7 @@ export class MembershipsService {
 
     async activate(dto: ActivateLicenseDto, ip?: string, ua?: string) {
         const key = dto.key?.trim();
-        const maskedKey = key ? `${key.slice(0, 4)}***` : undefined; // don’t log full key
+        const maskedKey = key ? `${key.slice(0, 4)}***` : undefined; // don't log full key
 
         // Initial attempt log
         this.logger.log(
@@ -380,12 +380,29 @@ export class MembershipsService {
             .exec();
 
         if (!membership) this.deny('not_found', { maskedKey, accountLogin: dto.accountLogin, ip, ua });
-        if (membership.status === membershipsSchema.MembershipStatus.Request)
-            this.deny('pending', { maskedKey, accountLogin: dto.accountLogin, ip, ua, membershipId: String(membership._id) });
-        if (membership.status === membershipsSchema.MembershipStatus.Rejected)
-            this.deny('rejected', { maskedKey, accountLogin: dto.accountLogin, ip, ua, membershipId: String(membership._id) });
-        if (membership.status === membershipsSchema.MembershipStatus.Ended)
-            this.deny('ended', { maskedKey, accountLogin: dto.accountLogin, ip, ua, membershipId: String(membership._id) });
+
+        // ✅ EXPLICIT CHECK: Only allow Active and Verified statuses
+        const allowedStatuses = [
+            membershipsSchema.MembershipStatus.Verified
+        ];
+
+        if (!allowedStatuses.includes(membership.status)) {
+            // Log the actual status for debugging
+            this.logger.warn(
+                `Activation denied: invalid status | status=${membership.status} | key=${maskedKey} | account=${dto.accountLogin}`,
+            );
+
+            // Return specific error based on status
+            if (membership.status === membershipsSchema.MembershipStatus.Request) {
+                this.deny('pending', { maskedKey, accountLogin: dto.accountLogin, ip, ua, membershipId: String(membership._id) });
+            } else if (membership.status === membershipsSchema.MembershipStatus.Rejected) {
+                this.deny('rejected', { maskedKey, accountLogin: dto.accountLogin, ip, ua, membershipId: String(membership._id) });
+            } else if (membership.status === membershipsSchema.MembershipStatus.Ended) {
+                this.deny('ended', { maskedKey, accountLogin: dto.accountLogin, ip, ua, membershipId: String(membership._id) });
+            } else {
+                this.deny('membership_not_active', { maskedKey, accountLogin: dto.accountLogin, ip, ua, membershipId: String(membership._id) });
+            }
+        }
 
         // Validate account
         const accounts = membership.accounts ?? [];
@@ -428,5 +445,6 @@ export class MembershipsService {
             token: token,
         };
     }
+
 
 }
