@@ -366,32 +366,21 @@ export class MembershipsService {
             .populate('user', '_id email firstName lastName')
             .exec();
 
-        if (!membership) {
-            this.deny('not_found');
-        }
+        if (!membership) this.deny('not_found');
+        if (membership.status === membershipsSchema.MembershipStatus.Request) this.deny('pending');
+        if (membership.status === membershipsSchema.MembershipStatus.Rejected) this.deny('rejected');
+        if (membership.status === membershipsSchema.MembershipStatus.Ended) this.deny('ended');
 
-        if (membership.status === membershipsSchema.MembershipStatus.Request) {
-            this.deny('pending');
-        }
-        if (membership.status === membershipsSchema.MembershipStatus.Rejected) {
-            this.deny('rejected');
-        }
-        if (membership.status === membershipsSchema.MembershipStatus.Ended) {
-            this.deny('ended');
-        }
-
+        // Validate account
         const accounts = membership.accounts ?? [];
         const loginStr = String(dto.accountLogin);
-
         if (accounts.length > 0 && !accounts.includes(loginStr)) {
             this.deny('account_not_allowed');
         }
 
+        // Build token payload
         const membershipId = (membership._id as Types.ObjectId).toHexString();
-        const userId =
-            (membership.user as any)?._id
-                ? (membership.user as any)._id.toString()
-                : undefined;
+        const userId = (membership.user as any)?._id?.toString?.();
 
         const payload = {
             sub: `membership:${membershipId}`,
@@ -400,30 +389,17 @@ export class MembershipsService {
             accountLogin: dto.accountLogin,
             email: membership.email,
             userId,
-            features: {
-                member: true,
-            },
             ip,
-            ua,
+            ua
         };
 
-        const { token, exp } = await this.jose.signToken(payload);
+        const { token } = await this.jose.signToken(payload);
 
-        const ttlDays = Number(process.env.TOKEN_TTL_DAYS || 30);
-        const graceDays = Number(process.env.GRACE_DAYS || 2);
-        const nowMs = Date.now();
-        const refreshAfter = new Date(
-            nowMs + (ttlDays - graceDays) * 24 * 3600 * 1000,
-        ).toISOString();
-
+        // 🔥 RETURN EA-SAFE JSON
         return {
-            status: 'OK',
-            token,
-            exp: new Date(exp * 1000).toISOString(),
-            refreshAfter,
-            membershipId: membership._id,
-            email: membership.email,
-            accounts: membership.accounts,
+            status: "OK",
+            token: token
         };
     }
+
 }
