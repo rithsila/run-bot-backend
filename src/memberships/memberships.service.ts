@@ -19,6 +19,7 @@ import { JoseService } from './jose.service';
 
 @Injectable()
 export class MembershipsService {
+    
     constructor(
         @InjectModel(membershipsSchema.Membership.name)
         private readonly membershipModel: membershipsSchema.MembershipPaginateModel,
@@ -357,7 +358,7 @@ export class MembershipsService {
         throw new ForbiddenException({ status: 'INVALID', reason });
     }
 
-    async activateLicense(dto: ActivateLicenseDto, ip?: string, ua?: string) {
+    async activate(dto: ActivateLicenseDto, ip?: string, ua?: string) {
         const key = dto.key?.trim();
         if (!key) this.deny('key_required');
 

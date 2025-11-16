@@ -26,6 +26,14 @@ import { Role } from 'src/user/user.enum';
 import { ActivateLicenseDto } from './dto/activate-license.dto';
 import { Public } from 'src/auth/guard/public.decorator';
 
+
+interface ActivationResponseData {
+    status: string;
+    token: string;
+}
+
+
+
 @Controller('memberships')
 export class MembershipsController {
     constructor(private readonly memberships: MembershipsService) { }
@@ -136,17 +144,24 @@ export class MembershipsController {
         return this.memberships.createLicenseKeyForMembership(id);
     }
 
+    @Post('activate')
     @Public()
-    @Post('/activate')
-    @HttpCode(200)
-    async activate(@Body() dto: ActivateLicenseDto, @Req() req: any) {
-        console.log('RAW BODY =', req.rawBody?.toString());
-        console.log('DTO =', dto);
-
-        const ip = req.ip || req.connection?.remoteAddress || undefined;
-        const ua = req.headers['user-agent'] || undefined;
-
-        return this.memberships.activateLicense(dto, ip, ua);
+    @HttpCode(HttpStatus.OK)
+    async activate(
+        @Body() dto: ActivateLicenseDto,
+    ): Promise<ApiSuccess<ActivationResponseData>> { 
+        const result = await this.memberships.activate(dto);
+        return {
+            success: true,
+            statusCode: HttpStatus.OK,
+            code: 'LICENSE_ACTIVATED',
+            message: 'License activated successfully',
+            data: {
+                status: 'OK',
+                token: result.token,
+            },
+            timestamp: new Date().toISOString(),
+            path: '/memberships/activate',
+        };
     }
-
 }
