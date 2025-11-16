@@ -138,6 +138,7 @@ export class MembershipsController {
 
     @Public()
     @Post('/activate')
+    @HttpCode(200)
     async activate(@Body() dto: ActivateLicenseDto, @Req() req: any) {
         console.log('RAW BODY =', req.rawBody?.toString());
         console.log('DTO =', dto);
@@ -147,4 +148,5 @@ export class MembershipsController {
 
         return this.memberships.activateLicense(dto, ip, ua);
     }
+
 }
