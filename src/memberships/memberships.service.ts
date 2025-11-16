@@ -12,7 +12,10 @@ import { UpdateMembershipAdminDto } from './dto/update-membership-admin.dto';
 import { buildAdminTinyPayload, normalizeAccounts } from './memberships.helper';
 import { PushProducer } from 'src/queue/push.producer';
 import { WebPushSubService } from 'src/web-push-sub/web-push-sub.service';
-import { Subscription, SubscriptionDocument } from 'src/subscription/subscription.schema';
+import { Subscription } from 'src/subscription/subscription.schema';
+import { randomBytes } from 'crypto';
+import { ActivateLicenseDto } from './dto/activate-license.dto';
+import { JoseService } from './jose.service';
 
 @Injectable()
 export class MembershipsService {
@@ -23,12 +26,12 @@ export class MembershipsService {
         private readonly userModel: Model<UserDocument>,
         @InjectModel(Subscription.name)
         private readonly pushProducer: PushProducer,
-        private readonly webPushSubService: WebPushSubService
-
+        private readonly webPushSubService: WebPushSubService,
+        private readonly jose: JoseService
     ) { }
 
     async findByUserId(userId: string): Promise<MembershipDocument | null> {
-    
+
         return this.membershipModel.findOne({ user: new Types.ObjectId(userId) }).exec();
     }
 
@@ -313,5 +316,114 @@ export class MembershipsService {
 
         await membership.save();
         return this.membershipModel.findById(membership._id).lean().exec();
+    }
+
+    private generateLicenseKey(membership: membershipsSchema.MembershipDocument): string {
+        // Prefix can be anything: product ID, "EA", etc.
+        const prefix = 'EA';
+        const randomPart = randomBytes(6).toString('base64url').toUpperCase(); // short but random
+        // You can also mix in part of email or user id if you want
+        return `${prefix}-${randomPart}`;
+    }
+
+    // 👇 MAIN: create and attach a license key to a membership
+    async createLicenseKeyForMembership(id: string) {
+        if (!Types.ObjectId.isValid(id)) {
+            throw new BadRequestException('INVALID_ID');
+        }
+
+        const membership = await this.membershipModel.findById(id).exec();
+        if (!membership) {
+            throw new NotFoundException('MEMBERSHIP_NOT_FOUND');
+        }
+
+        if (membership.licenseKey) {
+            // already has a key, don't overwrite silently
+            throw new ConflictException('LICENSE_ALREADY_EXISTS');
+        }
+
+        const key = this.generateLicenseKey(membership);
+        membership.licenseKey = key;
+
+        await membership.save();
+
+        // Return a lean object with the new licenseKey
+        return this.membershipModel.findById(membership._id).lean().exec();
+    }
+
+    // -------- ACTIVATION FOR MT5 EA --------
+
+    private deny(reason: string): never {
+        throw new ForbiddenException({ status: 'INVALID', reason });
+    }
+
+    async activateLicense(dto: ActivateLicenseDto, ip?: string, ua?: string) {
+        const key = dto.key?.trim();
+        if (!key) this.deny('key_required');
+
+        const membership = await this.membershipModel
+            .findOne({ licenseKey: key })
+            .populate('user', '_id email firstName lastName')
+            .exec();
+
+        if (!membership) {
+            this.deny('not_found');
+        }
+
+        if (membership.status === membershipsSchema.MembershipStatus.Request) {
+            this.deny('pending');
+        }
+        if (membership.status === membershipsSchema.MembershipStatus.Rejected) {
+            this.deny('rejected');
+        }
+        if (membership.status === membershipsSchema.MembershipStatus.Ended) {
+            this.deny('ended');
+        }
+
+        const accounts = membership.accounts ?? [];
+        const loginStr = String(dto.accountLogin);
+
+        if (accounts.length > 0 && !accounts.includes(loginStr)) {
+            this.deny('account_not_allowed');
+        }
+
+        const membershipId = (membership._id as Types.ObjectId).toHexString();
+        const userId =
+            (membership.user as any)?._id
+                ? (membership.user as any)._id.toString()
+                : undefined;
+
+        const payload = {
+            sub: `membership:${membershipId}`,
+            membershipId,
+            licenseKey: membership.licenseKey,
+            accountLogin: dto.accountLogin,
+            email: membership.email,
+            userId,
+            features: {
+                member: true,
+            },
+            ip,
+            ua,
+        };
+
+        const { token, exp } = await this.jose.signToken(payload);
+
+        const ttlDays = Number(process.env.TOKEN_TTL_DAYS || 30);
+        const graceDays = Number(process.env.GRACE_DAYS || 2);
+        const nowMs = Date.now();
+        const refreshAfter = new Date(
+            nowMs + (ttlDays - graceDays) * 24 * 3600 * 1000,
+        ).toISOString();
+
+        return {
+            status: 'OK',
+            token,
+            exp: new Date(exp * 1000).toISOString(),
+            refreshAfter,
+            membershipId: membership._id,
+            email: membership.email,
+            accounts: membership.accounts,
+        };
     }
 }

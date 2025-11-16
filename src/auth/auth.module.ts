@@ -13,6 +13,7 @@ import { MongooseModule } from '@nestjs/mongoose';
 import { User, UserSchema } from 'src/user/user.schema';
 import { EmailVerificationToken, EmailVerificationTokenSchema } from './email-verification-token.schema';
 import { MailModule } from 'src/mail/mail.module';
+import { PasswordResetToken, PasswordResetTokenSchema } from './password-reset-token.schema';
 
 @Module({
   imports: [
@@ -25,6 +26,7 @@ import { MailModule } from 'src/mail/mail.module';
     MongooseModule.forFeature([
       { name: User.name, schema: UserSchema },
       { name: EmailVerificationToken.name, schema: EmailVerificationTokenSchema },
+      { name: PasswordResetToken.name, schema: PasswordResetTokenSchema },
     ])
   ],
   controllers: [AuthController],

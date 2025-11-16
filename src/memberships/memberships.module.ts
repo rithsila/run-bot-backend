@@ -7,6 +7,7 @@ import { Membership, MembershipSchema } from './memberships.schema';
 import { User, UserSchema } from 'src/user/user.schema';
 import { QueueModule } from 'src/queue/queue.module';
 import { Subscription, SubscriptionSchema } from 'src/subscription/subscription.schema';
+import { JoseService } from './jose.service';
 
 @Module({
   imports: [
@@ -18,7 +19,7 @@ import { Subscription, SubscriptionSchema } from 'src/subscription/subscription.
     WebPushSubModule,
     QueueModule
   ],
-  providers: [MembershipsService],
+  providers: [MembershipsService, JoseService],
   controllers: [MembershipsController]
 })
 export class MembershipsModule { }

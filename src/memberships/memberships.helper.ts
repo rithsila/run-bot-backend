@@ -11,7 +11,7 @@ export function normalizeAccounts(input?: string[]): string[] | undefined {
         ),
     );
     if (cleaned.length === 0) return [];
-    if (cleaned.length > 3) throw new BadRequestException('accounts can have at most 3 entries');
+    if (cleaned.length > 10) throw new BadRequestException('accounts can have at most 10 entries');
     return cleaned;
 }
 

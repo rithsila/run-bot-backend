@@ -12,7 +12,7 @@ import {
 } from 'class-validator';
 
 export class JoinMembershipDto {
-  // REQUIRED email
+
   @IsEmail()
   @IsNotEmpty()
   @MaxLength(120)
@@ -23,7 +23,7 @@ export class JoinMembershipDto {
 
   @IsArray()
   @ArrayMinSize(1)
-  @ArrayMaxSize(3)
+  @ArrayMaxSize(10)
   @IsString({ each: true })
   @MaxLength(120, { each: true })
   @Transform(({ value }) => {

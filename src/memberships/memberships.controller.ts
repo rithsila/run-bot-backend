@@ -23,6 +23,8 @@ import { Throttle } from '@nestjs/throttler';
 import { UpdateMembershipAdminDto } from './dto/update-membership-admin.dto';
 import { Roles } from 'src/auth/decorators/roles.decorator';
 import { Role } from 'src/user/user.enum';
+import { ActivateLicenseDto } from './dto/activate-license.dto';
+import { Public } from 'src/auth/guard/public.decorator';
 
 @Controller('memberships')
 export class MembershipsController {
@@ -126,5 +128,19 @@ export class MembershipsController {
             timestamp: new Date().toISOString(),
             path: req.url,
         };
+    }
+
+    @Post(':id/license')
+    async createLicense(@Param('id') id: string) {
+        // In real app, protect this with an admin guard
+        return this.memberships.createLicenseKeyForMembership(id);
+    }
+
+    @Public()
+    @Post('/activate')
+    async activate(@Body() dto: ActivateLicenseDto, @Req() req: any) {
+        const ip = req.ip || req.connection?.remoteAddress || undefined;
+        const ua = req.headers['user-agent'] || undefined;
+        return this.memberships.activateLicense(dto, ip, ua);
     }
 }

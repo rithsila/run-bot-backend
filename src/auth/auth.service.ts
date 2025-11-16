@@ -29,40 +29,39 @@ import { ConfigService } from '@nestjs/config';
 import { Model, Types } from 'mongoose';
 import { sha256Hex } from 'src/common/crypto/hash.util';
 import { randomBytes } from 'crypto';
+import { PasswordResetToken, PasswordResetTokenDocument } from './password-reset-token.schema';
 
 
 @Injectable()
 export class AuthService {
-  // ---- private fields (constants & logger first) -------------------------------
   private readonly logger = new Logger(AuthService.name);
 
   private readonly ACCESS_TTL_SEC = Number(process.env.JWT_ACCESS_TTL ?? 900); // 15m
   private readonly JWT_ALG = (process.env.JWT_ALG as 'RS256' | 'HS256' | undefined) ?? 'RS256';
   private readonly JWT_ISSUER = process.env.JWT_ISSUER;
-  private readonly VERIFY_TTL_MS = 24 * 60 * 60 * 1000; // 24h
+  private readonly VERIFY_TTL_MS = 24 * 60 * 60 * 1000;
+  private readonly RESET_TTL_MS =
+    Number(process.env.PW_RESET_TTL_MIN ?? 20) * 60 * 1000; // 20m default
 
-  // config-backed value (initialized in constructor)
   private appHost!: string;
 
-  // ---- constructor (DI + config init) ------------------------------------------
   constructor(
     private readonly users: UserService,
     private readonly jwt: JwtService,
     @InjectModel(EmailVerificationToken.name)
     private readonly verifyModel: Model<EmailVerificationTokenDocument>,
+    @InjectModel(PasswordResetToken.name)
+    private readonly pwResetModel: Model<PasswordResetTokenDocument>,
     private readonly mail: MailService,
     private readonly config: ConfigService,
   ) {
-    // safe place to read from ConfigService
     this.appHost = this.config.get<string>('FRONTEND_URL') || 'https://app.example.com';
   }
 
-  // ---- small helpers -----------------------------------------------------------
   private newToken() {
     return randomBytes(32).toString('base64url');
   }
 
-  // single-responsibility: create token, store hash, email user
   private async issueAndSendEmailVerification(
     userId: Types.ObjectId,
     email: string,
@@ -96,7 +95,43 @@ export class AuthService {
     }
   }
 
-  // ---- signup (unchanged logic + added email verification call) ----------------
+  private async issueAndSendPasswordReset(
+    userId: Types.ObjectId,
+    email: string,
+    ip?: string,
+    ua?: string,
+  ) {
+    // Invalidate any currently-active reset tokens
+    await this.pwResetModel.updateMany(
+      { userId, usedAt: null, expiresAt: { $gt: new Date() } },
+      { $set: { expiresAt: new Date() } },
+    );
+
+    const raw = this.newToken();
+    const tokenHash = sha256Hex(raw);
+
+    await this.pwResetModel.create({
+      userId,
+      tokenHash,
+      expiresAt: new Date(Date.now() + this.RESET_TTL_MS),
+      issuedIp: ip,
+      issuedUa: ua,
+      reason: 'forgot',
+    });
+
+    // Prefer path-style link; keep ?email to enable one-click resend UX on the page
+    const link = `${this.appHost}/reset-password/${raw}?email=${encodeURIComponent(email)}`;
+
+    try {
+      await this.mail.sendPasswordReset(email, link);
+    } catch (e) {
+      this.logger.warn(
+        `sendPasswordReset failed for ${maskEmail(email)}: ${(e as Error)?.message}`,
+      );
+    }
+  }
+
+
   async signup(
     dto: SignupDto,
     reqMeta: Partial<SignupMeta> = {},
@@ -182,11 +217,12 @@ export class AuthService {
           `This account was created with ${authDoc?.signInMethod} sign-in.`,
         );
       }
+
       if (!authDoc?.passwordHash) {
-        // this.logger.warn(`Login failed (no user/hash) email=${maskEmail(email)}`);
         throw new UnauthorizedException('Invalid credentials');
       }
 
+      // 🔒 already locked? bail out early
       if (this.users.isLocked(authDoc)) {
         const remaining = formatRemainingLockTime(new Date(authDoc.lockedUntil!));
         throw new UnauthorizedException(
@@ -194,9 +230,15 @@ export class AuthService {
         );
       }
 
+      // ✅ check password
       const ok = await argon2.verify(authDoc.passwordHash, dto.password);
       if (!ok) {
-        await this.users.recordFailedLogin(String(authDoc._id), { maxAttempts: 5, lockMs: 10 * 60 * 1000 });
+        // wrong password → count towards lock
+        await this.users.recordFailedLogin(String(authDoc._id), {
+          maxAttempts: 5,
+          lockMs: 10 * 60 * 1000,
+        });
+
         this.logger.warn(
           JSON.stringify({
             evt: 'login_failed',
@@ -206,43 +248,65 @@ export class AuthService {
             reason: 'bad_password',
           }),
         );
-        throw new UnauthorizedException('The password you entered is incorrect. Please try again or reset your password.');
-      }
 
-      if (!authDoc.emailVerified) {
-        try {
-          await this.issueAndSendEmailVerification(
-            // ensure ObjectId type
-            new (require('mongoose').Types.ObjectId)(String(authDoc._id)),
-            authDoc.email,
-            undefined
-          );
-        } catch (e) {
-          this.logger.warn(`auto-resend verify failed for ${maskEmail(authDoc.email)}: ${(e as Error)?.message}`);
-        }
         throw new UnauthorizedException(
-          'Please verify your email to continue. We just sent you a new verification link.'
+          'The password you entered is incorrect. Please try again or reset your password.',
         );
       }
 
-      await this.users.recordSuccessfulLogin(String(authDoc._id));
+      // 🚨 password is correct but email is NOT verified
+      if (!authDoc.emailVerified) {
+        // Treat this as a "failed" attempt for locking purposes
+        await this.users.recordFailedLogin(String(authDoc._id), {
+          maxAttempts: 5,                 // you can tune this separately if you want
+          lockMs: 10 * 60 * 1000,         // e.g. 10 minutes
+        });
 
+        this.logger.warn(
+          JSON.stringify({
+            evt: 'login_failed',
+            email: maskEmail(email),
+            ip_subnet24: t?.ip ? subnet24(t.ip) : null,
+            deviceIdHash: t?.deviceIdHash ?? null,
+            reason: 'email_not_verified',
+          }),
+        );
+
+        // try to resend verification email
+        try {
+          await this.issueAndSendEmailVerification(
+            new (require('mongoose').Types.ObjectId)(String(authDoc._id)),
+            authDoc.email,
+            undefined,
+          );
+        } catch (e) {
+          this.logger.warn(
+            `auto-resend verify failed for ${maskEmail(authDoc.email)}: ${(e as Error)?.message}`,
+          );
+        }
+
+        // user will hit the "Too many login attempts" branch once locked
+        throw new UnauthorizedException(
+          'Please verify your email to continue. We just sent you a new verification link.',
+        );
+      }
+
+      // 🎉 fully OK: verified + correct password
+      await this.users.recordSuccessfulLogin(String(authDoc._id));
 
       const payload = {
         sub: String(authDoc._id),
         email: authDoc.email,
         role: authDoc.role as Role,
-        perms: (authDoc as any).perms ?? [], // if you store string[] perms on the user
+        perms: (authDoc as any).perms ?? [],
         typ: 'access' as const,
       };
 
-      // ── centralized signing + numeric seconds TTL ─────────
       const accessToken = await this.signAccessToken(payload);
       if (process.env.JWT_DEBUG_PAYLOAD === '1') this.debugJwt(accessToken);
 
       const user = this.users.toPublicUser(authDoc);
 
-      // success log with coarse IP/device
       this.logger.log(
         JSON.stringify({
           evt: 'login_success',
@@ -254,15 +318,17 @@ export class AuthService {
         }),
       );
 
-      // return seconds; controller sets cookie maxAge = seconds * 1000
       return { tokenType: 'Bearer', accessToken, expiresIn: this.ACCESS_TTL_SEC };
-
     } catch (err: any) {
       if (err?.status) throw err;
-      this.logger.error(`Login error email=${maskEmail(email)}: ${err?.message || err}`, err?.stack);
+      this.logger.error(
+        `Login error email=${maskEmail(email)}: ${err?.message || err}`,
+        err?.stack,
+      );
       throw new InternalServerErrorException('Unable to login');
     }
   }
+
 
   async handleGoogleLogin(
     google: GoogleUserPayload,
@@ -340,17 +406,12 @@ export class AuthService {
     // Mark user as verified
     await this.users.setEmailVerified(String(rec.userId), true);
 
-    // Optional: log success (never log raw token)
     this.logger.log(
       JSON.stringify({ evt: 'verify_email_success', userId: String(rec.userId) }),
     );
   }
 
-  /**
-   * Resends a verification email (generic outward behavior).
-   * - If user not found or already verified -> silently return.
-   * - Otherwise invalidates prior tokens and emails a new one.
-   */
+
   async resendVerification(email: string, ip?: string, ua?: string): Promise<void> {
     if (!email) return;
     const normalized = this.users.normalizeEmail(email);
@@ -370,9 +431,34 @@ export class AuthService {
     );
   }
 
-  // -----------------------------
-  // Helpers (NEW)
-  // -----------------------------
+  async requestPasswordReset(email: string, ip?: string, ua?: string): Promise<void> {
+    if (!email) return;
+
+    const normalized = this.users.normalizeEmail(email);
+    const user = await this.users.findByEmail(normalized);
+
+    // Enumeration-safe: always return 200 to caller;
+    // only proceed internally if user exists and supports password sign-in.
+    if (!user || user.signInMethod !== SignInMethod.Password) {
+      this.logger.debug(
+        JSON.stringify({ evt: 'reset_request_ignored', email: maskEmail(normalized) }),
+      );
+      return;
+    }
+
+    await this.issueAndSendPasswordReset(
+      new Types.ObjectId((user as any)._id ?? (user as any).id),
+      user.email,
+      ip,
+      ua,
+    );
+
+    this.logger.log(
+      JSON.stringify({ evt: 'reset_issued', userId: String((user as any)._id) }),
+    );
+  }
+
+
   private async signAccessToken(payload: {
     sub: string;
     email: string;

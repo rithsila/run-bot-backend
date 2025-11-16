@@ -107,15 +107,22 @@ export class MailService {
   }
 
   async sendPasswordReset(to: string, link: string) {
-
     const subject = 'Reset your password';
     const html = `
-      <h2>Reset your password</h2>
-      <p>This link expires in 20 minutes.</p>
-      <p><a href="${link}" target="_blank" rel="noopener">Reset password</a></p>
-      <p>If the button doesn’t work, paste this URL into your browser:</p>
-      <p>${link}</p>
-    `;
+    <span style="display:none!important;opacity:0;max-height:0;max-width:0;overflow:hidden;">
+      Use this link to reset your password. It expires in 20 minutes.
+    </span>
+    <h2>Reset your password</h2>
+    <p>This link expires in <strong>20 minutes</strong>.</p>
+    <p>
+      <a href="${link}" target="_blank" rel="noopener"
+         style="display:inline-block;background:#4f46e5;color:#fff;padding:10px 16px;border-radius:8px;text-decoration:none">
+        Reset password
+      </a>
+    </p>
+    <p>If the button doesn’t work, paste this URL into your browser:</p>
+    <p><a href="${link}" target="_blank" rel="noopener">${link}</a></p>
+  `;
     return this.send({ to, subject, html });
   }
 

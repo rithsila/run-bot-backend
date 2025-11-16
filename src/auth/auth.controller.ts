@@ -198,7 +198,7 @@ export class AuthController {
     return { message: 'If an account exists, we’ve sent a new verification email.' };
   }
 
-  
+
   @Public()
   @SkipCsrf()
   @Get('google')
@@ -263,5 +263,27 @@ export class AuthController {
       path: req.url,
     };
   }
+
+  @Public()
+  @UseGuards(TurnstileGuard)
+  @TurnstileAction('forgot_password')
+  @Post('forgot-password')
+  @HttpCode(HttpStatus.OK)
+  @Throttle({ default: { limit: 5, ttl: 60_000 } })
+  async forgotPassword(@Body() dto: { email: string }, @Req() req: Request) {
+    const ip = getClientIp(req) ?? undefined; // 👈 coerce null → undefined
+    const ua =
+      (req.headers['user-agent']?.toString() ?? '').slice(0, 200) || undefined;
+
+    await this.auth.requestPasswordReset(
+      dto?.email?.toString().trim() ?? '',
+      ip,
+      ua,
+    );
+
+    return { message: 'If an account exists, we’ve sent an email with a reset link.' };
+  }
+
+
 }
 

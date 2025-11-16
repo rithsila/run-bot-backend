@@ -55,21 +55,22 @@ export class Membership {
     type: [String],
     default: [],
     validate: {
-      validator: (v: string[] | undefined) => Array.isArray(v),
-      message: 'accounts must be an array',
+      validator: (v: string[] | undefined) =>
+        Array.isArray(v) && v.length <= 10,
+      message: 'accounts can contain at most 10 items',
     },
   })
   accounts!: string[];
 
+  // 👇 NEW: license key stored on the membership
   @Prop({
-    type: [String],
-    default: [],
-    validate: {
-      validator: (v: string[] | undefined) => Array.isArray(v),
-      message: 'accounts must be an array',
-    },
+    type: String,
+    trim: true,
+    index: true,
+    unique: true,
+    sparse: true, // allow many docs without licenseKey
   })
-  accountNumbers: string[];
+  licenseKey?: string;
 
 }
 
@@ -77,4 +78,5 @@ export const MembershipSchema = SchemaFactory.createForClass(Membership);
 MembershipSchema.plugin(paginate);
 
 MembershipSchema.index({ user: 1, status: 1 });
+
 

@@ -33,14 +33,14 @@ export class Coupon {
         required: true,
         min: 0.01,
         max: 100,
-        default: 20,
+        default: 10,
     })
     percent!: number;
 
     @Prop({
         type: String,
         enum: Object.values(CouponStatus),
-        default: CouponStatus.Request, // default changed to Request
+        default: CouponStatus.Request, 
         index: true,
     })
     status!: CouponStatus;

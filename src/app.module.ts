@@ -49,6 +49,8 @@ import { QueueModule } from './queue/queue.module';
 import { RolesGuard } from './auth/guard/roles.guard';
 import { RetailerModule } from './retailer/retailer.module';
 import { ScheduleModule } from '@nestjs/schedule';
+import { MarketplaceModule } from './marketplace/marketplace.module';
+import { OrderModule } from './order/order.module';
 
 @Module({
   imports: [
@@ -165,6 +167,8 @@ import { ScheduleModule } from '@nestjs/schedule';
     CouponsModule,
     QueueModule,
     RetailerModule,
+    MarketplaceModule,
+    OrderModule,
   ],
 
   controllers: [AppController],

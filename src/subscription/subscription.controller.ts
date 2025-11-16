@@ -10,8 +10,6 @@ import {
   Req,
   UnauthorizedException,
   UseGuards,
-  UsePipes,
-  ValidationPipe,
   Param,
   Patch,
 } from '@nestjs/common';
@@ -42,14 +40,7 @@ export class SubscriptionsController {
 
   @Post()
   @Throttle({ default: { limit: 5, ttl: 60_000 } })
-  @UsePipes(
-    new ValidationPipe({
-      whitelist: true,
-      forbidNonWhitelisted: false,
-      transform: true,
-      transformOptions: { enableImplicitConversion: true },
-    }),
-  )
+ 
   @HttpCode(HttpStatus.CREATED)
   async create(
     @Req() req: AuthRequest,
