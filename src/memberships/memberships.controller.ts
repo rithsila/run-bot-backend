@@ -160,7 +160,7 @@ export class MembershipsController {
         };
     }
 
-    @Get('activate')
+    @Post('activate')
     @Public()
     @HttpCode(HttpStatus.OK)
     async activate(
