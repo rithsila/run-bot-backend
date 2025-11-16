@@ -139,8 +139,12 @@ export class MembershipsController {
     @Public()
     @Post('/activate')
     async activate(@Body() dto: ActivateLicenseDto, @Req() req: any) {
+        console.log('RAW BODY =', req.rawBody?.toString());
+        console.log('DTO =', dto);
+
         const ip = req.ip || req.connection?.remoteAddress || undefined;
         const ua = req.headers['user-agent'] || undefined;
+
         return this.memberships.activateLicense(dto, ip, ua);
     }
 }
