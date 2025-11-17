@@ -1,16 +1,42 @@
 // src/memberships/dto/update-membership-admin.dto.ts
-import { IsEnum, IsOptional, IsString, MaxLength } from 'class-validator';
+import {
+  IsBoolean,
+  IsEnum,
+  IsNotEmpty,
+  IsOptional,
+  IsString,
+  MaxLength,
+  ValidateNested,
+} from 'class-validator';
+import { Type } from 'class-transformer';
 import { MembershipStatus } from '../memberships.schema';
 
-export class UpdateMembershipAdminDto {
-    /** New status (optional) */
-    @IsOptional()
-    @IsEnum(MembershipStatus)
-    status?: MembershipStatus;
+// Local DTO for accounts
+class MembershipAccountDto {
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(120)
+  account!: string;
 
-    /** Admin-facing note / reason (optional) */
-    @IsOptional()
-    @IsString()
-    @MaxLength(1000)
-    adminNotes?: string;
+  @IsBoolean()
+  isVerified!: boolean;
+}
+
+export class UpdateMembershipAdminDto {
+  /** New status (optional) */
+  @IsOptional()
+  @IsEnum(MembershipStatus)
+  status?: MembershipStatus;
+
+  /** Admin-facing note / reason (optional) */
+  @IsOptional()
+  @IsString()
+  @MaxLength(1000)
+  adminNotes?: string;
+
+  /** Accounts (optional) */
+  @IsOptional()
+  @ValidateNested({ each: true })
+  @Type(() => MembershipAccountDto)
+  accounts?: MembershipAccountDto[];
 }

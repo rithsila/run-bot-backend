@@ -40,11 +40,35 @@ export class MembershipsService {
     ) { }
 
     async findByUserId(userId: string): Promise<MembershipDocument | null> {
-        
-        return this.membershipModel
+        const membership = await this.membershipModel
             .findOne({ user: new Types.ObjectId(userId) })
+            .populate({ path: 'user', select: '_id email firstName lastName' })
             .exec();
+
+        if (!membership) return null;
+
+        const rawReferral: any = (membership as any).referral;
+
+        if (
+            rawReferral &&
+            typeof rawReferral === 'string' &&
+            !Types.ObjectId.isValid(rawReferral)
+        ) {
+            membership.referral = undefined as any;
+            await membership.save();
+            return membership;
+        }
+
+        if (rawReferral) {
+            await membership.populate({
+                path: 'referral',
+                populate: { path: 'owner', select: '_id email firstName lastName' },
+            });
+        }
+
+        return membership;
     }
+
 
     async requestJoin(dto: JoinMembershipDto, currentUserId?: string) {
         if (!currentUserId) throw new BadRequestException('USER_REQUIRED');
@@ -127,7 +151,6 @@ export class MembershipsService {
             throw err;
         }
     }
-
 
     async appeal(userId: string, dto: JoinMembershipDto) {
         const membership = await this.membershipModel
@@ -340,18 +363,33 @@ export class MembershipsService {
         if (dto.status !== undefined) {
             membership.status = dto.status;
         }
+
         if (dto.adminNotes !== undefined) {
             membership.adminNotes = dto.adminNotes?.trim() || undefined;
         }
+
+        // 👇 handle accounts from DTO
+        if (dto.accounts !== undefined) {
+            // if you want to *replace* all accounts:
+            membership.accounts = (dto.accounts || [])
+                // optional: drop entries without a valid account string
+                .filter((a) => a && a.account && a.account.trim().length > 0)
+                .map((a) => ({
+                    account: a.account.trim(),
+                    isVerified: a.isVerified ?? false,
+                }));
+        }
+
         try {
             const tinyPayload = buildAdminTinyPayload(membership, dto, { maxReasonLength: 160 });
-            const userId = membership?.user || ''
+            const userId = membership?.user || '';
             const recipients = [new Types.ObjectId(userId?.toString())];
+
             if (recipients.length) {
                 await this.pushProducer.enqueueSendToUsers(
                     recipients,
                     tinyPayload,
-                    { ttl: 3600, chunkSize: 500 }
+                    { ttl: 3600, chunkSize: 500 },
                 );
             }
         } catch (e) {
@@ -361,6 +399,7 @@ export class MembershipsService {
         await membership.save();
         return this.membershipModel.findById(membership._id).lean().exec();
     }
+
 
     private generateLicenseKey(membership: membershipsSchema.MembershipDocument): string {
         // Prefix can be anything: product ID, "EA", etc.

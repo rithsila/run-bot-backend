@@ -41,11 +41,9 @@ export class JoinMembershipDto {
   @MaxLength(2000)
   notes?: string;
 
-  // 👇 referral is now a Referral ObjectId string
-  @IsOptional()
   @IsString()
   @Transform(({ value }) =>
     typeof value === 'string' ? value.trim() : value,
   )
-  referral?: string;
+  referral: string;
 }

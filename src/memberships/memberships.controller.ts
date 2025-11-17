@@ -32,8 +32,6 @@ interface ActivationResponseData {
     token: string;
 }
 
-
-
 @Controller('memberships')
 export class MembershipsController {
     constructor(private readonly memberships: MembershipsService) { }
@@ -58,6 +56,31 @@ export class MembershipsController {
         };
     }
 
+    @Get('user/:userId')
+    @Roles(Role.Admin)
+    @HttpCode(HttpStatus.OK)
+    async getByUserId(
+        @Param('userId') userId: string,
+        @Req() req: AuthRequest,
+    ): Promise<ApiSuccess<MembershipDocument>> {
+        const membership = await this.memberships.findByUserId(userId);
+        console.log("-------membership", membership)
+        if (!membership) {
+            throw new NotFoundException('MEMBERSHIP_NOT_FOUND');
+        }
+
+        return {
+            success: true,
+            statusCode: HttpStatus.OK,
+            code: 'MEMBERSHIP',
+            message: 'Membership fetched',
+            data: membership,
+            timestamp: new Date().toISOString(),
+            path: req.url,
+        };
+    }
+
+
     @Post('request')
     @HttpCode(HttpStatus.CREATED)
     async request(
@@ -79,11 +102,11 @@ export class MembershipsController {
 
     @Get('me')
     @HttpCode(HttpStatus.OK)
-    async getMine(@Req() req: AuthRequest): Promise<ApiSuccess<MembershipDocument>> {
+    async getMine(@Req() req: AuthRequest) {
         const userId = req.user?.userId;
 
         if (!userId) throw new UnauthorizedException('AUTH_REQUIRED');
-       
+
         const membership = await this.memberships.findByUserId(userId);
 
         if (!membership) throw new NotFoundException('MEMBERSHIP_NOT_FOUND');
@@ -138,8 +161,6 @@ export class MembershipsController {
             path: req.url,
         };
     }
-
-    // memberships.controller.ts
 
     @Post(':id/license')
     @Roles(Role.Admin)  // ✅ Admin only
