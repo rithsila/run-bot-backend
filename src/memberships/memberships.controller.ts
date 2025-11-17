@@ -83,6 +83,7 @@ export class MembershipsController {
         const userId = req.user?.userId;
 
         if (!userId) throw new UnauthorizedException('AUTH_REQUIRED');
+       
         const membership = await this.memberships.findByUserId(userId);
 
         if (!membership) throw new NotFoundException('MEMBERSHIP_NOT_FOUND');

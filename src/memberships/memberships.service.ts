@@ -7,15 +7,24 @@ import { JoinMembershipDto } from './dto/join-membership.dto';
 import { User, UserDocument } from 'src/user/user.schema';
 import { PaginateMembershipsDto } from './dto/paginate-memberships.dto';
 import { PaginatedResult } from 'src/common/types/api-response.type';
-import { MembershipDocument } from './memberships.schema';
 import { UpdateMembershipAdminDto } from './dto/update-membership-admin.dto';
 import { buildAdminTinyPayload, normalizeAccounts } from './memberships.helper';
 import { PushProducer } from 'src/queue/push.producer';
 import { WebPushSubService } from 'src/web-push-sub/web-push-sub.service';
-import { Subscription } from 'src/subscription/subscription.schema';
 import { randomBytes } from 'crypto';
 import { ActivateLicenseDto } from './dto/activate-license.dto';
 import { JoseService } from './jose.service';
+import { MembershipDocument } from './memberships.schema';
+import { Referral } from './referral.schema';
+
+export type ReferralWithOwner = Referral & {
+    owner: Pick<User, 'firstName' | 'lastName'>;
+};
+
+export type MembershipWithReferralOwner = MembershipDocument & {
+    referral?: ReferralWithOwner;
+};
+
 
 @Injectable()
 export class MembershipsService {
@@ -25,30 +34,36 @@ export class MembershipsService {
         private readonly membershipModel: membershipsSchema.MembershipPaginateModel,
         @InjectModel(User.name)
         private readonly userModel: Model<UserDocument>,
-        @InjectModel(Subscription.name)
         private readonly pushProducer: PushProducer,
         private readonly webPushSubService: WebPushSubService,
         private readonly jose: JoseService
     ) { }
 
     async findByUserId(userId: string): Promise<MembershipDocument | null> {
-
-        return this.membershipModel.findOne({ user: new Types.ObjectId(userId) }).exec();
+        
+        return this.membershipModel
+            .findOne({ user: new Types.ObjectId(userId) })
+            .exec();
     }
 
     async requestJoin(dto: JoinMembershipDto, currentUserId?: string) {
-        // user is required (schema requires it)
         if (!currentUserId) throw new BadRequestException('USER_REQUIRED');
 
-        const user = await this.userModel.findById(currentUserId)
-        // email is required (schema + DTO require it). Normalize.
+        const user = await this.userModel.findById(currentUserId);
+
+        // normalize email
         const emailRaw = dto.email;
         const email =
             typeof emailRaw === 'string' ? emailRaw.trim().toLowerCase() : undefined;
         if (!email) throw new BadRequestException('EMAIL_REQUIRED');
 
-        // normalize accounts (array of strings, up to 3)
-        const accounts = normalizeAccounts(dto.accounts);
+        // normalize accounts as string[] (up to 10), then map to MembershipAccount[]
+        const accountStrings = normalizeAccounts(dto.accounts);
+        const accounts =
+            (accountStrings ?? []).map((acc) => ({
+                account: acc,
+                isVerified: false, // default on creation
+            })) ?? [];
 
         // Uniqueness: one per user OR one per email
         const ors: FilterQuery<membershipsSchema.MembershipDocument>[] = [
@@ -58,68 +73,66 @@ export class MembershipsService {
 
         const existing = await this.membershipModel.findOne({ $or: ors }).lean();
         if (existing) {
-            throw new ConflictException('A membership for this user or email already exists.');
+            throw new ConflictException(
+                'A membership for this user or email already exists.',
+            );
         }
-
 
         try {
             const created = await this.membershipModel.create({
                 user: new Types.ObjectId(currentUserId),
                 email,
-                accounts,
+                accounts, // 👈 now MembershipAccount[]
                 notes: dto.notes ?? undefined,
                 status: membershipsSchema.MembershipStatus.Request,
-                referral: dto?.referral
+                referral: dto.referral ?? undefined, // validated MongoId string (or undefined)
             });
 
-
+            // Push notification (unchanged)
             try {
                 const tinyPayload = {
                     title: 'New membership request',
                     body: `${user?.firstName} ${user?.lastName} just asked to join`,
                 };
 
-                // Exclude author if provided on dto (optional)
                 let excludeId: Types.ObjectId | null = null;
                 const maybeAuthorId = (dto as any)?.authorId;
                 if (maybeAuthorId) {
-
-                    try { excludeId = new Types.ObjectId(String(maybeAuthorId)); } catch { /* ignore bad id */ }
+                    try {
+                        excludeId = new Types.ObjectId(String(maybeAuthorId));
+                    } catch {
+                        /* ignore bad id */
+                    }
                 }
 
-
-
-                // Get recipients (all active users, optionally excluding author).
                 const recipients = await this.webPushSubService.getAdminIds();
 
                 if (recipients.length) {
-                    await this.pushProducer.enqueueSendToUsers(
-                        recipients,
-                        tinyPayload,
-                        { ttl: 3600, chunkSize: 500 }
-                    );
+                    await this.pushProducer.enqueueSendToUsers(recipients, tinyPayload, {
+                        ttl: 3600,
+                        chunkSize: 500,
+                    });
                 }
             } catch (e) {
-                // Don’t block creation on push failures
                 console.warn('[AnalyzeNews.create] push enqueue failed:', e);
             }
-            // --
 
             return this.membershipModel.findById(created._id).lean();
-
-
         } catch (err: any) {
             if (err?.code === 11000) {
-                // unique index collision (race)
-                throw new ConflictException('A membership for this user or email already exists.');
+                throw new ConflictException(
+                    'A membership for this user or email already exists.',
+                );
             }
             throw err;
         }
     }
 
+
     async appeal(userId: string, dto: JoinMembershipDto) {
         const membership = await this.membershipModel
-            .findOne({ user: new Types.ObjectId(userId) }).populate('user')
+            .findOne({ user: new Types.ObjectId(userId) })
+            .populate('user')
             .exec();
 
         if (!membership) throw new NotFoundException('MEMBERSHIP_NOT_FOUND');
@@ -137,9 +150,24 @@ export class MembershipsService {
         const email =
             typeof dto.email === 'string' ? dto.email.trim().toLowerCase() : undefined;
 
-        const accountsProvided = Object.prototype.hasOwnProperty.call(dto, 'accounts');
-        const accounts = normalizeAccounts(dto.accounts);
-        const referral = dto?.referral
+        const accountsProvided = Object.prototype.hasOwnProperty.call(
+            dto,
+            'accounts',
+        );
+
+        // normalize accounts as string[] then map to MembershipAccount[]
+        const accountStrings = normalizeAccounts(dto.accounts);
+        const accounts =
+            (accountStrings ?? []).map((acc) => ({
+                account: acc,
+                isVerified: false, // on appeal you can reset or keep as false
+            })) ?? [];
+
+        const referralProvided = Object.prototype.hasOwnProperty.call(
+            dto,
+            'referral',
+        );
+        const referral = dto.referral; // validated MongoId string or undefined
 
         // If email is provided, validate
         if (emailProvided) {
@@ -151,12 +179,26 @@ export class MembershipsService {
                 .findOne({ email, _id: { $ne: membership._id } })
                 .lean()
                 .exec();
-            if (dup) throw new ConflictException('A membership with this email already exists.');
+            if (dup) {
+                throw new ConflictException(
+                    'A membership with this email already exists.',
+                );
+            }
             membership.email = email;
         }
 
         if (accountsProvided) {
-            membership.accounts = accounts ?? []; // allow clearing with []
+            // replace accounts entirely with new MembershipAccount[]
+            membership.accounts = accounts;
+        }
+
+        // ✅ Allow updating referral on appeal
+        if (referralProvided) {
+            if (referral) {
+                membership.referral = referral as any; // Mongoose will cast string -> ObjectId
+            } else {
+                membership.referral = undefined;
+            }
         }
 
         if (Object.prototype.hasOwnProperty.call(dto, 'notes')) {
@@ -166,7 +208,6 @@ export class MembershipsService {
         // Reset status/admin note for re-review
         membership.status = membershipsSchema.MembershipStatus.Request;
         membership.adminNotes = undefined;
-        membership.referral = referral;
 
         try {
             try {
@@ -175,40 +216,42 @@ export class MembershipsService {
                     body: `${membership?.user?.firstName} ${membership?.user?.lastName} just asked to Appeal`,
                 };
 
-                // Exclude author if provided on dto (optional)
                 let excludeId: Types.ObjectId | null = null;
                 const maybeAuthorId = (dto as any)?.authorId;
-                if (maybeAuthorId) {
 
-                    try { excludeId = new Types.ObjectId(String(maybeAuthorId)); } catch { /* ignore bad id */ }
+                if (maybeAuthorId) {
+                    try {
+                        excludeId = new Types.ObjectId(String(maybeAuthorId));
+                    } catch {
+                        /* ignore bad id */
+                    }
                 }
 
-                // Get recipients (all active users, optionally excluding author).
                 const recipients = await this.webPushSubService.getAdminIds();
 
                 if (recipients.length) {
-                    await this.pushProducer.enqueueSendToUsers(
-                        recipients,
-                        tinyPayload,
-                        { ttl: 3600, chunkSize: 500 }
-                    );
+                    await this.pushProducer.enqueueSendToUsers(recipients, tinyPayload, {
+                        ttl: 3600,
+                        chunkSize: 500,
+                    });
                 }
             } catch (e) {
-                // Don’t block creation on push failures
                 console.warn('[AnalyzeNews.create] push enqueue failed:', e);
             }
 
             await membership.save();
 
             return this.membershipModel.findById(membership._id).lean().exec();
-
         } catch (err: any) {
             if (err?.code === 11000) {
-                throw new ConflictException('A membership with this email already exists.');
+                throw new ConflictException(
+                    'A membership with this email already exists.',
+                );
             }
             throw err;
         }
     }
+
 
     async paginate(q: PaginateMembershipsDto): Promise<PaginatedResult<any>> {
         const filter: FilterQuery<membershipsSchema.MembershipDocument> = {};
@@ -348,6 +391,33 @@ export class MembershipsService {
 
         await membership.save();
 
+        try {
+            const userId = membership.user;
+
+            if (userId) {
+                const recipientId = new Types.ObjectId(userId.toString());
+
+                const tinyPayload = {
+                    title: 'License key created',
+                    body: 'Your EA license key has been generated and is now active.',
+                    // optionally include a masked key so you don’t leak full license:
+                    // body: `Your EA license key has been created: ${key.slice(0, 4)}***`,
+                };
+
+                const recipients = [recipientId];
+
+                await this.pushProducer.enqueueSendToUsers(
+                    recipients,
+                    tinyPayload,
+                    { ttl: 3600, chunkSize: 100 },
+                );
+            }
+        } catch (e) {
+            this.logger.warn(
+                '[Memberships.createLicenseKeyForMembership] push enqueue failed:',
+                e,
+            );
+        }
         // Return a lean object with the new licenseKey
         return this.membershipModel.findById(membership._id).lean().exec();
     }
@@ -404,18 +474,6 @@ export class MembershipsService {
             }
         }
 
-        // Validate account
-        const accounts = membership.accounts ?? [];
-        const loginStr = String(dto.accountLogin);
-        if (accounts.length > 0 && !accounts.includes(loginStr)) {
-            this.deny('account_not_allowed', {
-                maskedKey,
-                accountLogin: dto.accountLogin,
-                ip,
-                ua,
-                membershipId: String(membership._id),
-            });
-        }
 
         // Build token payload
         const membershipId = (membership._id as Types.ObjectId).toHexString();
@@ -445,6 +503,5 @@ export class MembershipsService {
             token: token,
         };
     }
-
 
 }

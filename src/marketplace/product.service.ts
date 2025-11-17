@@ -54,14 +54,10 @@ export class ProductService {
     // Customer list: status=active, optional category filter
     async findAllForCustomer(opts?: { category?: string }): Promise<Product[]> {
         const filter: FilterQuery<ProductDocument> = { status: ProductStatus.Inactive };
-
         if (opts?.category) {
-            if (!Types.ObjectId.isValid(opts.category)) {
-                throw new BadRequestException('Invalid category id');
-            }
-            filter.category = new Types.ObjectId(opts.category);
-        }
 
+            filter.category = opts.category;
+        }
         return this.productModel
             .find(filter)
             .sort({ createdAt: -1 })

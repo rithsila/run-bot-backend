@@ -1,8 +1,9 @@
-// src/memberships/membership.schema.ts
+// src/memberships/memberships.schema.ts
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { Document, PaginateModel, Types } from 'mongoose';
 import paginate from 'mongoose-paginate-v2';
 import { User } from 'src/user/user.schema';
+import { Referral } from './referral.schema';
 
 export type MembershipDocument = Membership & Document;
 export type MembershipPaginateModel = PaginateModel<MembershipDocument>;
@@ -13,6 +14,27 @@ export enum MembershipStatus {
   Rejected = 'Rejected',
   Ended = 'Ended',
 }
+
+// 🔹 Subdocument for each trading account
+@Schema({ _id: true })
+export class MembershipAccount {
+  @Prop({
+    type: String,
+    trim: true,
+    required: true,
+    maxlength: 120,
+  })
+  account!: string;
+
+  @Prop({
+    type: Boolean,
+    default: false,
+  })
+  isVerified!: boolean;
+}
+
+export const MembershipAccountSchema =
+  SchemaFactory.createForClass(MembershipAccount);
 
 @Schema({ collection: 'memberships', timestamps: true, versionKey: false })
 export class Membership {
@@ -38,45 +60,48 @@ export class Membership {
     type: String,
     enum: Object.values(MembershipStatus),
     default: MembershipStatus.Request,
-    index: true
+    index: true,
   })
   status!: MembershipStatus;
 
   @Prop({ type: String, trim: true })
   notes?: string;
 
-  @Prop({ type: String, trim: true })
-  referral?: string;
+  @Prop({
+    type: Types.ObjectId,
+    ref: 'Referral',
+    index: true,
+    required: false,
+  })
+  referral?: Types.ObjectId | Referral;
 
   @Prop({ type: String, trim: true })
   adminNotes?: string;
 
+  // 🔹 accounts is now an array of { _id, account, isVerified }
   @Prop({
-    type: [String],
+    type: [MembershipAccountSchema],
     default: [],
     validate: {
-      validator: (v: string[] | undefined) =>
+      validator: (v: MembershipAccount[] | undefined) =>
         Array.isArray(v) && v.length <= 10,
       message: 'accounts can contain at most 10 items',
     },
   })
-  accounts!: string[];
+  accounts!: MembershipAccount[];
 
-  // 👇 NEW: license key stored on the membership
   @Prop({
     type: String,
     trim: true,
     index: true,
     unique: true,
-    sparse: true, // allow many docs without licenseKey
+    sparse: true,
   })
   licenseKey?: string;
-
 }
 
 export const MembershipSchema = SchemaFactory.createForClass(Membership);
 MembershipSchema.plugin(paginate);
-
+export type MembershipAccountType = MembershipAccount;
 MembershipSchema.index({ user: 1, status: 1 });
-
-
+MembershipSchema.index({ referral: 1 });

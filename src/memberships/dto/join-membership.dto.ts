@@ -12,7 +12,6 @@ import {
 } from 'class-validator';
 
 export class JoinMembershipDto {
-
   @IsEmail()
   @IsNotEmpty()
   @MaxLength(120)
@@ -42,8 +41,11 @@ export class JoinMembershipDto {
   @MaxLength(2000)
   notes?: string;
 
+  // 👇 referral is now a Referral ObjectId string
   @IsOptional()
   @IsString()
-  @MaxLength(20)
+  @Transform(({ value }) =>
+    typeof value === 'string' ? value.trim() : value,
+  )
   referral?: string;
 }

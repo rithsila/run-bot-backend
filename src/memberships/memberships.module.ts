@@ -8,6 +8,7 @@ import { User, UserSchema } from 'src/user/user.schema';
 import { QueueModule } from 'src/queue/queue.module';
 import { Subscription, SubscriptionSchema } from 'src/subscription/subscription.schema';
 import { JoseService } from './jose.service';
+import { ReferralsModule } from './referrals.module';
 
 @Module({
   imports: [
@@ -17,7 +18,8 @@ import { JoseService } from './jose.service';
       { name: Subscription.name, schema: SubscriptionSchema }
     ]),
     WebPushSubModule,
-    QueueModule
+    QueueModule,
+    ReferralsModule
   ],
   providers: [MembershipsService, JoseService],
   controllers: [MembershipsController]

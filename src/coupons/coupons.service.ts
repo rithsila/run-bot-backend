@@ -20,7 +20,6 @@ import { PushProducer } from 'src/queue/push.producer';
 import { WebPushSubService } from 'src/web-push-sub/web-push-sub.service';
 import { buildCouponAdminTinyPayload } from './coupon.helper';
 
-
 export type MyCouponLite = {
     code: string;
     status: CouponStatus;

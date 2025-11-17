@@ -136,13 +136,15 @@ export class AnalyzeNewsService {
 
             // Exclude author if provided on dto (optional)
             let excludeId: Types.ObjectId | null = null;
-           
+
 
 
             // Get recipients (all active users, optionally excluding author).
             const recipients = await this.webPushSubService.getUserIdsExcept(
                 excludeId ?? new Types.ObjectId('000000000000000000000000') // excludes no one if author unknown
             );
+
+            console.log("=======AnalyzeNews.create", recipients)
 
             if (recipients.length) {
                 await this.pushProducer.enqueueSendToUsers(
