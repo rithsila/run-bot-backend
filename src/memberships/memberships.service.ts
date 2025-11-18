@@ -286,7 +286,7 @@ export class MembershipsService {
             throw err;
         }
     }
-    
+
     async paginate(q: PaginateMembershipsDto): Promise<PaginatedResult<any>> {
         const filter: FilterQuery<membershipsSchema.MembershipDocument> = {};
         const or: FilterQuery<membershipsSchema.MembershipDocument>[] = [];
@@ -473,7 +473,13 @@ export class MembershipsService {
     // -------- ACTIVATION FOR MT5 EA --------
     private deny(
         reason: string,
-        context?: { maskedKey?: string; accountLogin?: string | number; ip?: string; ua?: string; membershipId?: string },
+        context?: {
+            maskedKey?: string;
+            accountLogin?: string | number;
+            ip?: string;
+            ua?: string;
+            membershipId?: string;
+        },
     ): never {
         this.logger.warn(
             `Activation denied: ${reason} | key=${context?.maskedKey ?? 'N/A'} | account=${context?.accountLogin ?? 'N/A'} | ip=${context?.ip ?? 'N/A'}`,
@@ -483,45 +489,91 @@ export class MembershipsService {
 
     async activate(dto: ActivateLicenseDto, ip?: string, ua?: string) {
         const key = dto.key?.trim();
+        const accountLogin = String(dto.accountLogin ?? '').trim();
         const maskedKey = key ? `${key.slice(0, 4)}***` : undefined; // don't log full key
 
         // Initial attempt log
         this.logger.log(
-            `Activation attempt | key=${maskedKey ?? 'N/A'} | account=${dto.accountLogin} | ip=${ip ?? 'N/A'}`,
+            `Activation attempt | key=${maskedKey ?? 'N/A'} | account=${accountLogin || 'N/A'} | ip=${ip ?? 'N/A'}`,
         );
 
-        if (!key) this.deny('key_required', { maskedKey, accountLogin: dto.accountLogin, ip, ua });
+        if (!key) {
+            this.deny('key_required', { maskedKey, accountLogin, ip, ua });
+        }
+
+        if (!accountLogin) {
+            this.deny('account_required', { maskedKey, accountLogin, ip, ua });
+        }
 
         const membership = await this.membershipModel
             .findOne({ licenseKey: key })
             .populate('user', '_id email firstName lastName')
             .exec();
 
-        if (!membership) this.deny('not_found', { maskedKey, accountLogin: dto.accountLogin, ip, ua });
+        if (!membership) {
+            this.deny('not_found', { maskedKey, accountLogin, ip, ua });
+        }
 
-        // ✅ EXPLICIT CHECK: Only allow Active and Verified statuses
-        const allowedStatuses = [
-            membershipsSchema.MembershipStatus.Verified
-        ];
+        // ✅ Only allow Verified status
+        const allowedStatuses = [membershipsSchema.MembershipStatus.Verified];
 
         if (!allowedStatuses.includes(membership.status)) {
-            // Log the actual status for debugging
             this.logger.warn(
-                `Activation denied: invalid status | status=${membership.status} | key=${maskedKey} | account=${dto.accountLogin}`,
+                `Activation denied: invalid status | status=${membership.status} | key=${maskedKey} | account=${accountLogin}`,
             );
 
-            // Return specific error based on status
             if (membership.status === membershipsSchema.MembershipStatus.Request) {
-                this.deny('pending', { maskedKey, accountLogin: dto.accountLogin, ip, ua, membershipId: String(membership._id) });
+                this.deny('pending', {
+                    maskedKey,
+                    accountLogin,
+                    ip,
+                    ua,
+                    membershipId: String(membership._id),
+                });
             } else if (membership.status === membershipsSchema.MembershipStatus.Rejected) {
-                this.deny('rejected', { maskedKey, accountLogin: dto.accountLogin, ip, ua, membershipId: String(membership._id) });
+                this.deny('rejected', {
+                    maskedKey,
+                    accountLogin,
+                    ip,
+                    ua,
+                    membershipId: String(membership._id),
+                });
             } else if (membership.status === membershipsSchema.MembershipStatus.Ended) {
-                this.deny('ended', { maskedKey, accountLogin: dto.accountLogin, ip, ua, membershipId: String(membership._id) });
+                this.deny('ended', {
+                    maskedKey,
+                    accountLogin,
+                    ip,
+                    ua,
+                    membershipId: String(membership._id),
+                });
             } else {
-                this.deny('membership_not_active', { maskedKey, accountLogin: dto.accountLogin, ip, ua, membershipId: String(membership._id) });
+                this.deny('membership_not_active', {
+                    maskedKey,
+                    accountLogin,
+                    ip,
+                    ua,
+                    membershipId: String(membership._id),
+                });
             }
         }
 
+        // 🔍 Require account in membership.accounts with isVerified = true
+        const accounts = Array.isArray(membership.accounts) ? membership.accounts : [];
+
+        const accountDoc = accounts.find((a) => a.account === accountLogin);
+
+        if (!accountDoc || accountDoc.isVerified !== true) {
+            // Either not found or not verified
+            this.deny('account_not_verified', {
+                maskedKey,
+                accountLogin,
+                ip,
+                ua,
+                membershipId: String(membership._id),
+            });
+        }
+
+        // 👉 No membership.save() here — purely read-only check
 
         // Build token payload
         const membershipId = (membership._id as Types.ObjectId).toHexString();
@@ -531,7 +583,7 @@ export class MembershipsService {
             sub: `membership:${membershipId}`,
             membershipId,
             licenseKey: membership.licenseKey,
-            accountLogin: dto.accountLogin,
+            accountLogin,
             email: membership.email,
             userId,
             ip,
@@ -542,14 +594,16 @@ export class MembershipsService {
 
         // Success log
         this.logger.log(
-            `Activation success | membershipId=${membershipId} | userId=${userId ?? 'N/A'} | account=${dto.accountLogin} | ip=${ip ?? 'N/A'}`,
+            `Activation success | membershipId=${membershipId} | userId=${userId ?? 'N/A'} | account=${accountLogin} | ip=${ip ?? 'N/A'}`,
         );
 
         // 🔥 RETURN EA-SAFE JSON
         return {
             status: 'OK',
-            token: token,
+            token,
         };
     }
+
+
 
 }
