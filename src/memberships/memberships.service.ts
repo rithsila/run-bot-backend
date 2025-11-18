@@ -14,7 +14,7 @@ import { WebPushSubService } from 'src/web-push-sub/web-push-sub.service';
 import { randomBytes } from 'crypto';
 import { ActivateLicenseDto } from './dto/activate-license.dto';
 import { JoseService } from './jose.service';
-import { MembershipDocument } from './memberships.schema';
+import { MembershipAccountType, MembershipDocument } from './memberships.schema';
 import { Referral } from './referral.schema';
 
 export type ReferralWithOwner = Referral & {
@@ -59,8 +59,6 @@ export class MembershipsService {
 
         return membership;
     }
-
-
 
     async requestJoin(dto: JoinMembershipDto, currentUserId?: string) {
         if (!currentUserId) throw new BadRequestException('USER_REQUIRED');
@@ -170,13 +168,8 @@ export class MembershipsService {
             'accounts',
         );
 
-        // normalize accounts as string[] then map to MembershipAccount[]
-        const accountStrings = normalizeAccounts(dto.accounts);
-        const accounts =
-            (accountStrings ?? []).map((acc) => ({
-                account: acc,
-                isVerified: false, // on appeal you can reset or keep as false
-            })) ?? [];
+        // 🔹 normalize accounts only if provided
+        const accountStrings = accountsProvided ? normalizeAccounts(dto.accounts) : undefined;
 
         const referralProvided = Object.prototype.hasOwnProperty.call(
             dto,
@@ -203,8 +196,35 @@ export class MembershipsService {
         }
 
         if (accountsProvided) {
-            // replace accounts entirely with new MembershipAccount[]
-            membership.accounts = accounts;
+            // 🔹 enforce at least one account if user is trying to change them
+            if (!accountStrings || accountStrings.length === 0) {
+                throw new BadRequestException('AT_LEAST_ONE_ACCOUNT_REQUIRED');
+            }
+
+            // 🔹 map existing accounts by account string
+            const existingByAccount = new Map<string, MembershipAccountType>(
+                (membership.accounts ?? []).map(acc => [acc.account, acc]),
+            );
+
+            const nextAccounts: MembershipAccountType[] = [];
+
+            for (const acc of accountStrings) {
+                const existing = existingByAccount.get(acc);
+
+                if (existing) {
+                    // ✅ keep admin’s isVerified value and existing _id
+                    nextAccounts.push(existing);
+                } else {
+                    // ✅ new account: default isVerified = false
+                    nextAccounts.push({
+                        account: acc,
+                        isVerified: false,
+                    } as MembershipAccountType);
+                }
+            }
+
+            // 🔹 replace membership.accounts with merged list
+            membership.accounts = nextAccounts;
         }
 
         // ✅ Allow updating referral on appeal
@@ -266,8 +286,7 @@ export class MembershipsService {
             throw err;
         }
     }
-
-
+    
     async paginate(q: PaginateMembershipsDto): Promise<PaginatedResult<any>> {
         const filter: FilterQuery<membershipsSchema.MembershipDocument> = {};
         const or: FilterQuery<membershipsSchema.MembershipDocument>[] = [];
@@ -392,7 +411,6 @@ export class MembershipsService {
         return this.membershipModel.findById(membership._id).lean().exec();
     }
 
-
     private generateLicenseKey(membership: membershipsSchema.MembershipDocument): string {
         // Prefix can be anything: product ID, "EA", etc.
         const prefix = 'EA';
@@ -427,7 +445,6 @@ export class MembershipsService {
 
             if (userId) {
                 const recipientId = new Types.ObjectId(userId.toString());
-
                 const tinyPayload = {
                     title: 'License key created',
                     body: 'Your EA license key has been generated and is now active.',

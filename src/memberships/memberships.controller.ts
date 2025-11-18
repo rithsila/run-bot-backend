@@ -26,7 +26,6 @@ import { Role } from 'src/user/user.enum';
 import { ActivateLicenseDto } from './dto/activate-license.dto';
 import { Public } from 'src/auth/guard/public.decorator';
 
-
 interface ActivationResponseData {
     status: string;
     token: string;
@@ -64,7 +63,6 @@ export class MembershipsController {
         @Req() req: AuthRequest,
     ): Promise<ApiSuccess<MembershipDocument>> {
         const membership = await this.memberships.findByUserId(userId);
-        console.log("-------membership", membership)
         if (!membership) {
             throw new NotFoundException('MEMBERSHIP_NOT_FOUND');
         }
@@ -79,7 +77,6 @@ export class MembershipsController {
             path: req.url,
         };
     }
-
 
     @Post('request')
     @HttpCode(HttpStatus.CREATED)
@@ -163,7 +160,7 @@ export class MembershipsController {
     }
 
     @Post(':id/license')
-    @Roles(Role.Admin)  // ✅ Admin only
+    @Roles(Role.Admin) 
     @Throttle({ default: { limit: 10, ttl: 60_000 } })  // ✅ Rate limit
     @HttpCode(HttpStatus.CREATED)  // ✅ 201 status
     async createLicense(
