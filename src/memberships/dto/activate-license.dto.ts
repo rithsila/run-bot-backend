@@ -1,12 +1,12 @@
 // src/memberships/dto/activate-license.dto.ts
-import { IsNotEmpty, IsString, Min } from 'class-validator';
+import { IsNotEmpty, IsNumber, IsString, Min } from 'class-validator';
 
 export class ActivateLicenseDto {
     @IsString()
     @IsNotEmpty()
     key: string;          // membership.licenseKey
 
-    @IsString()
+    @IsNumber()
     @Min(1)
-    accountLogin: string; // MT5 AccountInfoInteger(ACCOUNT_LOGIN)
+    accountLogin: number; // MT5 AccountInfoInteger(ACCOUNT_LOGIN)
 }
