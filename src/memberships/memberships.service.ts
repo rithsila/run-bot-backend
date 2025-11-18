@@ -42,32 +42,24 @@ export class MembershipsService {
     async findByUserId(userId: string): Promise<MembershipDocument | null> {
         const membership = await this.membershipModel
             .findOne({ user: new Types.ObjectId(userId) })
-            .populate({ path: 'user', select: '_id email firstName lastName' })
+            .populate({
+                path: 'user',
+                select: '_id email firstName lastName',
+            })
+            .populate({
+                path: 'referral',
+                select: '_id code link owner',  // include whatever fields you need
+                populate: {
+                    path: 'owner',
+                    select: '_id email firstName lastName',
+                },
+            })
             .exec();
 
-        if (!membership) return null;
-
-        const rawReferral: any = (membership as any).referral;
-
-        if (
-            rawReferral &&
-            typeof rawReferral === 'string' &&
-            !Types.ObjectId.isValid(rawReferral)
-        ) {
-            membership.referral = undefined as any;
-            await membership.save();
-            return membership;
-        }
-
-        if (rawReferral) {
-            await membership.populate({
-                path: 'referral',
-                populate: { path: 'owner', select: '_id email firstName lastName' },
-            });
-        }
 
         return membership;
     }
+
 
 
     async requestJoin(dto: JoinMembershipDto, currentUserId?: string) {
@@ -109,7 +101,7 @@ export class MembershipsService {
                 accounts, // 👈 now MembershipAccount[]
                 notes: dto.notes ?? undefined,
                 status: membershipsSchema.MembershipStatus.Request,
-                referral: dto.referral ?? undefined, // validated MongoId string (or undefined)
+                referral: new Types.ObjectId(dto.referral) ?? undefined, // validated MongoId string (or undefined)
             });
 
             // Push notification (unchanged)
