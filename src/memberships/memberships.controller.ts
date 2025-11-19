@@ -39,21 +39,11 @@ export class MembershipsController {
     @Roles(Role.Admin)
     @Throttle({ default: { limit: 30, ttl: 60_000 } })
     @HttpCode(HttpStatus.OK)
-    async list(
-        @Query() q: PaginateMembershipsDto,
-        @Req() req: AuthRequest,
-    ): Promise<ApiSuccess<PaginatedResult<any>>> {
-        const data = await this.memberships.paginate(q);
-        return {
-            success: true,
-            statusCode: HttpStatus.OK,
-            code: 'MEMBERSHIPS',
-            message: 'Memberships fetched',
-            data,
-            timestamp: new Date().toISOString(),
-            path: req.url,
-        };
+    async list(@Query() q: PaginateMembershipsDto) {
+        return this.memberships.paginate(q);
     }
+
+
 
     @Get('user/:userId')
     @Roles(Role.Admin)
@@ -160,7 +150,7 @@ export class MembershipsController {
     }
 
     @Post(':id/license')
-    @Roles(Role.Admin) 
+    @Roles(Role.Admin)
     @Throttle({ default: { limit: 10, ttl: 60_000 } })  // ✅ Rate limit
     @HttpCode(HttpStatus.CREATED)  // ✅ 201 status
     async createLicense(

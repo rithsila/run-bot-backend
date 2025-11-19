@@ -1,7 +1,7 @@
 // memberships.service.ts
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
-import { FilterQuery, Model, PaginateOptions, Types } from 'mongoose';
+import { FilterQuery, Model, PaginateOptions, PaginateResult, Types } from 'mongoose';
 import * as membershipsSchema from './memberships.schema';
 import { JoinMembershipDto } from './dto/join-membership.dto';
 import { User, UserDocument } from 'src/user/user.schema';
@@ -287,38 +287,38 @@ export class MembershipsService {
         }
     }
 
-    async paginate(q: PaginateMembershipsDto): Promise<PaginatedResult<any>> {
-        const filter: FilterQuery<membershipsSchema.MembershipDocument> = {};
-        const or: FilterQuery<membershipsSchema.MembershipDocument>[] = [];
+    async paginate(
+        query: PaginateMembershipsDto,
+    ): Promise<PaginateResult<MembershipDocument>> {
 
-        // Build a case-insensitive regex once
-        const term = q.q?.trim();
-        const regex = term ? new RegExp(term, 'i') : undefined;
+        const { q, status, page = 1, limit = 20 } = query;
 
-        // Search by membership email
-        if (regex) {
-            or.push({ email: { $regex: regex } });
-        }
+        const filter: FilterQuery<MembershipDocument> = {};
+        const or: FilterQuery<MembershipDocument>[] = [];
 
-        // Search by user firstName / lastName (and optionally email)
-        if (regex) {
+        if (q && q.trim()) {
+            const rx = new RegExp(this.escapeRegex(q.trim()), 'i');
+
+            // membership email
+            or.push({ email: rx });
+
+            // related user search
             const users = await this.userModel
                 .find(
                     {
                         $or: [
-                            { firstName: { $regex: regex } },
-                            { lastName: { $regex: regex } },
-                            // optional: include user email in the same search term
-                            { email: { $regex: regex } },
+                            { firstName: rx },
+                            { lastName: rx },
+                            { email: rx },
                         ],
                     },
                     { _id: 1 },
                 )
-                .limit(1000) // safety cap; tune as needed
+                .limit(1000)
                 .lean()
                 .exec();
 
-            const userIds = users.map(u => u._id);
+            const userIds = users.map((u) => u._id);
             if (userIds.length) {
                 or.push({ user: { $in: userIds } });
             }
@@ -328,38 +328,24 @@ export class MembershipsService {
             filter.$or = or;
         }
 
-        // Optional filter by status
-        if (q.status) {
-            filter.status = q.status;
+        if (status) {
+            filter.status = status;
         }
 
         const options: PaginateOptions = {
-            page: q.page,
-            limit: q.limit,
-            sort: { createdAt: -1 },            // fixed sort
+            page: Number(page) || 1,
+            limit: Number(limit) || 20,
+            sort: { createdAt: -1 },
             lean: true,
+            leanWithId: false,
             populate: [{ path: 'user', select: '_id email firstName lastName' }],
-            customLabels: {
-                totalDocs: 'total',
-                docs: 'items',
-                page: 'page',
-                limit: 'limit',
-                totalPages: 'totalPages',
-                hasPrevPage: 'hasPrev',
-                hasNextPage: 'hasNext',
-            },
         };
 
-        const res: any = await this.membershipModel.paginate(filter, options);
-        return {
-            items: res.items,
-            total: res.total,
-            page: res.page,
-            limit: res.limit,
-            totalPages: res.totalPages,
-            hasNext: res.hasNext,
-            hasPrev: res.hasPrev,
-        };
+        return this.membershipModel.paginate(filter, options);
+    }
+
+    private escapeRegex(s: string) {
+        return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     }
 
     async updateAdmin(id: string, dto: UpdateMembershipAdminDto) {

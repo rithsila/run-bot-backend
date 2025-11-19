@@ -4,8 +4,8 @@ import { IsNotEmpty, IsString, } from 'class-validator';
 export class ActivateLicenseDto {
     @IsString()
     @IsNotEmpty()
-    key: string;          // membership.licenseKey
-
+    key: string;   
+           
     @IsString()
-    accountLogin: string; // MT5 AccountInfoInteger(ACCOUNT_LOGIN)
+    accountLogin: string; 
 }

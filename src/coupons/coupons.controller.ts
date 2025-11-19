@@ -48,6 +48,29 @@ export class CouponsController {
         };
     }
 
+    @Get('active-codes')
+    @HttpCode(HttpStatus.OK)
+    async listActiveCodes(
+        @Query('limit') limitRaw: string,
+        @Req() req: AuthRequest,
+    ): Promise<ApiSuccess<string[]>> {
+        const parsed = Number(limitRaw);
+        const limit = Number.isFinite(parsed) ? parsed : 4;
+
+        const codes = await this.coupons.listActiveCodes(limit);
+
+        return {
+            success: true,
+            statusCode: HttpStatus.OK,
+            code: 'COUPON_ACTIVE_CODES',
+            message: 'Active coupon codes fetched',
+            data: codes, // e.g. ["SAVE10","WELCOME15","PROMO25","VIP30"]
+            timestamp: new Date().toISOString(),
+            path: req.url,
+        };
+    }
+
+
     @Post('request')
     @Throttle({ default: { limit: 3, ttl: 60_000 } })
     @HttpCode(HttpStatus.CREATED)
@@ -139,4 +162,6 @@ export class CouponsController {
             path: req.url,
         };
     }
+
+
 }

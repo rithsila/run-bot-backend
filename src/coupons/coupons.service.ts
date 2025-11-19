@@ -261,7 +261,7 @@ export class CouponsService {
 
         if (!doc) {
             // Not found OR not active
-            throw new NotFoundException('COUPON_INVALID_OR_INACTIVE');
+            throw new NotFoundException('COUPON NOT FOUND!');
         }
 
         const owner = {
@@ -275,4 +275,24 @@ export class CouponsService {
             owner,
         };
     }
+
+    async listActiveCodes(limit = 4): Promise<string[]> {
+        const safeLimit =
+            typeof limit === 'number' && Number.isFinite(limit)
+                ? Math.max(1, Math.min(limit, 50)) // clamp between 1–50
+                : 4;
+
+        const rows = await this.couponModel
+            .find({ status: CouponStatus.Active })
+            .sort({ createdAt: -1 }) // newest first
+            .limit(safeLimit)
+            .select({ code: 1, _id: 0 })
+            .lean()
+            .exec();
+
+        return rows
+            .map((row) => String(row.code ?? '').trim())
+            .filter((code) => !!code);
+    }
+
 }
