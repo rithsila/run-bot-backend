@@ -1,20 +1,22 @@
 // src/marketplace/order.service.ts
 import { Injectable, BadRequestException, NotFoundException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
-import { Model, Types, ClientSession, startSession } from 'mongoose';
+import { Model, Types } from 'mongoose';
 
 import { UserCreateOrderDto } from './dto/user-create-order.dto';
 import { Order, OrderDocument, OrderStatus } from './order.schema';
 import { Product, ProductDocument, ProductStatus } from 'src/marketplace/product.schema';
-
-import { Coupon, CouponDocument, CouponStatus } from 'src/coupons/coupon.schema'; // ⬅️ add
+import { Coupon, CouponDocument, CouponStatus } from 'src/coupons/coupon.schema';
 
 @Injectable()
 export class OrderService {
   constructor(
-    @InjectModel(Order.name) private readonly orderModel: Model<OrderDocument>,
-    @InjectModel(Product.name) private readonly productModel: Model<ProductDocument>,
-    @InjectModel(Coupon.name) private readonly couponModel: Model<CouponDocument>, // ⬅️ add
+    @InjectModel(Order.name)
+    private readonly orderModel: Model<OrderDocument>,
+    @InjectModel(Product.name)
+    private readonly productModel: Model<ProductDocument>,
+    @InjectModel(Coupon.name)
+    private readonly couponModel: Model<CouponDocument>,
   ) {}
 
   async createUserRequestOrder(
@@ -23,24 +25,42 @@ export class OrderService {
     idempotencyKey?: string | null,
   ) {
     const userObjectId = new Types.ObjectId(userId);
+    const productObjectId = new Types.ObjectId(dto.product);
 
-    // Idempotency
+    // --- 1) Idempotency (same as before) ---
     if (idempotencyKey) {
-      const existing = await this.orderModel.findOne({
-        user: userObjectId,
-        idempotencyKey,
-      }).lean();
-      if (existing) return existing;
+      const existingByIdem = await this.orderModel
+        .findOne({ user: userObjectId, idempotencyKey })
+        .lean();
+      if (existingByIdem) return existingByIdem;
     }
 
-    // Product
+    // --- 2) Enforce one ACTIVE (INIT/UNPAID) order per user+product ---
+    const activeStatuses = [OrderStatus.INIT, OrderStatus.UNPAID] as const;
+
+    const existingActive = await this.orderModel
+      .findOne({
+        user: userObjectId,
+        product: productObjectId,
+        status: { $in: activeStatuses },
+      })
+      .lean();
+
+    if (existingActive) {
+      // You can customize this message / code
+      throw new BadRequestException(
+        'You already have an active order for this product.',
+      );
+    }
+
+    // --- 3) Product ---
     const product = await this.productModel.findById(dto.product).lean();
     if (!product) throw new NotFoundException('Product not found');
     if (product.status !== ProductStatus.Active) {
       throw new BadRequestException('Product is not available for ordering');
     }
 
-    // --- Coupon (optional) ---
+    // --- 4) Coupon (optional) ---
     let couponPercent = 0;
     let affiliateUserId: Types.ObjectId | undefined;
     let couponCodeToSave: string | undefined;
@@ -55,61 +75,54 @@ export class OrderService {
       if (coupon.status !== CouponStatus.Active) {
         throw new BadRequestException('Coupon is not active');
       }
-      // percent is 0.01..100 in schema; clamp just in case
+
       couponPercent = Math.max(0, Math.min(100, Number(coupon.percent) || 0));
       couponCodeToSave = coupon.code;
+
       if (coupon.createdBy) {
         affiliateUserId = new Types.ObjectId(coupon.createdBy);
       }
     }
 
-    // --- Amount & billingPeriod (required by your current Order schema) ---
+    // --- 5) Amount & billingPeriod ---
     const basePrice = Number(product.pricing) || 0;
     const amount = Number((basePrice * (1 - couponPercent / 100)).toFixed(2));
-    const billingPeriod = Number(product.billingPeriod) || 1; 
+    const billingPeriod = Number(product.billingPeriod) || 1;
 
     const orderId = this.generateOrderId();
 
-    let session: ClientSession | null = null;
     try {
-      session = await startSession();
-      session.startTransaction();
+      const doc = await this.orderModel.create({
+        user: userObjectId,
+        product: productObjectId,
+        status: OrderStatus.INIT,
+        idempotencyKey: idempotencyKey ?? this.generateOrderId(),
+        orderId,
 
-      const doc = await this.orderModel.create(
-        [{
-          user: userObjectId,
-          status: OrderStatus.INIT,
-          idempotencyKey: idempotencyKey ?? this.generateOrderId(), // ensure present per schema
-          orderId,
-          product: new Types.ObjectId(dto.product),
+        amount,
+        billingPeriod,
 
-          // required by current Order schema:
-          amount,
-          billingPeriod,
+        couponCode: couponCodeToSave,
+        discount: couponPercent,
+        affiliate: affiliateUserId,
 
-          // coupon/discount/affiliate
-          couponCode: couponCodeToSave,
-          discount: couponPercent, // percentage only
-          affiliate: affiliateUserId,
+        tvUsernameAck: dto.tvUsernameAck?.trim() || undefined,
+        accountSnapshotAck: dto.accountSnapshotAck?.trim() || undefined,
+        accountConceptAck: dto.accountConceptAck?.trim() || undefined,
+        riskManagementAck: dto.riskManagementAck?.trim() || undefined,
 
-          // customer-provided strings (optional)
-          tvUsernameAck: dto.tvUsernameAck?.trim() || undefined,
-          accountSnapshotAck: dto.accountSnapshotAck?.trim() || undefined,
-          accountConceptAck: dto.accountConceptAck?.trim() || undefined,
-          riskManagementAck: dto.riskManagementAck?.trim() || undefined,
+        orderedAt: new Date(),
+      });
 
-          orderedAt: new Date(),
-        }],
-        { session }
-      );
-
-      await session.commitTransaction();
-      return doc[0].toObject();
-    } catch (err) {
-      if (session) await session.abortTransaction();
+      return (doc as any).toObject ? (doc as any).toObject() : doc;
+    } catch (err: any) {
+      // Race condition protection: unique partial index violation
+      if (err?.code === 11000 && err?.keyPattern?.user && err?.keyPattern?.product) {
+        throw new BadRequestException(
+          'You already have an active order for this product.',
+        );
+      }
       throw err;
-    } finally {
-      if (session) session.endSession();
     }
   }
 

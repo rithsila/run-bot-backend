@@ -53,7 +53,7 @@ export class ProductService {
 
     // Customer list: status=active, optional category filter
     async findAllForCustomer(opts?: { category?: string }): Promise<Product[]> {
-        const filter: FilterQuery<ProductDocument> = { status: ProductStatus.Inactive };
+        const filter: FilterQuery<ProductDocument> = { status: ProductStatus.Active };
         if (opts?.category) {
 
             filter.category = opts.category;
