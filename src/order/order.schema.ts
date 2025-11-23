@@ -1,8 +1,10 @@
 // order.schema.ts (or wherever your OrderSchema is defined)
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
-import { HydratedDocument, Types } from 'mongoose';
+import { Document, PaginateModel, Types } from 'mongoose';
+import paginate from 'mongoose-paginate-v2';
 
-export type OrderDocument = HydratedDocument<Order>;
+export type OrderDocument = Order & Document;
+export type OrderPaginateModel = PaginateModel<OrderDocument>;
 
 export enum OrderStatus {
   INIT = 'INIT',
@@ -56,11 +58,15 @@ export class Order {
   @Prop({ type: String, trim: true })
   tvUsernameAck?: string;
 
+  @Prop({ type: String, required: true, trim: true, maxlength: 120 })
+  bankAccountName!: string;
+
   @Prop({ type: Date, default: Date.now })
   orderedAt!: Date;
 }
 
 export const OrderSchema = SchemaFactory.createForClass(Order);
+OrderSchema.plugin(paginate);
 
 /** Existing indexes */
 OrderSchema.index({ user: 1, idempotencyKey: 1 }, { unique: true });

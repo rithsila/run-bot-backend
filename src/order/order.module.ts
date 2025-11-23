@@ -8,6 +8,8 @@ import { OrderController } from './order.controller';
 
 import { Product, ProductSchema } from 'src/marketplace/product.schema';
 import { Coupon, CouponSchema } from 'src/coupons/coupon.schema';
+import { Subscription, SubscriptionSchema } from 'src/subscriptions/subscriptions.schema';
+import { User, UserSchema } from 'src/user/user.schema';
 
 @Module({
   imports: [
@@ -15,10 +17,12 @@ import { Coupon, CouponSchema } from 'src/coupons/coupon.schema';
       { name: Order.name, schema: OrderSchema },
       { name: Product.name, schema: ProductSchema },
       { name: Coupon.name, schema: CouponSchema },
+      { name: Subscription.name, schema: SubscriptionSchema },
+      { name: User.name, schema: UserSchema },
     ]),
   ],
   controllers: [OrderController],
   providers: [OrderService],
   exports: [OrderService],
 })
-export class OrderModule {}
+export class OrderModule { }

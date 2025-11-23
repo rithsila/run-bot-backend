@@ -42,7 +42,6 @@ import { WebPushSubModule } from './web-push-sub/web-push-sub.module';
 import { TurnstileModule } from './turnstile/turnstile.module';
 import { AnalyzeNewsModule } from './analyze-news/analyze-news.module';
 import { RealtimeModule } from './real-time/real-time.module';
-import { SubscriptionModule } from './subscription/subscription.module';
 import { MembershipsModule } from './memberships/memberships.module';
 import { CouponsModule } from './coupons/coupons.module';
 import { QueueModule } from './queue/queue.module';
@@ -51,6 +50,7 @@ import { RetailerModule } from './retailer/retailer.module';
 import { ScheduleModule } from '@nestjs/schedule';
 import { MarketplaceModule } from './marketplace/marketplace.module';
 import { OrderModule } from './order/order.module';
+import { SubscriptionsModule } from './subscriptions/subscriptions.module';
 
 @Module({
   imports: [
@@ -162,13 +162,13 @@ import { OrderModule } from './order/order.module';
     TurnstileModule,
     AnalyzeNewsModule,
     RealtimeModule,
-    SubscriptionModule,
     MembershipsModule,
     CouponsModule,
     QueueModule,
     RetailerModule,
     MarketplaceModule,
     OrderModule,
+    SubscriptionsModule,
   ],
 
   controllers: [AppController],

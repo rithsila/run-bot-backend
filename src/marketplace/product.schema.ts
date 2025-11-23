@@ -81,7 +81,7 @@ export class Product {
   @Prop({
     type: String,
     enum: Object.values(ProductStatus),
-    default: ProductStatus.Inactive,
+    default: ProductStatus.Active,
     index: true,
   })
   status!: ProductStatus;

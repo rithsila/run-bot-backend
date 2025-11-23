@@ -1,5 +1,5 @@
 // src/order/dto/user-create-order.dto.ts
-import { IsMongoId, IsOptional, IsString, MaxLength, MinLength } from 'class-validator';
+import { IsMongoId, IsOptional, IsString, Matches, MaxLength, MinLength } from 'class-validator';
 import { Transform } from 'class-transformer';
 
 export class UserCreateOrderDto {
@@ -22,24 +22,14 @@ export class UserCreateOrderDto {
     @Transform(({ value }) => (typeof value === 'string' ? value.trim() : value))
     tvUsernameAck?: string;
 
-    // Account snapshot (free text or URL pasted by user)
-    @IsOptional()
+    // Bank account name (customer uppercase full name, e.g. "JOHN DOE")
     @IsString()
-    @MaxLength(2000)
-    @Transform(({ value }) => (typeof value === 'string' ? value.trim() : value))
-    accountSnapshotAck?: string;
-
-    // Account concept (free text)
-    @IsOptional()
-    @IsString()
-    @MaxLength(2000)
-    @Transform(({ value }) => (typeof value === 'string' ? value.trim() : value))
-    accountConceptAck?: string;
-
-    // Risk management plan (free text)
-    @IsOptional()
-    @IsString()
-    @MaxLength(2000)
-    @Transform(({ value }) => (typeof value === 'string' ? value.trim() : value))
-    riskManagementAck?: string;
+    @MinLength(4)
+    @MaxLength(120)
+    @Matches(/^[A-Z]+(?: [A-Z]+)+$/, {
+        message:
+            'Bank Account Name must be uppercase words separated by spaces (e.g. JOHN DOE)',
+    })
+    @Transform(({ value }) => (typeof value === 'string' ? value.trim().toUpperCase() : value))
+    bankAccountName!: string;
 }

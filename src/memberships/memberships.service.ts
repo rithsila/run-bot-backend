@@ -6,7 +6,6 @@ import * as membershipsSchema from './memberships.schema';
 import { JoinMembershipDto } from './dto/join-membership.dto';
 import { User, UserDocument } from 'src/user/user.schema';
 import { PaginateMembershipsDto } from './dto/paginate-memberships.dto';
-import { PaginatedResult } from 'src/common/types/api-response.type';
 import { UpdateMembershipAdminDto } from './dto/update-membership-admin.dto';
 import { buildAdminTinyPayload, normalizeAccounts } from './memberships.helper';
 import { PushProducer } from 'src/queue/push.producer';
@@ -24,7 +23,6 @@ export type ReferralWithOwner = Referral & {
 export type MembershipWithReferralOwner = MembershipDocument & {
     referral?: ReferralWithOwner;
 };
-
 
 @Injectable()
 export class MembershipsService {

@@ -6,7 +6,6 @@ import { MongooseModule } from '@nestjs/mongoose';
 import { Membership, MembershipSchema } from './memberships.schema';
 import { User, UserSchema } from 'src/user/user.schema';
 import { QueueModule } from 'src/queue/queue.module';
-import { Subscription, SubscriptionSchema } from 'src/subscription/subscription.schema';
 import { JoseService } from './jose.service';
 import { ReferralsModule } from './referrals.module';
 import { Referral, ReferralSchema } from './referral.schema';
@@ -16,7 +15,6 @@ import { Referral, ReferralSchema } from './referral.schema';
     MongooseModule.forFeature([
       { name: Membership.name, schema: MembershipSchema },
       { name: User.name, schema: UserSchema },
-      { name: Subscription.name, schema: SubscriptionSchema },
       { name: Referral.name, schema: ReferralSchema },
     ]),
     WebPushSubModule,
