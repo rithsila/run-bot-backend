@@ -63,6 +63,9 @@ export class Order {
 
   @Prop({ type: Date, default: Date.now })
   orderedAt!: Date;
+
+  @Prop({ type: Date, default: null })
+  expiredAt?: Date | null;
 }
 
 export const OrderSchema = SchemaFactory.createForClass(Order);

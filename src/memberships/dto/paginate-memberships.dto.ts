@@ -1,5 +1,5 @@
 // src/memberships/dto/paginate-memberships.dto.ts
-import { IsEnum, IsInt, IsOptional, IsString, Min } from 'class-validator';
+import { IsEnum, IsInt, IsMongoId, IsOptional, IsString, Min } from 'class-validator';
 import { Type } from 'class-transformer';
 import { MembershipStatus } from '../memberships.schema';
 
@@ -11,6 +11,10 @@ export class PaginateMembershipsDto {
   @IsOptional()
   @IsEnum(MembershipStatus)
   status?: MembershipStatus;
+
+  @IsOptional()
+  @IsMongoId()
+  referral?: string;
 
   @Type(() => Number)
   @IsInt()

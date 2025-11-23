@@ -233,10 +233,20 @@ export class OrderService {
       throw new NotFoundException('Order not found');
     }
 
+    const existing = await this.orderModel.findById(orderId).lean();
+    if (!existing) {
+      throw new NotFoundException('Order not found');
+    }
+
+    const expiry =
+      dto.status === orderSchema.OrderStatus.PAID
+        ? this.calculateExpiry(existing.orderedAt ?? new Date(), existing.billingPeriod)
+        : null;
+
     const updated = await this.orderModel
       .findByIdAndUpdate(
         orderId,
-        { status: dto.status },
+        { status: dto.status, expiredAt: expiry },
         { new: true, runValidators: true },
       )
       .populate('user', '_id firstName lastName email')
@@ -263,10 +273,16 @@ export class OrderService {
       targetStatus = SubscriptionStatus.Paused;
     }
 
+    const subUpdate: Partial<SubscriptionDocument> = { status: targetStatus };
+    if (targetStatus === SubscriptionStatus.Active) {
+      const nextBill = this.calculateNextBillDate(existing.billingPeriod ?? 1);
+      (subUpdate as any).nextBill = nextBill;
+    }
+
     await this.subscriptionModel
       .findOneAndUpdate(
         { user: userId, product: productId },
-        { status: targetStatus },
+        subUpdate,
         { new: true },
       )
       .lean()
@@ -290,5 +306,12 @@ export class OrderService {
 
   private escapeRegex(value: string): string {
     return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  }
+
+  private calculateExpiry(startDate: Date, billingPeriod: number): Date {
+    const start = new Date(startDate);
+    const monthsToAdd = Math.max(1, Math.floor(billingPeriod));
+    start.setMonth(start.getMonth() + monthsToAdd);
+    return start;
   }
 }

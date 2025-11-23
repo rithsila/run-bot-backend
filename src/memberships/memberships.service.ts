@@ -289,7 +289,7 @@ export class MembershipsService {
         query: PaginateMembershipsDto,
     ): Promise<PaginateResult<MembershipDocument>> {
 
-        const { q, status, page = 1, limit = 20 } = query;
+        const { q, status, referral, page = 1, limit = 20 } = query;
 
         const filter: FilterQuery<MembershipDocument> = {};
         const or: FilterQuery<MembershipDocument>[] = [];
@@ -328,6 +328,10 @@ export class MembershipsService {
 
         if (status) {
             filter.status = status;
+        }
+
+        if (referral) {
+            filter.referral = new Types.ObjectId(referral);
         }
 
         const options: PaginateOptions = {
