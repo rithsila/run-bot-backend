@@ -2,6 +2,7 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { Document, PaginateModel, Types } from 'mongoose';
 import paginate from 'mongoose-paginate-v2';
+import { User } from 'src/user/user.schema';
 
 export type ReferralDocument = Referral & Document;
 export type ReferralPaginateModel = PaginateModel<ReferralDocument>;
@@ -15,7 +16,7 @@ export class Referral {
         required: true,
         index: true,
     })
-    owner!: Types.ObjectId;
+    owner!: Types.ObjectId | User;
 
     // Referral link (URL string)
     @Prop({

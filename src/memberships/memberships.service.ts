@@ -340,7 +340,14 @@ export class MembershipsService {
             sort: { createdAt: -1 },
             lean: true,
             leanWithId: false,
-            populate: [{ path: 'user', select: '_id email firstName lastName' }],
+            populate: [
+                { path: 'user', select: '_id email firstName lastName' },
+                {
+                    path: 'referral',
+                    select: '_id code link owner',
+                    populate: { path: 'owner', select: '_id email firstName lastName' },
+                },
+            ],
         };
 
         return this.membershipModel.paginate(filter, options);

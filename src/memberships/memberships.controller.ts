@@ -40,10 +40,9 @@ export class MembershipsController {
     @Throttle({ default: { limit: 30, ttl: 60_000 } })
     @HttpCode(HttpStatus.OK)
     async list(@Query() q: PaginateMembershipsDto) {
+      
         return this.memberships.paginate(q);
     }
-
-
 
     @Get('user/:userId')
     @Roles(Role.Admin)
