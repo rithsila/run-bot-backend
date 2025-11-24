@@ -173,9 +173,14 @@ export class MembershipsController {
     @HttpCode(HttpStatus.OK)
     async activate(
         @Body() dto: ActivateLicenseDto,
+        @Req() req: AuthRequest,
     ): Promise<ApiSuccess<ActivationResponseData>> {
-        const result = await this.memberships.activate(dto);
-        console.log("result", result)
+        const xffHeader = req.headers['x-forwarded-for'];
+        const xff = Array.isArray(xffHeader) ? xffHeader[0] : xffHeader;
+        const ua = req.headers['user-agent'];
+        const ip = typeof xff === 'string' && xff.trim() ? xff.split(',')[0].trim() : req.ip;
+
+        const result = await this.memberships.activate(dto, ip, ua ?? undefined);
         return {
             success: true,
             statusCode: HttpStatus.OK,

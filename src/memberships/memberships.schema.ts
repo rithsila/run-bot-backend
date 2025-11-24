@@ -15,7 +15,6 @@ export enum MembershipStatus {
   Ended = 'Ended',
 }
 
-// 🔹 Subdocument for each trading account
 @Schema({ _id: true })
 export class MembershipAccount {
   @Prop({
@@ -98,6 +97,9 @@ export class Membership {
     sparse: true,
   })
   licenseKey?: string;
+
+  @Prop({ type: String, trim: true, maxlength: 200, default: null })
+  xForwardedFor?: string | null;
 }
 
 export const MembershipSchema = SchemaFactory.createForClass(Membership);

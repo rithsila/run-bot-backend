@@ -289,6 +289,7 @@ export class MembershipsService {
         query: PaginateMembershipsDto,
     ): Promise<PaginateResult<MembershipDocument>> {
 
+
         const { q, status, referral, page = 1, limit = 20 } = query;
 
         const filter: FilterQuery<MembershipDocument> = {};
@@ -414,7 +415,6 @@ export class MembershipsService {
         return `${prefix}-${randomPart}`;
     }
 
-    // 👇 MAIN: create and attach a license key to a membership
     async createLicenseKeyForMembership(id: string) {
         if (!Types.ObjectId.isValid(id)) {
             throw new BadRequestException('INVALID_ID');
@@ -568,7 +568,11 @@ export class MembershipsService {
             });
         }
 
-        // 👉 No membership.save() here — purely read-only check
+        // 👉 Persist caller IP (x-forwarded-for) when available
+        if (ip) {
+            membership.xForwardedFor = ip;
+            await membership.save();
+        }
 
         // Build token payload
         const membershipId = (membership._id as Types.ObjectId).toHexString();
