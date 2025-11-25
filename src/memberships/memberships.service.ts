@@ -501,10 +501,10 @@ export class MembershipsService {
         );
 
         // Slow down known abusive IPs
-        const throttledIps = new Set(['38.54.16.55', '160.202.35.119', '217.217.253.207']);
-        if (ip && throttledIps.has(ip)) {
-            await this.delayMs(5 * 60 * 1000);
-        }
+        // const throttledIps = new Set(['38.54.16.55', '160.202.35.119', '217.217.253.207']);
+        // if (ip && throttledIps.has(ip)) {
+        //     await this.delayMs(5 * 60 * 1000);
+        // }
 
         if (!key) {
             this.deny('key_required', { maskedKey, accountLogin, ip, ua });
