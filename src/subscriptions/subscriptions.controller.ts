@@ -12,4 +12,9 @@ export class SubscriptionsController {
     if (!userId) throw new BadRequestException('AUTH_REQUIRED');
     return this.subscriptions.getByUser(userId);
   }
+
+  @Get(':id')
+  getById(@Param('id') id: string) {
+    return this.subscriptions.getById(id);
+  }
 }

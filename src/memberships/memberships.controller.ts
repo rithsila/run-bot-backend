@@ -14,7 +14,7 @@ import {
     UnauthorizedException,
 } from '@nestjs/common';
 import type { AuthRequest } from 'src/common/types/auth-request.type';
-import type { ApiSuccess, PaginatedResult } from 'src/common/types/api-response.type';
+import type { ApiSuccess } from 'src/common/types/api-response.type';
 import { MembershipsService } from './memberships.service';
 import { JoinMembershipDto } from './dto/join-membership.dto';
 import { MembershipDocument } from './memberships.schema';
@@ -137,7 +137,7 @@ export class MembershipsController {
         @Body() dto: UpdateMembershipAdminDto,
         @Req() req: AuthRequest,
     ): Promise<ApiSuccess> {
-        await this.memberships.updateAdmin(id, dto);
+        await this.memberships.updateAdmin(id, dto, req.user?.userId);
         return {
             success: true,
             statusCode: HttpStatus.OK,
@@ -151,13 +151,12 @@ export class MembershipsController {
     @Post(':id/license')
     @Roles(Role.Admin)
     @Throttle({ default: { limit: 10, ttl: 60_000 } })  // ✅ Rate limit
-    @HttpCode(HttpStatus.CREATED)  // ✅ 201 status
+    @HttpCode(HttpStatus.CREATED)  
     async createLicense(
         @Param('id') id: string,
         @Req() req: AuthRequest,
     ): Promise<ApiSuccess<MembershipDocument>> {
-        const membership = await this.memberships.createLicenseKeyForMembership(id);
-
+        const membership = await this.memberships.createLicenseKeyForMembership(id, req.user?.userId);
         return {
             success: true,
             statusCode: HttpStatus.CREATED,

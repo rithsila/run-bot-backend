@@ -63,8 +63,9 @@ export class OrderController {
   async updateOrderStatus(
     @Param('id') id: string,
     @Body() dto: UpdateOrderStatusDto,
+    @Req() req: AuthRequest,
   ) {
-    return this.orderService.updateOrderStatus(id, dto);
+    return this.orderService.updateOrderStatus(id, dto, req?.user?.userId);
   }
 
   @Get()

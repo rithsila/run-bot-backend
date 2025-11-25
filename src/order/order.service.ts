@@ -10,6 +10,8 @@ import { Subscription, SubscriptionDocument, SubscriptionStatus } from 'src/subs
 import { PaginateOrdersDto } from './dto/paginate-orders.dto';
 import { UpdateOrderStatusDto } from './dto/update-order-status.dto';
 import { User, UserDocument } from 'src/user/user.schema';
+import { PushProducer } from 'src/queue/push.producer';
+import { WebPushSubService } from 'src/web-push-sub/web-push-sub.service';
 
 @Injectable()
 export class OrderService {
@@ -24,6 +26,8 @@ export class OrderService {
     private readonly subscriptionModel: Model<SubscriptionDocument>,
     @InjectModel(User.name)
     private readonly userModel: Model<UserDocument>,
+    private readonly pushProducer: PushProducer,
+    private readonly webPushSubService: WebPushSubService,
   ) { }
 
   async createUserRequestOrder(
@@ -123,7 +127,25 @@ export class OrderService {
         nextBill,
       });
 
-      return (doc as any).toObject ? (doc as any).toObject() : doc;
+      const orderObject = (doc as any).toObject ? (doc as any).toObject() : doc;
+
+      try {
+        const recipients = await this.webPushSubService.getAdminIds();
+        if (recipients.length) {
+          const tinyPayload = {
+            title: 'New order request',
+            body: `Order ${orderId} placed by user ${userId}`,
+          };
+          await this.pushProducer.enqueueSendToUsers(recipients, tinyPayload, {
+            ttl: 3600,
+            chunkSize: 500,
+          });
+        }
+      } catch (e) {
+        console.warn('[OrderService.createUserRequestOrder] push enqueue failed:', e);
+      }
+
+      return orderObject;
     } catch (err: any) {
       // Race condition protection: unique partial index violation
       if (err?.code === 11000 && err?.keyPattern?.user && err?.keyPattern?.product) {
@@ -228,7 +250,7 @@ export class OrderService {
     return order;
   }
 
-  async updateOrderStatus(orderId: string, dto: UpdateOrderStatusDto) {
+  async updateOrderStatus(orderId: string, dto: UpdateOrderStatusDto, updatedBy?: string) {
     if (!Types.ObjectId.isValid(orderId)) {
       throw new NotFoundException('Order not found');
     }
@@ -243,10 +265,15 @@ export class OrderService {
         ? this.calculateExpiry(existing.orderedAt ?? new Date(), existing.billingPeriod)
         : null;
 
+    const updatePayload: any = { status: dto.status, expiredAt: expiry };
+    if (updatedBy && Types.ObjectId.isValid(updatedBy)) {
+      updatePayload.updatedBy = new Types.ObjectId(updatedBy);
+    }
+
     const updated = await this.orderModel
       .findByIdAndUpdate(
         orderId,
-        { status: dto.status, expiredAt: expiry },
+        updatePayload,
         { new: true, runValidators: true },
       )
       .populate('user', '_id firstName lastName email')

@@ -1,15 +1,15 @@
 // src/order/order.module.ts
 import { Module } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
-
 import { Order, OrderSchema } from './order.schema';
 import { OrderService } from './order.service';
 import { OrderController } from './order.controller';
-
 import { Product, ProductSchema } from 'src/marketplace/product.schema';
 import { Coupon, CouponSchema } from 'src/coupons/coupon.schema';
 import { Subscription, SubscriptionSchema } from 'src/subscriptions/subscriptions.schema';
 import { User, UserSchema } from 'src/user/user.schema';
+import { WebPushSubModule } from 'src/web-push-sub/web-push-sub.module';
+import { QueueModule } from 'src/queue/queue.module';
 
 @Module({
   imports: [
@@ -20,6 +20,8 @@ import { User, UserSchema } from 'src/user/user.schema';
       { name: Subscription.name, schema: SubscriptionSchema },
       { name: User.name, schema: UserSchema },
     ]),
+    WebPushSubModule,
+    QueueModule,
   ],
   controllers: [OrderController],
   providers: [OrderService],

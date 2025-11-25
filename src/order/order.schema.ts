@@ -66,6 +66,9 @@ export class Order {
 
   @Prop({ type: Date, default: null })
   expiredAt?: Date | null;
+
+  @Prop({ type: Types.ObjectId, ref: 'User', index: true })
+  updatedBy?: Types.ObjectId;
 }
 
 export const OrderSchema = SchemaFactory.createForClass(Order);

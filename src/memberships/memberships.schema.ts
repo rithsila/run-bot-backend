@@ -77,7 +77,6 @@ export class Membership {
   @Prop({ type: String, trim: true })
   adminNotes?: string;
 
-  // 🔹 accounts is now an array of { _id, account, isVerified }
   @Prop({
     type: [MembershipAccountSchema],
     default: [],
@@ -100,6 +99,9 @@ export class Membership {
 
   @Prop({ type: String, trim: true, maxlength: 200, default: null })
   xForwardedFor?: string | null;
+
+  @Prop({ type: Types.ObjectId, ref: 'User', index: true })
+  updatedBy?: Types.ObjectId | User;
 }
 
 export const MembershipSchema = SchemaFactory.createForClass(Membership);

@@ -358,7 +358,7 @@ export class MembershipsService {
         return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     }
 
-    async updateAdmin(id: string, dto: UpdateMembershipAdminDto) {
+    async updateAdmin(id: string, dto: UpdateMembershipAdminDto, updatedBy?: string) {
         if (!Types.ObjectId.isValid(id)) {
             throw new BadRequestException('INVALID_ID');
         }
@@ -385,6 +385,10 @@ export class MembershipsService {
                     account: a.account.trim(),
                     isVerified: a.isVerified ?? false,
                 }));
+        }
+
+        if (updatedBy && Types.ObjectId.isValid(updatedBy)) {
+            membership.updatedBy = new Types.ObjectId(updatedBy);
         }
 
         try {
@@ -415,7 +419,7 @@ export class MembershipsService {
         return `${prefix}-${randomPart}`;
     }
 
-    async createLicenseKeyForMembership(id: string) {
+    async createLicenseKeyForMembership(id: string, updatedBy?: string) {
         if (!Types.ObjectId.isValid(id)) {
             throw new BadRequestException('INVALID_ID');
         }
@@ -432,6 +436,10 @@ export class MembershipsService {
 
         const key = this.generateLicenseKey(membership);
         membership.licenseKey = key;
+
+        if (updatedBy && Types.ObjectId.isValid(updatedBy)) {
+            membership.updatedBy = new Types.ObjectId(updatedBy);
+        }
 
         await membership.save();
 

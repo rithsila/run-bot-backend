@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import { Subscription, SubscriptionDocument } from './subscriptions.schema';
@@ -20,5 +20,24 @@ export class SubscriptionsService {
       .populate('product', 'name pricing billingPeriod')
       .lean()
       .exec();
+  }
+
+  async getById(subscriptionId: string) {
+    if (!Types.ObjectId.isValid(subscriptionId)) {
+      throw new BadRequestException('INVALID_SUBSCRIPTION_ID');
+    }
+
+    const subscription = await this.subscriptionModel
+      .findById(subscriptionId)
+      .populate('product', 'name pricing billingPeriod note')
+      .populate('user', '_id email firstName lastName')
+      .lean()
+      .exec();
+
+    if (!subscription) {
+      throw new NotFoundException('SUBSCRIPTION_NOT_FOUND');
+    }
+
+    return subscription;
   }
 }
