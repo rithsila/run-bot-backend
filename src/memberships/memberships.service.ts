@@ -492,6 +492,12 @@ export class MembershipsService {
             `Activation attempt | key=${maskedKey ?? 'N/A'} | account=${accountLogin || 'N/A'} | ip=${ip ?? 'N/A'}`,
         );
 
+        // Slow down known abusive IPs
+        const throttledIps = new Set(['38.54.16.55', '160.202.35.119', '217.217.253.207']);
+        if (ip && throttledIps.has(ip)) {
+            await this.delayMs(5 * 60 * 1000);
+        }
+
         if (!key) {
             this.deny('key_required', { maskedKey, accountLogin, ip, ua });
         }
@@ -601,6 +607,10 @@ export class MembershipsService {
             status: 'OK',
             token,
         };
+    }
+
+    private delayMs(ms: number) {
+        return new Promise<void>((resolve) => setTimeout(resolve, ms));
     }
 
 }
