@@ -9,11 +9,10 @@ import { RolesGuard } from 'src/auth/guard/roles.guard';
 
 @Controller('categories')
 @UseGuards(JwtAuthGuard, RolesGuard)
-@Roles(Role.Admin)
 export class CategoryController {
     constructor(private readonly categoryService: CategoryService) { }
-
     @Post()
+    @Roles(Role.Admin)
     create(@Body() dto: CreateCategoryDto): Promise<Category> {
         return this.categoryService.create(dto);
     }
@@ -24,11 +23,13 @@ export class CategoryController {
     }
 
     @Patch(':id')
+    @Roles(Role.Admin)
     update(@Param('id') id: string, @Body() dto: CreateCategoryDto): Promise<Category> {
         return this.categoryService.update(id, dto);
     }
 
     @Delete(':id')
+    @Roles(Role.Admin)
     remove(@Param('id') id: string): Promise<{ deleted: boolean }> {
         return this.categoryService.remove(id);
     }
