@@ -35,7 +35,6 @@ import { AuthModule } from './auth/auth.module';
 // ─── Middleware ───────────────────────────────────────────────────────────────
 import { JwtAuthGuard } from './auth/guard/jwt-auth.guard';
 import { CsrfGuard } from './auth/guard/csrf.guard';
-import { MediaModule } from './media/media.module';
 import { PlanModule } from './plan/plan.module';
 import { TradingPlanModule } from './trading-plan/trading-plan.module';
 import { WebPushSubModule } from './web-push-sub/web-push-sub.module';
@@ -51,6 +50,7 @@ import { ScheduleModule } from '@nestjs/schedule';
 import { MarketplaceModule } from './marketplace/marketplace.module';
 import { OrderModule } from './order/order.module';
 import { SubscriptionsModule } from './subscriptions/subscriptions.module';
+import { StorageModule } from './storage/storage.module';
 
 @Module({
   imports: [
@@ -155,7 +155,6 @@ import { SubscriptionsModule } from './subscriptions/subscriptions.module';
     UserModule,
     MailModule,
     AuthModule,
-    MediaModule,
     PlanModule,
     TradingPlanModule,
     WebPushSubModule,
@@ -169,6 +168,7 @@ import { SubscriptionsModule } from './subscriptions/subscriptions.module';
     MarketplaceModule,
     OrderModule,
     SubscriptionsModule,
+    StorageModule,
   ],
 
   controllers: [AppController],

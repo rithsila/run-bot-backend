@@ -74,18 +74,9 @@ export class OrderController {
     return this.orderService.paginate(query);
   }
 
-  @Get('me')
-  async getMyOrders(
-    @Req() req: AuthRequest,
-    @Query('product') productId?: string,
-    @Query('active') active?: string,
-  ) {
-    const userId = req?.user?.userId;
-    if (!userId) throw new BadRequestException('AUTH_REQUIRED');
-    const onlyActive = active?.toLowerCase() === 'true';
-    return this.orderService.getUserOrders(userId, {
-      productId,
-      onlyActive,
-    });
+  @Get('subscription/:subscriptionId')
+  @Roles(Role.Admin)
+  getBySubscription(@Param('subscriptionId') subscriptionId: string) {
+    return this.orderService.getOrderBySubscription(subscriptionId);
   }
 }

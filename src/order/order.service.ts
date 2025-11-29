@@ -250,6 +250,43 @@ export class OrderService {
     return order;
   }
 
+  async getOrderByUserAndProduct(userId: string | Types.ObjectId, productId: string | Types.ObjectId) {
+    if (!Types.ObjectId.isValid(String(userId)) || !Types.ObjectId.isValid(String(productId))) {
+      throw new NotFoundException('Order not found');
+    }
+
+    const order = await this.orderModel
+      .findOne({
+        user: new Types.ObjectId(userId),
+        product: new Types.ObjectId(productId),
+      })
+      .lean()
+      .exec();
+
+    if (!order) {
+      throw new NotFoundException('Order not found');
+    }
+
+    return order;
+  }
+
+  async getOrderBySubscription(subscriptionId: string) {
+    if (!Types.ObjectId.isValid(subscriptionId)) {
+      throw new NotFoundException('Subscription not found');
+    }
+
+    const subscription = await this.subscriptionModel
+      .findById(subscriptionId)
+      .lean()
+      .exec();
+
+    if (!subscription) {
+      throw new NotFoundException('Subscription not found');
+    }
+
+    return this.getOrderByUserAndProduct(subscription.user, subscription.product);
+  }
+
   async updateOrderStatus(orderId: string, dto: UpdateOrderStatusDto, updatedBy?: string) {
     if (!Types.ObjectId.isValid(orderId)) {
       throw new NotFoundException('Order not found');

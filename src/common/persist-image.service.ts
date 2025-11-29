@@ -1,13 +1,9 @@
 // src/common/persist-image.service.ts
 import { Injectable, Logger } from "@nestjs/common";
-import { initCloudinary } from "./cloudinary";
-import { PassThrough } from "stream";
 import { createHash } from "crypto";
+import { AwsS3Service } from "src/storage/aws-s3.service";
 
-const OWN_CDN_HOSTS = new Set<string>([
-  "res.cloudinary.com",
-  "cdn.yourdomain.com",
-]);
+const OWN_CDN_HOSTS = new Set<string>(["cdn.yourdomain.com"]);
 
 function isHttpUrl(u: string) {
   try {
@@ -31,8 +27,8 @@ const BASE_HEADERS: Record<string, string> = {
 
 @Injectable()
 export class PersistImageService {
-  private cloudinary = initCloudinary();
   private readonly log = new Logger(PersistImageService.name);
+  constructor(private readonly s3: AwsS3Service) {}
 
   /**
    * Persist an image by URL to Cloudinary, returning { secure_url, public_id }.
@@ -44,13 +40,14 @@ export class PersistImageService {
     remoteUrl: string,
     opts?: { folder?: string; publicIdPrefix?: string; overwrite?: boolean }
   ): Promise<{ secure_url: string; public_id: string }> {
-    if (!remoteUrl || !isHttpUrl(remoteUrl)) throw new Error("Invalid image URL");
+    const resolvedUrl = this.unwrapProxyUrl(remoteUrl);
+    if (!resolvedUrl || !isHttpUrl(resolvedUrl)) throw new Error("Invalid image URL");
 
     // Skip if already persisted on our CDN
     try {
-      const u = new URL(remoteUrl);
+      const u = new URL(resolvedUrl);
       if (OWN_CDN_HOSTS.has(u.hostname)) {
-        return { secure_url: remoteUrl, public_id: "" };
+        return { secure_url: resolvedUrl, public_id: "" };
       }
     } catch {}
 
@@ -60,7 +57,7 @@ export class PersistImageService {
     // Strategy B: without Referer
     const strategies: Array<{ name: string; headers: Record<string, string> }> = [];
     try {
-      const origin = new URL(remoteUrl).origin;
+      const origin = new URL(resolvedUrl).origin;
       strategies.push({ name: "with-referer", headers: { ...BASE_HEADERS, Referer: origin } });
     } catch {
       // ignore if URL parsing failed earlier
@@ -71,22 +68,12 @@ export class PersistImageService {
 
     for (const s of strategies) {
       try {
-        const got = await this.fetchImageAsBuffer(remoteUrl, s.headers);
-        const publicId = this.makePublicId(remoteUrl, got.buffer, publicIdPrefix);
-        return await this.uploadBufferToCloudinaryStream(
-          got.buffer,
-          {
-            folder,
-            public_id: publicId,
-            resource_type: "image",
-            overwrite,
-            // keep thumbs in check; comment this out if you want originals
-            transformation: [{ width: 1280, height: 720, crop: "fill", gravity: "auto" }],
-          }
-        );
+        const got = await this.fetchImageAsBuffer(resolvedUrl, s.headers);
+        const publicId = this.makePublicId(resolvedUrl, got.buffer, publicIdPrefix);
+        return await this.uploadBufferToS3(got.buffer, got.contentType, folder, publicId);
       } catch (e) {
         lastErr = e;
-        this.log.warn(`[uploadFromUrl] ${s.name} failed for ${remoteUrl}: ${String(e)}`);
+        this.log.warn(`[uploadFromUrl] ${s.name} failed for ${resolvedUrl}: ${String(e)}`);
         // continue to next strategy
       }
     }
@@ -94,7 +81,25 @@ export class PersistImageService {
     throw lastErr ?? new Error("UPLOAD_FAILED");
   }
 
-  private async fetchImageAsBuffer(url: string, headers: Record<string, string>) {
+  private unwrapProxyUrl(urlStr: string): string {
+    if (!urlStr) return urlStr;
+    try {
+      const u = new URL(urlStr);
+      const host = u.hostname.toLowerCase();
+      if (host.includes("google.") && (u.pathname === "/imgres" || u.pathname === "/url")) {
+        const target = u.searchParams.get("imgurl") ?? u.searchParams.get("url");
+        if (target && isHttpUrl(target)) {
+          this.log.debug(`[uploadFromUrl] unwrapped proxy url -> ${target}`);
+          return target;
+        }
+      }
+      return urlStr;
+    } catch {
+      return urlStr;
+    }
+  }
+
+  private async fetchImageAsBuffer(url: string, headers: Record<string, string>, depth = 0): Promise<{ buffer: Buffer; contentType: string }> {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 20_000);
 
@@ -112,7 +117,24 @@ export class PersistImageService {
 
       // Quick content-type guard
       const ct = (res.headers.get("content-type") || "").toLowerCase();
-      if (!ct.startsWith("image/")) throw new Error(`Not an image: ${ct || "unknown"}`);
+      if (!ct.startsWith("image/")) {
+        if (ct.includes("text/html") && depth < 2) {
+          const html = await res.text();
+          const candidate = this.extractImageFromHtml(html, res.url || url);
+          if (candidate) {
+            const nextHeaders = { ...headers };
+            if (!nextHeaders.Referer) {
+              try {
+                nextHeaders.Referer = new URL(url).origin;
+              } catch {
+                // ignore
+              }
+            }
+            return this.fetchImageAsBuffer(candidate, nextHeaders, depth + 1);
+          }
+        }
+        throw new Error(`Not an image: ${ct || "unknown"}`);
+      }
 
       // Size guard (Content-Length if present)
       const cl = res.headers.get("content-length");
@@ -155,27 +177,65 @@ export class PersistImageService {
     return prefix ? `${prefix}_${sha}` : sha;
   }
 
-  private uploadBufferToCloudinaryStream(
-    buffer: Buffer,
-    params: {
-      folder: string;
-      public_id: string;
-      resource_type: "image";
-      overwrite: boolean;
-      transformation?: any;
+  private extractImageFromHtml(html: string, baseUrl: string): string | null {
+    const patterns: Array<RegExp> = [
+      /<meta[^>]+property=["']og:image["'][^>]+content=["']([^"']+)["']/i,
+      /<meta[^>]+property=["']twitter:image["'][^>]+content=["']([^"']+)["']/i,
+      /<meta[^>]+name=["']twitter:image["'][^>]+content=["']([^"']+)["']/i,
+    ];
+
+    for (const r of patterns) {
+      const m = html.match(r);
+      if (m?.[1]) {
+        const abs = this.toAbsoluteUrl(m[1].trim(), baseUrl);
+        if (abs) return abs;
+      }
     }
+
+    const imgMatch = html.match(/<img[^>]+src=["']([^"']+)["']/i);
+    if (imgMatch?.[1]) {
+      const abs = this.toAbsoluteUrl(imgMatch[1].trim(), baseUrl);
+      if (abs) return abs;
+    }
+    return null;
+  }
+
+  private toAbsoluteUrl(possibleUrl: string, baseUrl: string): string | null {
+    try {
+      const url = new URL(possibleUrl, baseUrl);
+      if (isHttpUrl(url.toString())) {
+        return url.toString();
+      }
+      return null;
+    } catch {
+      return null;
+    }
+  }
+
+  private async uploadBufferToS3(
+    buffer: Buffer,
+    contentType: string | undefined,
+    folder: string,
+    publicId: string,
   ): Promise<{ secure_url: string; public_id: string }> {
-    return new Promise((resolve, reject) => {
-      const pass = new PassThrough();
-      const stream = this.cloudinary.uploader.upload_stream(
-        params,
-        (err, result) => {
-          if (err || !result) return reject(err ?? new Error("Upload failed"));
-          resolve({ secure_url: result.secure_url!, public_id: result.public_id! });
-        }
-      );
-      pass.end(buffer);
-      pass.pipe(stream);
+    const ext = this.guessExtension(contentType);
+    const key = `${folder}/${publicId}.${ext}`;
+    const result = await this.s3.uploadBuffer({
+      key,
+      buffer,
+      contentType,
+      cacheControl: 'public, max-age=31536000',
     });
+    return { secure_url: result.url, public_id: result.key };
+  }
+
+  private guessExtension(contentType?: string): string {
+    if (!contentType) return 'bin';
+    if (contentType.includes('jpeg') || contentType.includes('jpg')) return 'jpg';
+    if (contentType.includes('png')) return 'png';
+    if (contentType.includes('webp')) return 'webp';
+    if (contentType.includes('gif')) return 'gif';
+    if (contentType.includes('svg')) return 'svg';
+    return 'bin';
   }
 }

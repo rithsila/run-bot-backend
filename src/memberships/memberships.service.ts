@@ -15,6 +15,7 @@ import { ActivateLicenseDto } from './dto/activate-license.dto';
 import { JoseService } from './jose.service';
 import { MembershipAccountType, MembershipDocument } from './memberships.schema';
 import { Referral } from './referral.schema';
+import { MembershipIpBlacklist, MembershipIpBlacklistDocument } from './membership-ip-blacklist.schema';
 
 export type ReferralWithOwner = Referral & {
     owner: Pick<User, 'firstName' | 'lastName'>;
@@ -32,6 +33,8 @@ export class MembershipsService {
         private readonly membershipModel: membershipsSchema.MembershipPaginateModel,
         @InjectModel(User.name)
         private readonly userModel: Model<UserDocument>,
+        @InjectModel(MembershipIpBlacklist.name)
+        private readonly ipBlacklistModel: Model<MembershipIpBlacklistDocument>,
         private readonly pushProducer: PushProducer,
         private readonly webPushSubService: WebPushSubService,
         private readonly jose: JoseService
@@ -51,6 +54,9 @@ export class MembershipsService {
                     path: 'owner',
                     select: '_id email firstName lastName',
                 },
+            }).populate({
+                path: 'updatedBy',
+                select: '_id email firstName lastName',
             })
             .exec();
 
@@ -501,10 +507,13 @@ export class MembershipsService {
         );
 
         // Slow down known abusive IPs
-        // const throttledIps = new Set(['38.54.16.55', '160.202.35.119', '217.217.253.207']);
-        // if (ip && throttledIps.has(ip)) {
-        //     await this.delayMs(5 * 60 * 1000);
-        // }
+        if (ip) {
+            const blacklisted = await this.ipBlacklistModel.findOne({ ip }).lean().exec();
+            if (blacklisted) {
+                this.logger.warn(`[Memberships.activate] throttling blacklisted IP ${ip}`);
+                await this.delayMs(5 * 60 * 1000);
+            }
+        }
 
         if (!key) {
             this.deny('key_required', { maskedKey, accountLogin, ip, ua });
@@ -620,5 +629,4 @@ export class MembershipsService {
     private delayMs(ms: number) {
         return new Promise<void>((resolve) => setTimeout(resolve, ms));
     }
-
 }

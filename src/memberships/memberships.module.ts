@@ -9,6 +9,7 @@ import { QueueModule } from 'src/queue/queue.module';
 import { JoseService } from './jose.service';
 import { ReferralsModule } from './referrals.module';
 import { Referral, ReferralSchema } from './referral.schema';
+import { MembershipIpBlacklist, MembershipIpBlacklistSchema } from './membership-ip-blacklist.schema';
 
 @Module({
   imports: [
@@ -16,6 +17,7 @@ import { Referral, ReferralSchema } from './referral.schema';
       { name: Membership.name, schema: MembershipSchema },
       { name: User.name, schema: UserSchema },
       { name: Referral.name, schema: ReferralSchema },
+      { name: MembershipIpBlacklist.name, schema: MembershipIpBlacklistSchema },
     ]),
     WebPushSubModule,
     QueueModule,

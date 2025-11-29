@@ -29,6 +29,9 @@ export class Subscription {
 
   @Prop({ type: Date, required: true })
   nextBill!: Date;
+
+  @Prop({ type: String, maxlength: 5000 })
+  notes?: string;
 }
 
 export const SubscriptionSchema = SchemaFactory.createForClass(Subscription);

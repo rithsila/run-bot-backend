@@ -53,4 +53,10 @@ export const envValidationSchema = Joi.object({
   // ─── Redis ───────────────────────────────────────────────────
   REDIS_URL: Joi.string().uri().required(),
 
+  // ─── AWS / S3 ────────────────────────────────────────────────
+  AWS_ACCESS_KEY_ID: Joi.string().min(16).required(),
+  AWS_SECRET_ACCESS_KEY: Joi.string().min(32).required(),
+  AWS_REGION: Joi.string().default('ap-southeast-2'),
+  S3_BUCKET_NAME: Joi.string().required(),
+
 }).unknown(true);
