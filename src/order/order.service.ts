@@ -56,14 +56,14 @@ export class OrderService {
         status: { $in: activeStatuses },
       })
       .lean();
-
+    console.log("--------existingActive", existingActive)
     if (existingActive) {
       // You can customize this message / code
       throw new BadRequestException(
         'You already have an active order for this product.',
       );
     }
-
+    console.log("---------------- can create order")
     // --- 3) Product ---
     const product = await this.productModel.findById(dto.product).lean();
     if (!product) throw new NotFoundException('Product not found');
@@ -254,9 +254,9 @@ export class OrderService {
     if (!Types.ObjectId.isValid(String(userId)) || !Types.ObjectId.isValid(String(productId))) {
       throw new NotFoundException('Order not found');
     }
-
+  
     const order = await this.orderModel
-      .findOne({
+      .find({
         user: new Types.ObjectId(userId),
         product: new Types.ObjectId(productId),
       })

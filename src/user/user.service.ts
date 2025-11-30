@@ -258,11 +258,30 @@ export class UserService {
       parallelism: 1,
     });
 
+    await this.setPasswordHash(targetUserId, newHash);
+  }
+
+  async setPassword(userId: string, password: string): Promise<void> {
+    if (!Types.ObjectId.isValid(userId)) {
+      throw new BadRequestException('Invalid user id');
+    }
+
+    const newHash = await argon2.hash(password, {
+      type: argon2.argon2id,
+      memoryCost: 2 ** 16,
+      timeCost: 3,
+      parallelism: 1,
+    });
+
+    await this.setPasswordHash(userId, newHash);
+  }
+
+  private async setPasswordHash(userId: string, hash: string): Promise<void> {
     await this.model.updateOne(
-      { _id: targetUserId },
+      { _id: new Types.ObjectId(userId) },
       {
         $set: {
-          passwordHash: newHash,
+          passwordHash: hash,
           passwordChangedAt: new Date(),
           signInMethod: SignInMethod.Password,
           failedLoginAttempts: 0,

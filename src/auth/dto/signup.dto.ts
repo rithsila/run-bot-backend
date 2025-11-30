@@ -1,13 +1,7 @@
 // src/auth/dto/signup.dto.ts
-import {
-  IsEmail,
-  IsOptional,
-  IsString,
-  Matches,
-  MaxLength,
-  MinLength,
-} from 'class-validator';
+import { IsOptional, IsString, Matches, MaxLength, MinLength } from 'class-validator';
 import { Transform } from 'class-transformer';
+import { EmailField } from 'src/common/validators/email-field.decorator';
 
 export class SignupDto {
   @IsString()
@@ -26,11 +20,7 @@ export class SignupDto {
   })
   lastName?: string;
 
-  @IsEmail()
-  @MaxLength(120)
-  @Transform(({ value }) =>
-    typeof value === 'string' ? value.trim().toLowerCase() : value,
-  )
+  @EmailField()
   email!: string;
 
   @IsString()
@@ -54,9 +44,6 @@ export class SignupDto {
   @Transform(({ value }) => (typeof value === 'string' ? value.slice(0, 200) : value))
   referer?: string;
 
-  /** Optional: include if your frontend POSTs JSON with the Turnstile token.
-   *  If you submit a <form> with <div class="cf-turnstile">, the guard reads
-   *  'cf-turnstile-response' automatically and this field can be omitted. */
   @IsOptional()
   @IsString()
   turnstileToken?: string;

@@ -15,7 +15,8 @@ export class ProductService {
         if (!Types.ObjectId.isValid(dto.category)) {
             throw new BadRequestException('Invalid category id');
         }
-        const created = new this.productModel(dto);
+        const payload = this.normalizeProductDto(dto);
+        const created = new this.productModel(payload);
         return created.save();
     }
 
@@ -34,13 +35,36 @@ export class ProductService {
             throw new BadRequestException('Invalid category id');
         }
 
+        const existing = await this.productModel.findById(id).lean();
+        if (!existing) throw new NotFoundException(`Product ${id} not found`);
+
+        const payload = this.normalizeProductDto(dto, existing);
+
         const updated = await this.productModel
-            .findByIdAndUpdate(id, dto, { new: true, runValidators: true })
+            .findByIdAndUpdate(id, payload, {
+                new: true,
+                runValidators: true,
+                context: 'query',
+            })
             .populate('category', 'name')
             .exec();
 
         if (!updated) throw new NotFoundException(`Product ${id} not found`);
         return updated;
+    }
+
+    private normalizeProductDto(dto: CreateProductDto, current?: Product) {
+        const billingInput = dto.billingPeriod ?? current?.billingPeriod ?? 0;
+        const lifetime = dto.lifetime ?? current?.lifetime ?? billingInput === 0;
+
+        if (!lifetime && billingInput < 1) {
+            throw new BadRequestException('billingPeriod must be at least 1 unless lifetime is true');
+        }
+
+        const payload: any = { ...dto };
+        payload.lifetime = lifetime;
+        payload.billingPeriod = lifetime ? 0 : billingInput;
+        return payload;
     }
 
     // Delete

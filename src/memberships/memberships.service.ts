@@ -13,9 +13,10 @@ import { WebPushSubService } from 'src/web-push-sub/web-push-sub.service';
 import { randomBytes } from 'crypto';
 import { ActivateLicenseDto } from './dto/activate-license.dto';
 import { JoseService } from './jose.service';
-import { MembershipAccountType, MembershipDocument } from './memberships.schema';
+import { MembershipAccountType, MembershipDocument, MembershipStatus } from './memberships.schema';
 import { Referral } from './referral.schema';
 import { MembershipIpBlacklist, MembershipIpBlacklistDocument } from './membership-ip-blacklist.schema';
+import { Subscription, SubscriptionDocument, SubscriptionStatus } from 'src/subscriptions/subscriptions.schema';
 
 export type ReferralWithOwner = Referral & {
     owner: Pick<User, 'firstName' | 'lastName'>;
@@ -35,10 +36,38 @@ export class MembershipsService {
         private readonly userModel: Model<UserDocument>,
         @InjectModel(MembershipIpBlacklist.name)
         private readonly ipBlacklistModel: Model<MembershipIpBlacklistDocument>,
+        @InjectModel(Subscription.name)
+        private readonly subscriptionModel: Model<SubscriptionDocument>,
         private readonly pushProducer: PushProducer,
         private readonly webPushSubService: WebPushSubService,
         private readonly jose: JoseService
     ) { }
+
+    async findAll(): Promise<MembershipDocument[]> {
+
+        const memberships = await this.membershipModel
+            .find({})
+        memberships.map(async membership => {
+
+            await this.subscriptionModel.create({
+
+                user: membership.user,
+                product: '692183ad57d3a0afb8623144',
+                status: membership.status === MembershipStatus.Verified ? SubscriptionStatus.Active : SubscriptionStatus.Paused,
+
+                nextBill: new Date('2025-12-31T00:00:00.000Z'),
+                notes: "Dear user, if the expiry date is incorrect, please resubmit the Sn1Per Flip to the marketplace."
+            })
+
+        })
+
+
+        return this.membershipModel
+            .find({})
+            .populate('user', '_id email firstName lastName')
+            .lean()
+            .exec();
+    }
 
     async findByUserId(userId: string): Promise<MembershipDocument | null> {
         const membership = await this.membershipModel

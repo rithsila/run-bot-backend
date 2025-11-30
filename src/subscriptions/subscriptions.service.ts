@@ -17,7 +17,7 @@ export class SubscriptionsService {
 
     return this.subscriptionModel
       .find({ user: new Types.ObjectId(userId) })
-      .populate('product', 'name pricing billingPeriod')
+      .populate('product', 'name pricing billingPeriod lifetime')
       .lean()
       .exec();
   }

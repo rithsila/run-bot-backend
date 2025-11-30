@@ -40,7 +40,7 @@ export class MembershipsController {
     @Throttle({ default: { limit: 30, ttl: 60_000 } })
     @HttpCode(HttpStatus.OK)
     async list(@Query() q: PaginateMembershipsDto) {
-      
+
         return this.memberships.paginate(q);
     }
 
@@ -90,7 +90,6 @@ export class MembershipsController {
     @HttpCode(HttpStatus.OK)
     async getMine(@Req() req: AuthRequest) {
         const userId = req.user?.userId;
-
         if (!userId) throw new UnauthorizedException('AUTH_REQUIRED');
 
         const membership = await this.memberships.findByUserId(userId);
@@ -151,7 +150,7 @@ export class MembershipsController {
     @Post(':id/license')
     @Roles(Role.Admin)
     @Throttle({ default: { limit: 10, ttl: 60_000 } })  // ✅ Rate limit
-    @HttpCode(HttpStatus.CREATED)  
+    @HttpCode(HttpStatus.CREATED)
     async createLicense(
         @Param('id') id: string,
         @Req() req: AuthRequest,

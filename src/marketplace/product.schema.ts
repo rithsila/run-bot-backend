@@ -44,8 +44,15 @@ export class Product {
   @Prop({ type: Number, required: true, min: 0 })
   pricing!: number;
 
-  @Prop({ type: Number, required: true, min: 1 })
+  @Prop({
+    type: Number,
+    min: 0,
+    default: 0
+  })
   billingPeriod!: number;
+
+  @Prop({ type: Boolean, default: false })
+  lifetime!: boolean;
 
   // payURL: url
   @Prop({

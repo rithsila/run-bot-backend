@@ -101,7 +101,7 @@ export class AuthService {
     ip?: string,
     ua?: string,
   ) {
-    // Invalidate any currently-active reset tokens
+   
     await this.pwResetModel.updateMany(
       { userId, usedAt: null, expiresAt: { $gt: new Date() } },
       { $set: { expiresAt: new Date() } },
@@ -437,8 +437,6 @@ export class AuthService {
     const normalized = this.users.normalizeEmail(email);
     const user = await this.users.findByEmail(normalized);
 
-    // Enumeration-safe: always return 200 to caller;
-    // only proceed internally if user exists and supports password sign-in.
     if (!user || user.signInMethod !== SignInMethod.Password) {
       this.logger.debug(
         JSON.stringify({ evt: 'reset_request_ignored', email: maskEmail(normalized) }),
@@ -455,6 +453,28 @@ export class AuthService {
 
     this.logger.log(
       JSON.stringify({ evt: 'reset_issued', userId: String((user as any)._id) }),
+    );
+  }
+
+  async resetPassword(token: string, newPassword: string): Promise<void> {
+    if (!token || !newPassword) {
+      throw new BadRequestException('TOKEN_OR_PASSWORD_MISSING');
+    }
+
+    const hashed = sha256Hex(token);
+    const record = await this.pwResetModel.findOneAndDelete({
+      tokenHash: hashed,
+      createdAt: { $gte: new Date(Date.now() - 1000 * 60 * 60 * 2) }, // 2h validity
+    });
+
+    if (!record) {
+      throw new BadRequestException('Invalid or expired token');
+    }
+
+    await this.users.setPassword(String(record.userId), newPassword);
+
+    this.logger.log(
+      JSON.stringify({ evt: 'password_reset', userId: String(record.userId) }),
     );
   }
 

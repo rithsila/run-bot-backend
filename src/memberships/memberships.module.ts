@@ -10,6 +10,7 @@ import { JoseService } from './jose.service';
 import { ReferralsModule } from './referrals.module';
 import { Referral, ReferralSchema } from './referral.schema';
 import { MembershipIpBlacklist, MembershipIpBlacklistSchema } from './membership-ip-blacklist.schema';
+import { Subscription, SubscriptionSchema } from 'src/subscriptions/subscriptions.schema';
 
 @Module({
   imports: [
@@ -18,6 +19,7 @@ import { MembershipIpBlacklist, MembershipIpBlacklistSchema } from './membership
       { name: User.name, schema: UserSchema },
       { name: Referral.name, schema: ReferralSchema },
       { name: MembershipIpBlacklist.name, schema: MembershipIpBlacklistSchema },
+      { name: Subscription.name, schema: SubscriptionSchema },
     ]),
     WebPushSubModule,
     QueueModule,

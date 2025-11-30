@@ -1,7 +1,6 @@
 // src/memberships/dto/join-membership.dto.ts
 import { Transform } from 'class-transformer';
 import {
-  IsEmail,
   IsNotEmpty,
   IsOptional,
   IsString,
@@ -10,14 +9,11 @@ import {
   ArrayMaxSize,
   ArrayMinSize,
 } from 'class-validator';
+import { EmailField } from 'src/common/validators/email-field.decorator';
 
 export class JoinMembershipDto {
-  @IsEmail()
+  @EmailField()
   @IsNotEmpty()
-  @MaxLength(120)
-  @Transform(({ value }) =>
-    typeof value === 'string' ? value.trim().toLowerCase() : value,
-  )
   email!: string;
 
   @IsArray()

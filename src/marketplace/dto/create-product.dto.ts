@@ -41,9 +41,16 @@ export class CreateProductDto {
   note?: string;
 
   @IsInt()
-  @Min(1)
+  @Min(0)
   @Transform(({ value }) => Number(value))
   billingPeriod!: number;
+
+  @IsOptional()
+  @IsBoolean()
+  @Transform(({ value }) =>
+    value === '' || value === undefined || value === null ? false : value === 'true' || value === true
+  )
+  lifetime?: boolean;
 
   @IsMongoId()
   category!: string;

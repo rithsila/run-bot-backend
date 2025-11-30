@@ -4,6 +4,7 @@ import { Document, PaginateModel, Types } from 'mongoose';
 import paginate from 'mongoose-paginate-v2';
 import { User } from 'src/user/user.schema';
 import { Referral } from './referral.schema';
+import { Subscription } from 'src/subscriptions/subscriptions.schema';
 
 export type MembershipDocument = Membership & Document;
 export type MembershipPaginateModel = PaginateModel<MembershipDocument>;
@@ -102,6 +103,9 @@ export class Membership {
 
   @Prop({ type: Types.ObjectId, ref: 'User', index: true })
   updatedBy?: Types.ObjectId | User;
+
+  @Prop({ type: Types.ObjectId, ref: Subscription.name, index: true })
+  subscription?: Types.ObjectId;
 }
 
 export const MembershipSchema = SchemaFactory.createForClass(Membership);

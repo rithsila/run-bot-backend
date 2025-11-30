@@ -7,9 +7,10 @@ import {
   Post,
   Req,
   UnauthorizedException,
-  UseGuards
+  UseGuards,
+  Res,
 } from '@nestjs/common';
-import type { Request } from 'express';
+import type { Request, Response } from 'express';
 import { Throttle } from '@nestjs/throttler';
 import { AuthService } from './auth.service';
 import { SignupDto } from './dto/signup.dto';
@@ -20,8 +21,6 @@ import { getClientIp } from 'src/common/auth/client-ip';
 import { LoginDto } from './dto/login.dto';
 import { LoginTelemetry } from 'src/common/types/login-telemetry.type';
 import type { AuthRequest } from 'src/common/types/auth-request.type';
-import { Res } from '@nestjs/common';
-import type { Response } from 'express';
 import { UserService } from 'src/user/user.service';
 import { AuthGuard } from '@nestjs/passport';
 import { Public } from './guard/public.decorator';
@@ -29,22 +28,22 @@ import { SkipCsrf } from './guard/skip-csrf.decorator';
 import crypto from 'crypto';
 import { GoogleUserPayload } from 'src/common/types/google-auth.type';
 import { cookieBase } from 'src/common/cookies/cookie.util';
-import { TurnstileGuard } from 'src/turnstile/turnstile.guard';
 import { TurnstileAction } from 'src/turnstile/turnstile.decorator';
 import { VerifyEmailDto } from './dto/verify-email.dto';
 import { ResendVerificationDto } from './dto/resend-verification.dto';
+import { TurnstileGuard } from 'src/turnstile/turnstile.guard';
+import { ResetPasswordDto } from './dto/reset-password.dto';
 
 @Controller('auth')
 export class AuthController {
-
   constructor(
     private readonly auth: AuthService,
     private readonly users: UserService,
-  ) { }
+  ) {}
 
-  @UseGuards(TurnstileGuard)
-  @TurnstileAction('register')
   @Public()
+  @TurnstileAction('register')
+  @UseGuards(TurnstileGuard)
   @Post('signup')
   @Throttle({ default: { limit: 5, ttl: 60_000 } })
   @HttpCode(HttpStatus.CREATED)
@@ -86,9 +85,9 @@ export class AuthController {
   }
 
   @Public()
-  @Post('login')
-  @UseGuards(TurnstileGuard)
   @TurnstileAction('login')
+  @UseGuards(TurnstileGuard)
+  @Post('login')
   @Throttle({ default: { limit: 5, ttl: 60_000 } })
   @HttpCode(HttpStatus.OK)
   async login(
@@ -96,7 +95,6 @@ export class AuthController {
     @Req() req: Request,
     @Res({ passthrough: true }) res: Response,
   ): Promise<ApiSuccess<{ tokenType: 'Bearer'; accessToken: string; expiresIn: number; user?: PublicUser }>> {
-
     const ip = getClientIp(req);
     const ua = (req.headers['user-agent']?.toString() ?? '').slice(0, 200);
     const deviceId =
@@ -131,6 +129,7 @@ export class AuthController {
       httpOnly: false,
       maxAge: expiresIn * 1000,
     });
+
     return {
       success: true,
       statusCode: HttpStatus.OK,
@@ -150,7 +149,6 @@ export class AuthController {
     const user = await this.users.findById(uid);
     if (!user) throw new UnauthorizedException('USER_NOT_FOUND');
 
-
     // Build a plain payload — avoid spreading a Document
     const data: PublicUser = {
       _id: String(user._id),
@@ -166,7 +164,7 @@ export class AuthController {
       success: true,
       data,
       statusCode: HttpStatus.OK,
-      code: "ME",
+      code: 'ME',
       message: 'Successful',
       timestamp: new Date().toISOString(),
       path: req.url,
@@ -181,10 +179,6 @@ export class AuthController {
     await this.auth.verifyEmail(dto.token);
   }
 
-  /**
-   * (Optional) Resend verification email.
-   * Always returns a generic 200 to avoid account enumeration.
-   */
   @Public()
   @Post('resend-verification')
   @Throttle({ default: { limit: 5, ttl: 60_000 } }) // 5/min
@@ -197,7 +191,6 @@ export class AuthController {
     );
     return { message: 'If an account exists, we’ve sent a new verification email.' };
   }
-
 
   @Public()
   @SkipCsrf()
@@ -240,7 +233,6 @@ export class AuthController {
       maxAge: expiresIn * 1000,
     });
 
-
     return res.redirect('/');
   }
 
@@ -265,11 +257,10 @@ export class AuthController {
   }
 
   @Public()
-  @UseGuards(TurnstileGuard)
-  @TurnstileAction('forgot_password')
+  @TurnstileAction('forgot-password')
   @Post('forgot-password')
   @HttpCode(HttpStatus.OK)
-  @Throttle({ default: { limit: 5, ttl: 60_000 } })
+  @Throttle({ default: { limit: 3, ttl: 60_000 } })
   async forgotPassword(@Body() dto: { email: string }, @Req() req: Request) {
     const ip = getClientIp(req) ?? undefined; // 👈 coerce null → undefined
     const ua =
@@ -284,6 +275,13 @@ export class AuthController {
     return { message: 'If an account exists, we’ve sent an email with a reset link.' };
   }
 
-
+  @Public()
+  @TurnstileAction('reset-password')
+  @SkipCsrf()
+  @Post('reset-password')
+  @HttpCode(HttpStatus.OK)
+  async resetPassword(@Body() dto: ResetPasswordDto) {
+    await this.auth.resetPassword(dto.token, dto.password);
+    return { message: 'Password reset successful.' };
+  }
 }
-
