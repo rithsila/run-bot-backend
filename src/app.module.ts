@@ -57,8 +57,11 @@ import { StorageModule } from './storage/storage.module';
     // ─── Global Config ────────────────────────────────────────────────────────
     ConfigModule.forRoot({
       isGlobal: true,
-      envFilePath: resolveExistingEnvFiles(),
-      ignoreEnvFile: process.env.NODE_ENV === 'production',
+      envFilePath: [
+        `.env.${process.env.NODE_ENV || 'development'}`,
+        '.env',
+      ],
+      ignoreEnvFile: false, 
       expandVariables: true,
       cache: true,
       validationSchema: envValidationSchema,
