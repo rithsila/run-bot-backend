@@ -559,7 +559,7 @@ export class MembershipsService {
             this.deny('not_found', { maskedKey, accountLogin, ip, ua });
         }
 
-        await this.ensureActiveSubscription(membership.user as unknown as Types.ObjectId);
+        // await this.ensureActiveSubscription(membership.user as unknown as Types.ObjectId);
 
         // ✅ Only allow Verified status
         const allowedStatuses = [membershipsSchema.MembershipStatus.Verified];
