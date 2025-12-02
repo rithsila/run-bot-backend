@@ -559,6 +559,8 @@ export class MembershipsService {
             this.deny('not_found', { maskedKey, accountLogin, ip, ua });
         }
 
+        await this.ensureActiveSubscription(membership.user as unknown as Types.ObjectId);
+
         // ✅ Only allow Verified status
         const allowedStatuses = [membershipsSchema.MembershipStatus.Verified];
 
@@ -651,6 +653,23 @@ export class MembershipsService {
             status: 'OK',
             token,
         };
+    }
+
+    private async ensureActiveSubscription(userId: Types.ObjectId) {
+        const protectedProducts = [
+            new Types.ObjectId('6921845757d3a0afb862318c'),
+            new Types.ObjectId('692183ad57d3a0afb8623144'),
+        ];
+
+        const active = await this.subscriptionModel.exists({
+            user: userId,
+            product: { $in: protectedProducts },
+            status: SubscriptionStatus.Active,
+        });
+
+        if (!active) {
+            this.deny('subscription_not_active', { membershipId: String(userId) });
+        }
     }
 
     private delayMs(ms: number) {
