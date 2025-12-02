@@ -75,7 +75,6 @@ export class OrderController {
   }
 
   @Get('subscription/:subscriptionId')
-  @Roles(Role.Admin)
   getBySubscription(@Param('subscriptionId') subscriptionId: string) {
     return this.orderService.getOrderBySubscription(subscriptionId);
   }

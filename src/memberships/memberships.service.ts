@@ -486,8 +486,6 @@ export class MembershipsService {
                 const tinyPayload = {
                     title: 'License key created',
                     body: 'Your EA license key has been generated and is now active.',
-                    // optionally include a masked key so you don’t leak full license:
-                    // body: `Your EA license key has been created: ${key.slice(0, 4)}***`,
                 };
 
                 const recipients = [recipientId];
