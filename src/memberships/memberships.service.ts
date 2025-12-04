@@ -638,9 +638,6 @@ export class MembershipsService {
             user: membership.user as unknown as Types.ObjectId,
             status: SubscriptionStatus.Active,
         };
-
-      
-
         const subscription = await this.subscriptionModel
             .findOne(query)
             .populate('product', '_id name requiresLicenseKey')
