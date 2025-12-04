@@ -1,7 +1,7 @@
 // src/subscriptions/subscriptions.schema.ts
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { HydratedDocument, Types } from 'mongoose';
-import { BillPeriod } from 'src/products/product.schema';
+import { BillPeriod, Product } from 'src/products/product.schema';
 
 export type SubscriptionDocument = HydratedDocument<Subscription>;
 
@@ -18,7 +18,7 @@ export class Subscription {
   user!: Types.ObjectId;
 
   @Prop({ type: Types.ObjectId, ref: 'Product', required: true, index: true })
-  product!: Types.ObjectId;
+  product!: Product;
 
   @Prop({
     type: String,

@@ -632,50 +632,24 @@ export class MembershipsService {
         return new Promise<void>((resolve) => setTimeout(resolve, ms));
     }
 
-
-
     private async ensureLicenseRequiredSubscription(
         userId: PublicUser,
         ctx: Record<string, any>,
     ) {
 
-        console.log("============s-------------------userId", userId?._id)
-        const subscription = await this.subscriptionModel.findOne({
+        const subscription = await this.subscriptionModel.find({
             user: userId?._id,
             status: SubscriptionStatus.Active
-        })
-        // const subscription = await this.subscriptionModel
-        //     .aggregate<(Subscription & { product: Product })[]>([
-        //         {
-        //             $match: {
-        //                 user: userId?._id,
-        //                 status: SubscriptionStatus.Active, // active only
-        //             },
-        //         },
-        //         {
-        //             $lookup: {
-        //                 from: 'products',
-        //                 localField: 'product',
-        //                 foreignField: '_id',
-        //                 as: 'product',
-        //             },
-        //         },
-        //         { $unwind: '$product' },
-        //         {
-        //             $match: {
-        //                 'product.requiresLicenseKey': true,
-        //             },
-        //         },
-        //         { $limit: 1 },
-        //     ])
-        //     .exec();
-
-
-
-        console.log("============s-------------------subscription", subscription)
+        }).populate("product")
 
         if (!subscription) {
             this.deny('subscription_not_active', ctx);
+        }
+
+        const checkIsRequiresLicenseKey = subscription.filter(sub => sub?.product?.requiresLicenseKey === true)
+        console.log("=========================checkIsRequiresLicenseKey: ", checkIsRequiresLicenseKey)
+        if (!checkIsRequiresLicenseKey) {
+            this.deny('product_not_license', ctx);
         }
 
         this.logger.log(
