@@ -71,6 +71,7 @@ export class MembershipsService {
     }
 
     async findByUserId(userId: string): Promise<MembershipDocument | null> {
+
         const membership = await this.membershipModel
             .findOne({ user: new Types.ObjectId(userId) })
             .populate({

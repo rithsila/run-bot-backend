@@ -172,6 +172,9 @@ export class OrderService {
 
 
   async paginate(dto: PaginateOrdersDto): Promise<PaginateResult<orderSchema.OrderDocument>> {
+
+   
+
     const { q, status, page = 1, limit = 20 } = dto;
     const filter: FilterQuery<orderSchema.OrderDocument> = {};
 
@@ -298,7 +301,7 @@ export class OrderService {
       throw new NotFoundException('Subscription not found');
     }
 
-    return  null
+    return null
   }
 
   async updateOrderStatus(orderId: string, dto: UpdateOrderStatusDto, updatedBy?: string) {

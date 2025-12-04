@@ -11,6 +11,7 @@ export class SubscriptionsService {
   ) { }
 
   async getByUser(userId: string | Types.ObjectId) {
+
     if (!Types.ObjectId.isValid(String(userId))) {
       throw new BadRequestException('INVALID_USER_ID');
     }
