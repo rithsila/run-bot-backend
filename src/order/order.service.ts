@@ -32,140 +32,142 @@ export class OrderService {
     dto: UserCreateOrderDto,
     idempotencyKey?: string | null,
   ) {
-    const userObjectId = new Types.ObjectId(userId);
-    const productObjectId = new Types.ObjectId(dto.product);
+    return
 
-    // --- 1) Idempotency (same as before) ---
-    if (idempotencyKey) {
-      const existingByIdem = await this.orderModel
-        .findOne({ user: userObjectId, idempotencyKey })
-        .lean();
-      if (existingByIdem) return existingByIdem;
-    }
+    // const userObjectId = new Types.ObjectId(userId);
+    // const productObjectId = new Types.ObjectId(dto.product);
 
-    // --- 3) Product ---
-    const product = await this.productModel.findById(dto.product).lean();
-    if (!product) throw new NotFoundException('Product not found');
+    // // --- 1) Idempotency (same as before) ---
+    // if (idempotencyKey) {
+    //   const existingByIdem = await this.orderModel
+    //     .findOne({ user: userObjectId, idempotencyKey })
+    //     .lean();
+    //   if (existingByIdem) return existingByIdem;
+    // }
 
-    const billPeriod = dto.billPeriod;
-    const billingMonths = this.mapBillPeriodToMonths(billPeriod);
-    const amount = Number(dto.amount);
-    if (Number.isNaN(amount) || amount < 0) {
-      throw new BadRequestException('Invalid amount');
-    }
+    // // --- 3) Product ---
+    // const product = await this.productModel.findById(dto.product).lean();
+    // if (!product) throw new NotFoundException('Product not found');
 
-    // --- 4) TradingView username: conditional requirement ---
-    let tradingViewUsername: string | undefined = undefined;
+    // const billPeriod = dto.billPeriod;
+    // const billingMonths = this.mapBillPeriodToMonths(billPeriod);
+    // const amount = Number(dto.amount);
+    // if (Number.isNaN(amount) || amount < 0) {
+    //   throw new BadRequestException('Invalid amount');
+    // }
 
-    if (product.requireTradingViewUsername) {
-      // for this product TradingView username IS required
-      const tv = dto.tradingViewUsername?.trim();
-      if (!tv) {
-        throw new BadRequestException('TradingView username is required for this product');
-      }
-      tradingViewUsername = tv;
-    } else {
-      // not required; if provided, trim and store, otherwise ignore
-      if (typeof dto.tradingViewUsername === 'string') {
-        const tv = dto.tradingViewUsername.trim();
-        tradingViewUsername = tv.length > 0 ? tv : undefined;
-      }
-    }
+    // // --- 4) TradingView username: conditional requirement ---
+    // let tradingViewUsername: string | undefined = undefined;
 
-    const initialStatus = dto.status ?? orderSchema.OrderStatus.INIT;
-    if (
-      ![
-        orderSchema.OrderStatus.INIT,
-        orderSchema.OrderStatus.PAID,
-        orderSchema.OrderStatus.FAILED,
-      ].includes(initialStatus)
-    ) {
-      throw new BadRequestException('Unsupported initial status');
-    }
+    // if (product.requireTradingViewUsername) {
+    //   // for this product TradingView username IS required
+    //   const tv = dto.tradingViewUsername?.trim();
+    //   if (!tv) {
+    //     throw new BadRequestException('TradingView username is required for this product');
+    //   }
+    //   tradingViewUsername = tv;
+    // } else {
+    //   // not required; if provided, trim and store, otherwise ignore
+    //   if (typeof dto.tradingViewUsername === 'string') {
+    //     const tv = dto.tradingViewUsername.trim();
+    //     tradingViewUsername = tv.length > 0 ? tv : undefined;
+    //   }
+    // }
 
-    const shouldEnsureActive = initialStatus === orderSchema.OrderStatus.INIT;
-    if (shouldEnsureActive) {
-      const existingActive = await this.orderModel
-        .findOne({
-          user: userObjectId,
-          product: productObjectId,
-          status: orderSchema.OrderStatus.INIT,
-        })
-        .lean();
-      if (existingActive) {
-        throw new BadRequestException('You already have an active order for this product.');
-      }
-    }
+    // const initialStatus = dto.status ?? orderSchema.OrderStatus.INIT;
+    // if (
+    //   ![
+    //     orderSchema.OrderStatus.INIT,
+    //     orderSchema.OrderStatus.PAID,
+    //     orderSchema.OrderStatus.FAILED,
+    //   ].includes(initialStatus)
+    // ) {
+    //   throw new BadRequestException('Unsupported initial status');
+    // }
 
-    const orderId = this.generateOrderId();
-    const nextBill = this.calculateNextBillDate(billingMonths);
-    const expiry =
-      initialStatus === orderSchema.OrderStatus.PAID
-        ? this.calculateExpiry(new Date(), billingMonths)
-        : null;
-    const subscriptionStatus =
-      initialStatus === orderSchema.OrderStatus.PAID
-        ? SubscriptionStatus.Active
-        : initialStatus === orderSchema.OrderStatus.FAILED
-        ? SubscriptionStatus.Paused
-        : SubscriptionStatus.Pending;
+    // const shouldEnsureActive = initialStatus === orderSchema.OrderStatus.INIT;
+    // if (shouldEnsureActive) {
+    //   const existingActive = await this.orderModel
+    //     .findOne({
+    //       user: userObjectId,
+    //       product: productObjectId,
+    //       status: orderSchema.OrderStatus.INIT,
+    //     })
+    //     .lean();
+    //   if (existingActive) {
+    //     throw new BadRequestException('You already have an active order for this product.');
+    //   }
+    // }
 
-    try {
-      const doc = await this.orderModel.create({
-        user: userObjectId,
-        product: productObjectId,
-        status: initialStatus,
-        idempotencyKey: idempotencyKey ?? this.generateOrderId(),
-        orderId,
-        amount,
-        billPeriod,
-        tradingViewUsername, // <- use the variable we computed above
-        bankAccountName: dto.bankAccountName,
-        orderedAt: new Date(),
-        expiredAt: expiry,
-      });
+    // const orderId = this.generateOrderId();
+    // const nextBill = this.calculateNextBillDate(billingMonths);
+    // const expiry =
+    //   initialStatus === orderSchema.OrderStatus.PAID
+    //     ? this.calculateExpiry(new Date(), billingMonths)
+    //     : null;
+    // const subscriptionStatus =
+    //   initialStatus === orderSchema.OrderStatus.PAID
+    //     ? SubscriptionStatus.Active
+    //     : initialStatus === orderSchema.OrderStatus.FAILED
+    //     ? SubscriptionStatus.Paused
+    //     : SubscriptionStatus.Pending;
 
-      if (shouldEnsureActive) {
-        await this.subscriptionModel.create({
-          user: userObjectId,
-          product: productObjectId,
-          status: subscriptionStatus,
-          billPeriod,
-          nextBill,
-        });
-      }
+    // try {
+    //   const doc = await this.orderModel.create({
+    //     user: userObjectId,
+    //     product: productObjectId,
+    //     status: initialStatus,
+    //     idempotencyKey: idempotencyKey ?? this.generateOrderId(),
+    //     orderId,
+    //     amount,
+    //     billPeriod,
+    //     tradingViewUsername, // <- use the variable we computed above
+    //     bankAccountName: dto.bankAccountName,
+    //     orderedAt: new Date(),
+    //     expiredAt: expiry,
+    //   });
 
-      const orderObject = (doc as any).toObject ? (doc as any).toObject() : doc;
+    //   if (shouldEnsureActive) {
+    //     await this.subscriptionModel.create({
+    //       user: userObjectId,
+    //       product: productObjectId,
+    //       status: subscriptionStatus,
+    //       billPeriod,
+    //       nextBill,
+    //     });
+    //   }
 
-      try {
-        const recipients = await this.webPushSubService.getAdminIds();
-        if (recipients.length) {
-          const tinyPayload = {
-            title: 'New order request',
-            body: `Order ${orderId} placed by user ${userId}`,
-          };
-          await this.pushProducer.enqueueSendToUsers(recipients, tinyPayload, {
-            ttl: 3600,
-            chunkSize: 500,
-          });
-        }
-      } catch (e) {
-        console.warn(
-          '[OrderService.createUserRequestOrder] push enqueue failed:',
-          e,
-        );
-      }
+    //   const orderObject = (doc as any).toObject ? (doc as any).toObject() : doc;
 
-      return orderObject;
-    } catch (err: any) {
-      // Race condition protection: unique partial index violation
-      if (err?.code === 11000 && err?.keyPattern?.user && err?.keyPattern?.product) {
-        throw new BadRequestException(
-          'You already have an active order for this product.',
-        );
-      }
-      throw err;
-    }
+    //   try {
+    //     const recipients = await this.webPushSubService.getAdminIds();
+    //     if (recipients.length) {
+    //       const tinyPayload = {
+    //         title: 'New order request',
+    //         body: `Order ${orderId} placed by user ${userId}`,
+    //       };
+    //       await this.pushProducer.enqueueSendToUsers(recipients, tinyPayload, {
+    //         ttl: 3600,
+    //         chunkSize: 500,
+    //       });
+    //     }
+    //   } catch (e) {
+    //     console.warn(
+    //       '[OrderService.createUserRequestOrder] push enqueue failed:',
+    //       e,
+    //     );
+    //   }
+
+    //   return orderObject;
+    // } catch (err: any) {
+    //   // Race condition protection: unique partial index violation
+    //   if (err?.code === 11000 && err?.keyPattern?.user && err?.keyPattern?.product) {
+    //     throw new BadRequestException(
+    //       'You already have an active order for this product.',
+    //     );
+    //   }
+    //   throw err;
+    // }
   }
 
 
