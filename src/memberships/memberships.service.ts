@@ -17,6 +17,7 @@ import { MembershipAccountType, MembershipDocument, MembershipStatus } from './m
 import { Referral } from './referral.schema';
 import { MembershipIpBlacklist, MembershipIpBlacklistDocument } from './membership-ip-blacklist.schema';
 import { Subscription, SubscriptionDocument, SubscriptionStatus } from 'src/subscriptions/subscriptions.schema';
+import { Product } from 'src/products/product.schema';
 
 export type ReferralWithOwner = Referral & {
     owner: Pick<User, 'firstName' | 'lastName'>;
@@ -558,7 +559,7 @@ export class MembershipsService {
             this.deny('not_found', { maskedKey, accountLogin, ip, ua });
         }
 
-        await this.ensureLicenseRequiredSubscription(membership, {
+        await this.ensureLicenseRequiredSubscription(membership?.user?.toString(), {
             maskedKey,
             accountLogin,
             ip,
@@ -630,26 +631,50 @@ export class MembershipsService {
         return new Promise<void>((resolve) => setTimeout(resolve, ms));
     }
 
+
+
     private async ensureLicenseRequiredSubscription(
-        membership: membershipsSchema.MembershipDocument,
+        userId: string,
         ctx: Record<string, any>,
     ) {
-        const query: FilterQuery<SubscriptionDocument> = {
-            user: membership.user as unknown as Types.ObjectId,
-            status: SubscriptionStatus.Active,
-        };
+        console.log("============s-------------------userId", userId)
+
         const subscription = await this.subscriptionModel
-            .findOne(query)
-            .populate('product', '_id name requiresLicenseKey')
-            .lean();
+            .aggregate<(Subscription & { product: Product })[]>([
+                {
+                    $match: {
+                        user: userId,
+                        status: SubscriptionStatus.Active, // active only
+                    },
+                },
+                {
+                    $lookup: {
+                        from: 'products',
+                        localField: 'product',
+                        foreignField: '_id',
+                        as: 'product',
+                    },
+                },
+                { $unwind: '$product' },
+                {
+                    $match: {
+                        'product.requiresLicenseKey': true,
+                    },
+                },
+                { $limit: 1 },
+            ])
+            .exec();
+
+
+
         console.log("============s-------------------subscription", subscription)
-        const product: any = subscription?.product;
-        if (!subscription || !product?.requiresLicenseKey) {
+
+        if (!subscription) {
             this.deny('subscription_not_active', ctx);
         }
 
         this.logger.log(
-            `[Memberships.activate] license subscription ok | sub=${subscription._id} | product=${product._id} (${product.name}) | user=${membership.user}`,
+            `[Memberships.activate] license subscription ok`,
         );
     }
 }
