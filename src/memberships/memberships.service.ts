@@ -639,9 +639,7 @@ export class MembershipsService {
             status: SubscriptionStatus.Active,
         };
 
-        if (membership.subscription) {
-            query._id = membership.subscription as Types.ObjectId;
-        }
+      
 
         const subscription = await this.subscriptionModel
             .findOne(query)
