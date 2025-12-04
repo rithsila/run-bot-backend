@@ -96,7 +96,6 @@ export class MembershipsService {
     }
 
     async requestJoin(dto: JoinMembershipDto, currentUserId?: string) {
-        return
         if (!currentUserId) throw new BadRequestException('USER_REQUIRED');
 
         const user = await this.userModel.findById(currentUserId);
@@ -179,149 +178,148 @@ export class MembershipsService {
     }
 
     async appeal(userId: string, dto: JoinMembershipDto) {
-        return
-        // const membership = await this.membershipModel
-        //     .findOne({ user: new Types.ObjectId(userId) })
-        //     .populate('user')
-        //     .exec();
+        const membership = await this.membershipModel
+            .findOne({ user: new Types.ObjectId(userId) })
+            .populate('user')
+            .exec();
 
-        // if (!membership) throw new NotFoundException('MEMBERSHIP_NOT_FOUND');
+        if (!membership) throw new NotFoundException('MEMBERSHIP_NOT_FOUND');
 
-        // if (
-        //     membership.status !== membershipsSchema.MembershipStatus.Rejected &&
-        //     membership.status !== membershipsSchema.MembershipStatus.Ended &&
-        //     membership.status !== membershipsSchema.MembershipStatus.Verified
-        // ) {
-        //     throw new ForbiddenException('APPEAL_NOT_ALLOWED');
-        // }
+        if (
+            membership.status !== membershipsSchema.MembershipStatus.Rejected &&
+            membership.status !== membershipsSchema.MembershipStatus.Ended &&
+            membership.status !== membershipsSchema.MembershipStatus.Verified
+        ) {
+            throw new ForbiddenException('APPEAL_NOT_ALLOWED');
+        }
 
-        // // normalize incoming fields
-        // const emailProvided = Object.prototype.hasOwnProperty.call(dto, 'email');
-        // const email =
-        //     typeof dto.email === 'string' ? dto.email.trim().toLowerCase() : undefined;
+        // normalize incoming fields
+        const emailProvided = Object.prototype.hasOwnProperty.call(dto, 'email');
+        const email =
+            typeof dto.email === 'string' ? dto.email.trim().toLowerCase() : undefined;
 
-        // const accountsProvided = Object.prototype.hasOwnProperty.call(
-        //     dto,
-        //     'accounts',
-        // );
+        const accountsProvided = Object.prototype.hasOwnProperty.call(
+            dto,
+            'accounts',
+        );
 
-        // // 🔹 normalize accounts only if provided
-        // const accountStrings = accountsProvided ? normalizeAccounts(dto.accounts) : undefined;
+        // 🔹 normalize accounts only if provided
+        const accountStrings = accountsProvided ? normalizeAccounts(dto.accounts) : undefined;
 
-        // const referralProvided = Object.prototype.hasOwnProperty.call(
-        //     dto,
-        //     'referral',
-        // );
-        // const referral = dto.referral; // validated MongoId string or undefined
+        const referralProvided = Object.prototype.hasOwnProperty.call(
+            dto,
+            'referral',
+        );
+        const referral = dto.referral; // validated MongoId string or undefined
 
-        // // If email is provided, validate
-        // if (emailProvided) {
-        //     if (!email) {
-        //         // email is required by schema; don't allow clearing it
-        //         throw new BadRequestException('EMAIL_REQUIRED');
-        //     }
-        //     const dup = await this.membershipModel
-        //         .findOne({ email, _id: { $ne: membership._id } })
-        //         .lean()
-        //         .exec();
-        //     if (dup) {
-        //         throw new ConflictException(
-        //             'A membership with this email already exists.',
-        //         );
-        //     }
-        //     membership.email = email;
-        // }
+        // If email is provided, validate
+        if (emailProvided) {
+            if (!email) {
+                // email is required by schema; don't allow clearing it
+                throw new BadRequestException('EMAIL_REQUIRED');
+            }
+            const dup = await this.membershipModel
+                .findOne({ email, _id: { $ne: membership._id } })
+                .lean()
+                .exec();
+            if (dup) {
+                throw new ConflictException(
+                    'A membership with this email already exists.',
+                );
+            }
+            membership.email = email;
+        }
 
-        // if (accountsProvided) {
-        //     // 🔹 enforce at least one account if user is trying to change them
-        //     if (!accountStrings || accountStrings.length === 0) {
-        //         throw new BadRequestException('AT_LEAST_ONE_ACCOUNT_REQUIRED');
-        //     }
+        if (accountsProvided) {
+            // 🔹 enforce at least one account if user is trying to change them
+            if (!accountStrings || accountStrings.length === 0) {
+                throw new BadRequestException('AT_LEAST_ONE_ACCOUNT_REQUIRED');
+            }
 
-        //     // 🔹 map existing accounts by account string
-        //     const existingByAccount = new Map<string, MembershipAccountType>(
-        //         (membership.accounts ?? []).map(acc => [acc.account, acc]),
-        //     );
+            // 🔹 map existing accounts by account string
+            const existingByAccount = new Map<string, MembershipAccountType>(
+                (membership.accounts ?? []).map(acc => [acc.account, acc]),
+            );
 
-        //     const nextAccounts: MembershipAccountType[] = [];
+            const nextAccounts: MembershipAccountType[] = [];
 
-        //     for (const acc of accountStrings) {
-        //         const existing = existingByAccount.get(acc);
+            for (const acc of accountStrings) {
+                const existing = existingByAccount.get(acc);
 
-        //         if (existing) {
-        //             // ✅ keep admin’s isVerified value and existing _id
-        //             nextAccounts.push(existing);
-        //         } else {
-        //             // ✅ new account: default isVerified = false
-        //             nextAccounts.push({
-        //                 account: acc,
-        //                 isVerified: false,
-        //             } as MembershipAccountType);
-        //         }
-        //     }
+                if (existing) {
+                    // ✅ keep admin’s isVerified value and existing _id
+                    nextAccounts.push(existing);
+                } else {
+                    // ✅ new account: default isVerified = false
+                    nextAccounts.push({
+                        account: acc,
+                        isVerified: false,
+                    } as MembershipAccountType);
+                }
+            }
 
-        //     // 🔹 replace membership.accounts with merged list
-        //     membership.accounts = nextAccounts;
-        // }
+            // 🔹 replace membership.accounts with merged list
+            membership.accounts = nextAccounts;
+        }
 
-        // // ✅ Allow updating referral on appeal
-        // if (referralProvided) {
-        //     if (referral) {
-        //         membership.referral = referral as any; // Mongoose will cast string -> ObjectId
-        //     } else {
-        //         membership.referral = undefined;
-        //     }
-        // }
+        // ✅ Allow updating referral on appeal
+        if (referralProvided) {
+            if (referral) {
+                membership.referral = referral as any; // Mongoose will cast string -> ObjectId
+            } else {
+                membership.referral = undefined;
+            }
+        }
 
-        // if (Object.prototype.hasOwnProperty.call(dto, 'notes')) {
-        //     membership.notes = dto.notes?.trim() || undefined;
-        // }
+        if (Object.prototype.hasOwnProperty.call(dto, 'notes')) {
+            membership.notes = dto.notes?.trim() || undefined;
+        }
 
-        // // Reset status/admin note for re-review
-        // membership.status = membershipsSchema.MembershipStatus.Request;
-        // membership.adminNotes = undefined;
+        // Reset status/admin note for re-review
+        membership.status = membershipsSchema.MembershipStatus.Request;
+        membership.adminNotes = undefined;
 
-        // try {
-        //     try {
-        //         const tinyPayload = {
-        //             title: 'Appeal membership request',
-        //             body: `${membership?.user?.firstName} ${membership?.user?.lastName} just asked to Appeal`,
-        //         };
+        try {
+            try {
+                const tinyPayload = {
+                    title: 'Appeal membership request',
+                    body: `${membership?.user?.firstName} ${membership?.user?.lastName} just asked to Appeal`,
+                };
 
-        //         let excludeId: Types.ObjectId | null = null;
-        //         const maybeAuthorId = (dto as any)?.authorId;
+                let excludeId: Types.ObjectId | null = null;
+                const maybeAuthorId = (dto as any)?.authorId;
 
-        //         if (maybeAuthorId) {
-        //             try {
-        //                 excludeId = new Types.ObjectId(String(maybeAuthorId));
-        //             } catch {
-        //                 /* ignore bad id */
-        //             }
-        //         }
+                if (maybeAuthorId) {
+                    try {
+                        excludeId = new Types.ObjectId(String(maybeAuthorId));
+                    } catch {
+                        /* ignore bad id */
+                    }
+                }
 
-        //         const recipients = await this.webPushSubService.getAdminIds();
+                const recipients = await this.webPushSubService.getAdminIds();
 
-        //         if (recipients.length) {
-        //             await this.pushProducer.enqueueSendToUsers(recipients, tinyPayload, {
-        //                 ttl: 3600,
-        //                 chunkSize: 500,
-        //             });
-        //         }
-        //     } catch (e) {
-        //         console.warn('[AnalyzeNews.create] push enqueue failed:', e);
-        //     }
+                if (recipients.length) {
+                    await this.pushProducer.enqueueSendToUsers(recipients, tinyPayload, {
+                        ttl: 3600,
+                        chunkSize: 500,
+                    });
+                }
+            } catch (e) {
+                console.warn('[AnalyzeNews.create] push enqueue failed:', e);
+            }
 
-        //     await membership.save();
+            await membership.save();
 
-        //     return this.membershipModel.findById(membership._id).lean().exec();
-        // } catch (err: any) {
-        //     if (err?.code === 11000) {
-        //         throw new ConflictException(
-        //             'A membership with this email already exists.',
-        //         );
-        //     }
-        //     throw err;
-        // }
+            return this.membershipModel.findById(membership._id).lean().exec();
+        } catch (err: any) {
+            if (err?.code === 11000) {
+                throw new ConflictException(
+                    'A membership with this email already exists.',
+                );
+            }
+            throw err;
+        }
     }
 
     async paginate(
@@ -649,7 +647,7 @@ export class MembershipsService {
         }
 
         const checkIsRequiresLicenseKey = subscription.find(sub => sub?.product?.requiresLicenseKey === true)
-        console.log("=========================checkIsRequiresLicenseKey: ", checkIsRequiresLicenseKey)
+        // console.log("=========================checkIsRequiresLicenseKey: ", checkIsRequiresLicenseKey)
         if (!checkIsRequiresLicenseKey) {
             this.deny('product_not_license', ctx);
         }
