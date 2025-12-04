@@ -638,33 +638,37 @@ export class MembershipsService {
         userId: PublicUser,
         ctx: Record<string, any>,
     ) {
-        console.log("============s-------------------userId", userId)
 
-        const subscription = await this.subscriptionModel
-            .aggregate<(Subscription & { product: Product })[]>([
-                {
-                    $match: {
-                        user: userId,
-                        status: SubscriptionStatus.Active, // active only
-                    },
-                },
-                {
-                    $lookup: {
-                        from: 'products',
-                        localField: 'product',
-                        foreignField: '_id',
-                        as: 'product',
-                    },
-                },
-                { $unwind: '$product' },
-                {
-                    $match: {
-                        'product.requiresLicenseKey': true,
-                    },
-                },
-                { $limit: 1 },
-            ])
-            .exec();
+        console.log("============s-------------------userId", userId?._id)
+        const subscription = await this.subscriptionModel.findOne({
+            user: userId?._id,
+            status: SubscriptionStatus.Active
+        })
+        // const subscription = await this.subscriptionModel
+        //     .aggregate<(Subscription & { product: Product })[]>([
+        //         {
+        //             $match: {
+        //                 user: userId?._id,
+        //                 status: SubscriptionStatus.Active, // active only
+        //             },
+        //         },
+        //         {
+        //             $lookup: {
+        //                 from: 'products',
+        //                 localField: 'product',
+        //                 foreignField: '_id',
+        //                 as: 'product',
+        //             },
+        //         },
+        //         { $unwind: '$product' },
+        //         {
+        //             $match: {
+        //                 'product.requiresLicenseKey': true,
+        //             },
+        //         },
+        //         { $limit: 1 },
+        //     ])
+        //     .exec();
 
 
 
