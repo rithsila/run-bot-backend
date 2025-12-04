@@ -527,7 +527,6 @@ export class MembershipsService {
         const key = dto.key?.trim();
         const accountLogin = String(dto.accountLogin ?? '').trim();
         const maskedKey = key ? `${key.slice(0, 4)}***` : undefined; // don't log full key
-
         // Initial attempt log
         this.logger.log(
             `Activation attempt | key=${maskedKey ?? 'N/A'} | account=${accountLogin || 'N/A'} | ip=${ip ?? 'N/A'}`,
@@ -559,58 +558,30 @@ export class MembershipsService {
             this.deny('not_found', { maskedKey, accountLogin, ip, ua });
         }
 
-        // await this.ensureActiveSubscription(membership.user as unknown as Types.ObjectId);
+        await this.ensureLicenseRequiredSubscription(membership, {
+            maskedKey,
+            accountLogin,
+            ip,
+            ua,
+            membershipId: String(membership._id),
+        });
 
-        // ✅ Only allow Verified status
-        const allowedStatuses = [membershipsSchema.MembershipStatus.Verified];
-
-        if (!allowedStatuses.includes(membership.status)) {
-            this.logger.warn(
-                `Activation denied: invalid status | status=${membership.status} | key=${maskedKey} | account=${accountLogin}`,
-            );
-
-            if (membership.status === membershipsSchema.MembershipStatus.Request) {
-                this.deny('pending', {
-                    maskedKey,
-                    accountLogin,
-                    ip,
-                    ua,
-                    membershipId: String(membership._id),
-                });
-            } else if (membership.status === membershipsSchema.MembershipStatus.Rejected) {
-                this.deny('rejected', {
-                    maskedKey,
-                    accountLogin,
-                    ip,
-                    ua,
-                    membershipId: String(membership._id),
-                });
-            } else if (membership.status === membershipsSchema.MembershipStatus.Ended) {
-                this.deny('ended', {
-                    maskedKey,
-                    accountLogin,
-                    ip,
-                    ua,
-                    membershipId: String(membership._id),
-                });
-            } else {
-                this.deny('membership_not_active', {
-                    maskedKey,
-                    accountLogin,
-                    ip,
-                    ua,
-                    membershipId: String(membership._id),
-                });
-            }
+        if (membership.status !== membershipsSchema.MembershipStatus.Verified) {
+            this.deny('membership_not_verified', {
+                maskedKey,
+                accountLogin,
+                ip,
+                ua,
+                membershipId: String(membership._id),
+            });
         }
 
         // 🔍 Require account in membership.accounts with isVerified = true
         const accounts = Array.isArray(membership.accounts) ? membership.accounts : [];
 
-        const accountDoc = accounts.find((a) => a.account === accountLogin);
+        const accountDoc = accounts.find((a) => a.account === accountLogin && a.isVerified);
 
-        if (!accountDoc || accountDoc.isVerified !== true) {
-            // Either not found or not verified
+        if (!accountDoc) {
             this.deny('account_not_verified', {
                 maskedKey,
                 accountLogin,
@@ -655,24 +626,35 @@ export class MembershipsService {
         };
     }
 
-    private async ensureActiveSubscription(userId: Types.ObjectId) {
-        const protectedProducts = [
-            new Types.ObjectId('6921845757d3a0afb862318c'),
-            new Types.ObjectId('692183ad57d3a0afb8623144'),
-        ];
-
-        const active = await this.subscriptionModel.exists({
-            user: userId,
-            product: { $in: protectedProducts },
-            status: SubscriptionStatus.Active,
-        });
-
-        if (!active) {
-            this.deny('subscription_not_active', { membershipId: String(userId) });
-        }
-    }
-
     private delayMs(ms: number) {
         return new Promise<void>((resolve) => setTimeout(resolve, ms));
+    }
+
+    private async ensureLicenseRequiredSubscription(
+        membership: membershipsSchema.MembershipDocument,
+        ctx: Record<string, any>,
+    ) {
+        const query: FilterQuery<SubscriptionDocument> = {
+            user: membership.user as unknown as Types.ObjectId,
+            status: SubscriptionStatus.Active,
+        };
+
+        if (membership.subscription) {
+            query._id = membership.subscription as Types.ObjectId;
+        }
+
+        const subscription = await this.subscriptionModel
+            .findOne(query)
+            .populate('product', '_id name requiresLicenseKey')
+            .lean();
+
+        const product: any = subscription?.product;
+        if (!subscription || !product?.requiresLicenseKey) {
+            this.deny('subscription_not_active', ctx);
+        }
+
+        this.logger.log(
+            `[Memberships.activate] license subscription ok | sub=${subscription._id} | product=${product._id} (${product.name}) | user=${membership.user}`,
+        );
     }
 }

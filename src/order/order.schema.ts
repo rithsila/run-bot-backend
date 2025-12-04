@@ -2,6 +2,7 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { Document, PaginateModel, Types } from 'mongoose';
 import paginate from 'mongoose-paginate-v2';
+import { BillPeriod } from 'src/products/product.schema';
 
 export type OrderDocument = Order & Document;
 export type OrderPaginateModel = PaginateModel<OrderDocument>;
@@ -40,26 +41,17 @@ export class Order {
   @Prop({ type: String, required: true, unique: true, trim: true })
   orderId!: string;
 
-  @Prop({ type: Number, required: true, min: 1 })
-  billingPeriod!: number;
+  @Prop({ type: String, enum: Object.values(BillPeriod), required: true })
+  billPeriod!: BillPeriod;
 
   @Prop({ type: Number, required: true, min: 0 })
   amount!: number;
 
-  @Prop({ type: String, trim: true, index: true })
-  couponCode?: string;
-
-  @Prop({ type: Number, min: 0, max: 100, default: 0 })
-  discount!: number;
-
-  @Prop({ type: Types.ObjectId, ref: 'User', index: true })
-  affiliate?: Types.ObjectId;
-
-  @Prop({ type: String, trim: true })
-  tvUsernameAck?: string;
-
   @Prop({ type: String, required: true, trim: true, maxlength: 120 })
   bankAccountName!: string;
+
+  @Prop({ type: String, trim: true, maxlength: 120 })
+  tradingViewUsername?: string;
 
   @Prop({ type: Date, default: Date.now })
   orderedAt!: Date;

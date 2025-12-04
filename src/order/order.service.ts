@@ -4,14 +4,13 @@ import { InjectModel } from '@nestjs/mongoose';
 import { FilterQuery, Model, PaginateOptions, PaginateResult, Types } from 'mongoose';
 import { UserCreateOrderDto } from './dto/user-create-order.dto';
 import * as orderSchema from './order.schema';
-import { Product, ProductDocument, ProductStatus } from 'src/marketplace/product.schema';
-import { Coupon, CouponDocument, CouponStatus } from 'src/coupons/coupon.schema';
 import { Subscription, SubscriptionDocument, SubscriptionStatus } from 'src/subscriptions/subscriptions.schema';
 import { PaginateOrdersDto } from './dto/paginate-orders.dto';
 import { UpdateOrderStatusDto } from './dto/update-order-status.dto';
 import { User, UserDocument } from 'src/user/user.schema';
 import { PushProducer } from 'src/queue/push.producer';
 import { WebPushSubService } from 'src/web-push-sub/web-push-sub.service';
+import { BillPeriod, Product, ProductDocument } from 'src/products/product.schema';
 
 @Injectable()
 export class OrderService {
@@ -20,8 +19,6 @@ export class OrderService {
     private readonly orderModel: orderSchema.OrderPaginateModel,
     @InjectModel(Product.name)
     private readonly productModel: Model<ProductDocument>,
-    @InjectModel(Coupon.name)
-    private readonly couponModel: Model<CouponDocument>,
     @InjectModel(Subscription.name)
     private readonly subscriptionModel: Model<SubscriptionDocument>,
     @InjectModel(User.name)
@@ -46,86 +43,97 @@ export class OrderService {
       if (existingByIdem) return existingByIdem;
     }
 
-    // --- 2) Enforce one ACTIVE (INIT/UNPAID) order per user+product ---
-    const activeStatuses = [orderSchema.OrderStatus.INIT, orderSchema.OrderStatus.UNPAID] as const;
-
-    const existingActive = await this.orderModel
-      .findOne({
-        user: userObjectId,
-        product: productObjectId,
-        status: { $in: activeStatuses },
-      })
-      .lean();
-    console.log("--------existingActive", existingActive)
-    if (existingActive) {
-      // You can customize this message / code
-      throw new BadRequestException(
-        'You already have an active order for this product.',
-      );
-    }
-    console.log("---------------- can create order")
     // --- 3) Product ---
     const product = await this.productModel.findById(dto.product).lean();
     if (!product) throw new NotFoundException('Product not found');
-    if (product.status !== ProductStatus.Active) {
-      throw new BadRequestException('Product is not available for ordering');
+
+    const billPeriod = dto.billPeriod;
+    const billingMonths = this.mapBillPeriodToMonths(billPeriod);
+    const amount = Number(dto.amount);
+    if (Number.isNaN(amount) || amount < 0) {
+      throw new BadRequestException('Invalid amount');
     }
 
-    // --- 4) Coupon (optional) ---
-    let couponPercent = 0;
-    let affiliateUserId: Types.ObjectId | undefined;
-    let couponCodeToSave: string | undefined;
+    // --- 4) TradingView username: conditional requirement ---
+    let tradingViewUsername: string | undefined = undefined;
 
-    if (dto.couponCode && dto.couponCode.trim() !== '') {
-      const code = dto.couponCode.trim().toUpperCase();
-      const coupon = await this.couponModel.findOne({ code }).lean();
-
-      if (!coupon) {
-        throw new BadRequestException('Invalid coupon code');
+    if (product.requireTradingViewUsername) {
+      // for this product TradingView username IS required
+      const tv = dto.tradingViewUsername?.trim();
+      if (!tv) {
+        throw new BadRequestException('TradingView username is required for this product');
       }
-      if (coupon.status !== CouponStatus.Active) {
-        throw new BadRequestException('Coupon is not active');
-      }
-
-      couponPercent = Math.max(0, Math.min(100, Number(coupon.percent) || 0));
-      couponCodeToSave = coupon.code;
-
-      if (coupon.createdBy) {
-        affiliateUserId = new Types.ObjectId(coupon.createdBy);
+      tradingViewUsername = tv;
+    } else {
+      // not required; if provided, trim and store, otherwise ignore
+      if (typeof dto.tradingViewUsername === 'string') {
+        const tv = dto.tradingViewUsername.trim();
+        tradingViewUsername = tv.length > 0 ? tv : undefined;
       }
     }
 
-    // --- 5) Amount & billingPeriod ---
-    const basePrice = Number(product.pricing) || 0;
-    const amount = Number((basePrice * (1 - couponPercent / 100)).toFixed(2));
-    const billingPeriod = Number(product.billingPeriod) || 1;
+    const initialStatus = dto.status ?? orderSchema.OrderStatus.INIT;
+    if (
+      ![
+        orderSchema.OrderStatus.INIT,
+        orderSchema.OrderStatus.PAID,
+        orderSchema.OrderStatus.FAILED,
+      ].includes(initialStatus)
+    ) {
+      throw new BadRequestException('Unsupported initial status');
+    }
+
+    const shouldEnsureActive = initialStatus === orderSchema.OrderStatus.INIT;
+    if (shouldEnsureActive) {
+      const existingActive = await this.orderModel
+        .findOne({
+          user: userObjectId,
+          product: productObjectId,
+          status: orderSchema.OrderStatus.INIT,
+        })
+        .lean();
+      if (existingActive) {
+        throw new BadRequestException('You already have an active order for this product.');
+      }
+    }
 
     const orderId = this.generateOrderId();
-    const nextBill = this.calculateNextBillDate(billingPeriod);
+    const nextBill = this.calculateNextBillDate(billingMonths);
+    const expiry =
+      initialStatus === orderSchema.OrderStatus.PAID
+        ? this.calculateExpiry(new Date(), billingMonths)
+        : null;
+    const subscriptionStatus =
+      initialStatus === orderSchema.OrderStatus.PAID
+        ? SubscriptionStatus.Active
+        : initialStatus === orderSchema.OrderStatus.FAILED
+        ? SubscriptionStatus.Paused
+        : SubscriptionStatus.Pending;
 
     try {
       const doc = await this.orderModel.create({
         user: userObjectId,
         product: productObjectId,
-        status: orderSchema.OrderStatus.INIT,
+        status: initialStatus,
         idempotencyKey: idempotencyKey ?? this.generateOrderId(),
         orderId,
         amount,
-        billingPeriod,
-        couponCode: couponCodeToSave,
-        discount: couponPercent,
-        affiliate: affiliateUserId,
-        tvUsernameAck: dto.tvUsernameAck?.trim() || undefined,
+        billPeriod,
+        tradingViewUsername, // <- use the variable we computed above
         bankAccountName: dto.bankAccountName,
         orderedAt: new Date(),
+        expiredAt: expiry,
       });
 
-      await this.subscriptionModel.create({
-        user: userObjectId,
-        product: productObjectId,
-        status: SubscriptionStatus.Pending,
-        nextBill,
-      });
+      if (shouldEnsureActive) {
+        await this.subscriptionModel.create({
+          user: userObjectId,
+          product: productObjectId,
+          status: subscriptionStatus,
+          billPeriod,
+          nextBill,
+        });
+      }
 
       const orderObject = (doc as any).toObject ? (doc as any).toObject() : doc;
 
@@ -142,7 +150,10 @@ export class OrderService {
           });
         }
       } catch (e) {
-        console.warn('[OrderService.createUserRequestOrder] push enqueue failed:', e);
+        console.warn(
+          '[OrderService.createUserRequestOrder] push enqueue failed:',
+          e,
+        );
       }
 
       return orderObject;
@@ -156,6 +167,7 @@ export class OrderService {
       throw err;
     }
   }
+
 
   async paginate(dto: PaginateOrdersDto): Promise<PaginateResult<orderSchema.OrderDocument>> {
     const { q, status, page = 1, limit = 20 } = dto;
@@ -209,7 +221,7 @@ export class OrderService {
       leanWithId: false,
       populate: [
         { path: 'user', select: '_id firstName lastName email' },
-        { path: 'product', select: 'name pricing billingPeriod' },
+        { path: 'product', select: 'name billPeriod' },
       ],
     };
 
@@ -239,7 +251,7 @@ export class OrderService {
     const order = await this.orderModel
       .findById(orderId)
       .populate('user', '_id firstName lastName email')
-      .populate('product', 'name pricing billingPeriod')
+      .populate('product', 'name billPeriod')
       .lean()
       .exec();
 
@@ -254,7 +266,7 @@ export class OrderService {
     if (!Types.ObjectId.isValid(String(userId)) || !Types.ObjectId.isValid(String(productId))) {
       throw new NotFoundException('Order not found');
     }
-  
+
     const order = await this.orderModel
       .find({
         user: new Types.ObjectId(userId),
@@ -297,9 +309,10 @@ export class OrderService {
       throw new NotFoundException('Order not found');
     }
 
+    const billMonths = this.mapBillPeriodToMonths(existing.billPeriod as BillPeriod);
     const expiry =
       dto.status === orderSchema.OrderStatus.PAID
-        ? this.calculateExpiry(existing.orderedAt ?? new Date(), existing.billingPeriod)
+        ? this.calculateExpiry(existing.orderedAt ?? new Date(), billMonths)
         : null;
 
     const updatePayload: any = { status: dto.status, expiredAt: expiry };
@@ -314,7 +327,7 @@ export class OrderService {
         { new: true, runValidators: true },
       )
       .populate('user', '_id firstName lastName email')
-      .populate('product', 'name pricing billingPeriod')
+      .populate('product', 'name billPeriod')
       .lean()
       .exec();
 
@@ -339,7 +352,7 @@ export class OrderService {
 
     const subUpdate: Partial<SubscriptionDocument> = { status: targetStatus };
     if (targetStatus === SubscriptionStatus.Active) {
-      const nextBill = this.calculateNextBillDate(existing.billingPeriod ?? 1);
+      const nextBill = this.calculateNextBillDate(billMonths);
       (subUpdate as any).nextBill = nextBill;
     }
 
@@ -362,9 +375,11 @@ export class OrderService {
   }
 
   private calculateNextBillDate(billingPeriod: number): Date {
-    const monthsToAdd = Math.max(1, Math.floor(billingPeriod));
+    if (billingPeriod <= 0) {
+      return new Date('9999-12-31T00:00:00.000Z');
+    }
     const next = new Date();
-    next.setMonth(next.getMonth() + monthsToAdd);
+    next.setMonth(next.getMonth() + billingPeriod);
     return next;
   }
 
@@ -373,9 +388,28 @@ export class OrderService {
   }
 
   private calculateExpiry(startDate: Date, billingPeriod: number): Date {
+    if (billingPeriod <= 0) {
+      return new Date('9999-12-31T00:00:00.000Z');
+    }
     const start = new Date(startDate);
-    const monthsToAdd = Math.max(1, Math.floor(billingPeriod));
-    start.setMonth(start.getMonth() + monthsToAdd);
+    start.setMonth(start.getMonth() + billingPeriod);
     return start;
+  }
+
+  private mapBillPeriodToMonths(period: BillPeriod): number {
+    switch (period) {
+      case BillPeriod.MONTH:
+        return 1;
+      case BillPeriod.THREE_MONTHS:
+        return 3;
+      case BillPeriod.SIX_MONTHS:
+        return 6;
+      case BillPeriod.YEAR:
+        return 12;
+      case BillPeriod.LIFETIME:
+      case BillPeriod.ONE_TIME:
+      default:
+        return 0;
+    }
   }
 }

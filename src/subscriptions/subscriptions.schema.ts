@@ -1,6 +1,7 @@
 // src/subscriptions/subscriptions.schema.ts
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { HydratedDocument, Types } from 'mongoose';
+import { BillPeriod } from 'src/products/product.schema';
 
 export type SubscriptionDocument = HydratedDocument<Subscription>;
 
@@ -32,6 +33,9 @@ export class Subscription {
 
   @Prop({ type: String, maxlength: 5000 })
   notes?: string;
+
+  @Prop({ type: String, enum: Object.values(BillPeriod), required: true })
+  billPeriod!: BillPeriod;
 }
 
 export const SubscriptionSchema = SchemaFactory.createForClass(Subscription);

@@ -47,10 +47,10 @@ import { QueueModule } from './queue/queue.module';
 import { RolesGuard } from './auth/guard/roles.guard';
 import { RetailerModule } from './retailer/retailer.module';
 import { ScheduleModule } from '@nestjs/schedule';
-import { MarketplaceModule } from './marketplace/marketplace.module';
 import { OrderModule } from './order/order.module';
 import { SubscriptionsModule } from './subscriptions/subscriptions.module';
 import { StorageModule } from './storage/storage.module';
+import { ProductsModule } from './products/products.module';
 
 @Module({
   imports: [
@@ -168,10 +168,10 @@ import { StorageModule } from './storage/storage.module';
     CouponsModule,
     QueueModule,
     RetailerModule,
-    MarketplaceModule,
     OrderModule,
     SubscriptionsModule,
     StorageModule,
+    ProductsModule,
   ],
 
   controllers: [AppController],
