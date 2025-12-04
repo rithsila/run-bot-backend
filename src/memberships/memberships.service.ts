@@ -646,7 +646,7 @@ export class MembershipsService {
             this.deny('subscription_not_active', ctx);
         }
 
-        const checkIsRequiresLicenseKey = subscription.filter(sub => sub?.product?.requiresLicenseKey === true)
+        const checkIsRequiresLicenseKey = subscription.find(sub => sub?.product?.requiresLicenseKey === true)
         console.log("=========================checkIsRequiresLicenseKey: ", checkIsRequiresLicenseKey)
         if (!checkIsRequiresLicenseKey) {
             this.deny('product_not_license', ctx);
