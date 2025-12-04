@@ -38,7 +38,7 @@ export class SubscriptionsController {
     if (!userId || !productId) {
       throw new BadRequestException('user and product are required');
     }
-  
+
     return this.subscriptions.findByUserAndProduct(userId, productId);
   }
 }

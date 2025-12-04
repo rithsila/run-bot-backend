@@ -11,14 +11,13 @@ export class SubscriptionsService {
   ) { }
 
   async getByUser(userId: string | Types.ObjectId) {
-    const sub = await this.subscriptionModel.updateMany({ product: "692183ad57d3a0afb8623144" }, { product: new Types.ObjectId('69310b4e28c138ae8248e5f7') })
+
     if (!Types.ObjectId.isValid(String(userId))) {
       throw new BadRequestException('INVALID_USER_ID');
     }
-
     return this.subscriptionModel
       .find({ user: new Types.ObjectId(userId) })
-      .populate('product', 'name pricing billPeriod lifetime')
+      .populate('product', 'name pricing billPeriod description')
       .lean()
       .exec();
   }
