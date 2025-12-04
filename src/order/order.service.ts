@@ -296,7 +296,7 @@ export class OrderService {
       throw new NotFoundException('Subscription not found');
     }
 
-    return this.getOrderByUserAndProduct(subscription.user, subscription.product);
+    return  null
   }
 
   async updateOrderStatus(orderId: string, dto: UpdateOrderStatusDto, updatedBy?: string) {
