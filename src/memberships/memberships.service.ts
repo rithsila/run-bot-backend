@@ -18,6 +18,7 @@ import { Referral } from './referral.schema';
 import { MembershipIpBlacklist, MembershipIpBlacklistDocument } from './membership-ip-blacklist.schema';
 import { Subscription, SubscriptionDocument, SubscriptionStatus } from 'src/subscriptions/subscriptions.schema';
 import { Product } from 'src/products/product.schema';
+import { PublicUser } from 'src/common/types/public-user.type';
 
 export type ReferralWithOwner = Referral & {
     owner: Pick<User, 'firstName' | 'lastName'>;
@@ -559,7 +560,7 @@ export class MembershipsService {
             this.deny('not_found', { maskedKey, accountLogin, ip, ua });
         }
 
-        await this.ensureLicenseRequiredSubscription(membership?.user?.toString(), {
+        await this.ensureLicenseRequiredSubscription(membership?.user as unknown as PublicUser, {
             maskedKey,
             accountLogin,
             ip,
@@ -634,7 +635,7 @@ export class MembershipsService {
 
 
     private async ensureLicenseRequiredSubscription(
-        userId: string,
+        userId: PublicUser,
         ctx: Record<string, any>,
     ) {
         console.log("============s-------------------userId", userId)
