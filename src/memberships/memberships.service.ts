@@ -642,7 +642,7 @@ export class MembershipsService {
             .findOne(query)
             .populate('product', '_id name requiresLicenseKey')
             .lean();
-
+        console.log("============s-------------------subscription", subscription)
         const product: any = subscription?.product;
         if (!subscription || !product?.requiresLicenseKey) {
             this.deny('subscription_not_active', ctx);
