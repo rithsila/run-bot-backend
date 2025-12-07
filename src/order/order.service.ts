@@ -32,7 +32,7 @@ export class OrderService {
     dto: UserCreateOrderDto,
     idempotencyKey?: string | null,
   ) {
-   
+
 
     const userObjectId = new Types.ObjectId(userId);
     const productObjectId = new Types.ObjectId(dto.product);
@@ -86,18 +86,6 @@ export class OrderService {
     }
 
     const shouldEnsureActive = initialStatus === orderSchema.OrderStatus.INIT;
-    if (shouldEnsureActive) {
-      const existingActive = await this.orderModel
-        .findOne({
-          user: userObjectId,
-          product: productObjectId,
-          status: orderSchema.OrderStatus.INIT,
-        })
-        .lean();
-      if (existingActive) {
-        throw new BadRequestException('You already have an active order for this product.');
-      }
-    }
 
     const orderId = this.generateOrderId();
     const nextBill = this.calculateNextBillDate(billingMonths);
@@ -109,8 +97,8 @@ export class OrderService {
       initialStatus === orderSchema.OrderStatus.PAID
         ? SubscriptionStatus.Active
         : initialStatus === orderSchema.OrderStatus.FAILED
-        ? SubscriptionStatus.Paused
-        : SubscriptionStatus.Pending;
+          ? SubscriptionStatus.Paused
+          : SubscriptionStatus.Pending;
 
     try {
       const doc = await this.orderModel.create({
@@ -170,6 +158,112 @@ export class OrderService {
     }
   }
 
+  async updateUserOrder(
+    orderId: string,
+    userId: string | Types.ObjectId,
+    dto: UserCreateOrderDto,
+  ) {
+    if (!Types.ObjectId.isValid(orderId)) {
+      throw new NotFoundException('Order not found');
+    }
+    const userObjectId = new Types.ObjectId(userId);
+
+    const existing = await this.orderModel.findOne({ _id: orderId, user: userObjectId }).lean();
+    if (!existing) {
+      throw new NotFoundException('Order not found');
+    }
+    if (existing.status !== orderSchema.OrderStatus.FAILED) {
+      throw new BadRequestException('Only FAILED orders can be reordered.');
+    }
+
+    const productObjectId = new Types.ObjectId(dto.product);
+    const product = await this.productModel.findById(productObjectId).lean();
+    if (!product) throw new NotFoundException('Product not found');
+
+    const billPeriod = dto.billPeriod;
+    const billingMonths = this.mapBillPeriodToMonths(billPeriod);
+    const amount = Number(dto.amount);
+    if (Number.isNaN(amount) || amount < 0) {
+      throw new BadRequestException('Invalid amount');
+    }
+
+    let tradingViewUsername: string | undefined = undefined;
+    if (product.requireTradingViewUsername) {
+      const tv = dto.tradingViewUsername?.trim();
+      if (!tv) {
+        throw new BadRequestException('TradingView username is required for this product');
+      }
+      tradingViewUsername = tv;
+    } else if (typeof dto.tradingViewUsername === 'string') {
+      const tv = dto.tradingViewUsername.trim();
+      tradingViewUsername = tv.length > 0 ? tv : undefined;
+    }
+
+    const nextStatus = dto.status ?? orderSchema.OrderStatus.INIT;
+    if (
+      ![
+        orderSchema.OrderStatus.INIT,
+        orderSchema.OrderStatus.PAID,
+        orderSchema.OrderStatus.FAILED,
+      ].includes(nextStatus)
+    ) {
+      throw new BadRequestException('Unsupported status');
+    }
+
+    const expiry =
+      nextStatus === orderSchema.OrderStatus.PAID
+        ? this.calculateExpiry(new Date(), billingMonths)
+        : null;
+
+    const orderUpdate = {
+      product: productObjectId,
+      billPeriod,
+      amount,
+      bankAccountName: dto.bankAccountName,
+      tradingViewUsername,
+      status: nextStatus,
+      expiredAt: expiry,
+      orderedAt: new Date(),
+    };
+
+    const updated = await this.orderModel
+      .findByIdAndUpdate(orderId, orderUpdate, {
+        new: true,
+        runValidators: true,
+      })
+      .lean()
+      .exec();
+
+    if (!updated) {
+      throw new NotFoundException('Order not found');
+    }
+
+    const subStatus =
+      nextStatus === orderSchema.OrderStatus.PAID
+        ? SubscriptionStatus.Active
+        : nextStatus === orderSchema.OrderStatus.FAILED
+          ? SubscriptionStatus.Paused
+          : SubscriptionStatus.Pending;
+
+    const nextBill = this.calculateNextBillDate(billingMonths);
+    await this.subscriptionModel
+      .findOneAndUpdate(
+        { user: userObjectId, product: productObjectId },
+        {
+          user: userObjectId,
+          product: productObjectId,
+          status: subStatus,
+          billPeriod,
+          nextBill,
+        },
+        { new: true, upsert: true },
+      )
+      .lean()
+      .exec();
+
+    return updated;
+  }
+
 
   async paginate(dto: PaginateOrdersDto): Promise<PaginateResult<orderSchema.OrderDocument>> {
 
@@ -213,7 +307,11 @@ export class OrderService {
         .exec();
 
       const userIds = users.map((u) => u._id);
-      filter.user = { $in: userIds.length ? userIds : [] };
+      const orFilters: any[] = [{ bankAccountName: rx }];
+      if (userIds.length) {
+        orFilters.push({ user: { $in: userIds } });
+      }
+      filter.$or = orFilters;
     }
 
     const options: PaginateOptions = {
@@ -299,7 +397,14 @@ export class OrderService {
       throw new NotFoundException('Subscription not found');
     }
 
-    return null
+    const order = await this.orderModel.find({
+      product: subscription.product,
+      user: subscription.user
+    }).populate('user', '_id firstName lastName email ')
+      .populate('product', 'name billPeriod requireTradingViewUsername payWayUrls')
+      .lean()
+      .exec();
+    return order
   }
 
   async updateOrderStatus(orderId: string, dto: UpdateOrderStatusDto, updatedBy?: string) {

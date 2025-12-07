@@ -52,6 +52,20 @@ export class OrderController {
     return this.orderService.createUserRequestOrder(userId, dto, idempotencyKey);
   }
 
+  @Patch('id/:id/reorder')
+  async reorderOrder(
+    @Param('id') id: string,
+    @Req() req: AuthRequest,
+    @Body() dto: UserCreateOrderDto,
+  ) {
+    const userId = req?.user?.userId;
+    if (!userId) throw new BadRequestException('AUTH_REQUIRED');
+    this.logger.log(
+      `Reorder: user=${userId} order=${id} reqId=${(req as any).id}`,
+    );
+    return this.orderService.updateUserOrder(id, userId, dto);
+  }
+
   @Get('id/:id')
   @Roles(Role.Admin)
   async getOrderById(@Param('id') id: string) {

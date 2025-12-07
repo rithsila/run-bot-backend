@@ -17,7 +17,7 @@ export class SubscriptionsService {
     }
     return this.subscriptionModel
       .find({ user: new Types.ObjectId(userId) })
-      .populate('product', 'name pricing billPeriod description')
+      .populate('product', 'name pricing billPeriod description').sort({ createdAt: -1 })
       .lean()
       .exec();
   }
@@ -29,7 +29,7 @@ export class SubscriptionsService {
 
     const subscription = await this.subscriptionModel
       .findById(subscriptionId)
-      .populate('product', 'name pricing billPeriod note')
+      .populate('product', 'name pricing description billPeriod policy payWayUrls')
       .populate('user', '_id email firstName lastName')
       .lean()
       .exec();
