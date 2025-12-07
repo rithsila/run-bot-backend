@@ -94,13 +94,21 @@ export class HttpErrorFilter implements ExceptionFilter {
     let details: string[] | undefined;
 
     if (status === 429) {
+      // Rate limit message (same in all envs)
       message = 'Too many requests. Try again later.';
     } else if (isProd) {
-      // In production: keep responses generic
-      if (status === 404) {
+      // In production: keep responses generic,
+      // EXCEPT for 401 where we want a friendly login message
+      if (status === 401) {
+        // If your UnauthorizedException provided a message, use it
+        if (typeof rawMsg === 'string' && rawMsg.trim().length > 0) {
+          message = rawMsg;
+        } else {
+          // Fallback if nothing custom was provided
+          message = 'Invalid email or password.';
+        }
+      } else if (status === 404) {
         message = 'Resource not found';
-      } else if (status === 401) {
-        message = 'Unauthorized';
       } else if (status === 403) {
         message = 'Forbidden';
       } else if (status === 400 || status === 422) {
@@ -119,6 +127,7 @@ export class HttpErrorFilter implements ExceptionFilter {
         ? rawMsg.join('; ')
         : rawMsg || exception.message || 'Error';
 
+      // Keep validation details for easier debugging in non-prod
       details = Array.isArray(body?.message) ? body.message : undefined;
     }
 
