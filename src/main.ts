@@ -8,7 +8,7 @@ import { ConfigService } from '@nestjs/config';
 import { NestExpressApplication } from '@nestjs/platform-express';
 import type Redis from 'ioredis';
 import { REDIS } from './redis/redis.constants';
-import { HttpErrorFilter } from './common/http/http-error.filter';
+import { HttpErrorFilter } from './common/http/http-error.filter'; // make sure path matches your file
 import * as bodyParser from 'body-parser';
 import helmet from 'helmet';
 import hpp from 'hpp';
@@ -23,6 +23,9 @@ async function bootstrap() {
   app.useLogger(app.get(PinoLogger));
   const logger = new Logger('Bootstrap');
   const config = app.get(ConfigService);
+
+  // 👉 flag for environment
+  const isProd = config.get('NODE_ENV') === 'production';
 
   // ---- build origins at RUNTIME ----
   const allowedOrigins = buildAllowedOrigins([
@@ -40,7 +43,7 @@ async function bootstrap() {
       'x-csrf-token', 'x-client-device-id', 'x-device-id', 'x-device-hash',
       'x-internal-signature', 'x-internal-timestamp',
       'x-idempotency-key', 'idempotency-key', 'x-api-key',
-      'x-request-id', 
+      'x-request-id',
     ],
     optionsSuccessStatus: 204,
     maxAge: 86400,
@@ -81,10 +84,19 @@ async function bootstrap() {
     transform: true,
     transformOptions: { enableImplicitConversion: true },
     validationError: { target: false, value: false },
+    // 👇 this is the new part
+    disableErrorMessages: isProd,
   }));
 
   // Security / hardening
-  app.use(helmet({ contentSecurityPolicy: false, crossOriginEmbedderPolicy: false }));
+  app.use(
+    helmet({
+      // you can later replace this with a real CSP in prod if you want
+      contentSecurityPolicy: false,
+      crossOriginEmbedderPolicy: false,
+    }),
+  );
+
   app.use(hpp());
   app.use(compression({ threshold: '1kb' }));
   app.use(cookieParser());

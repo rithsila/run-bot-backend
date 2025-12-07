@@ -12,24 +12,28 @@ export class HttpErrorFilter implements ExceptionFilter {
 
     const status = exception.getStatus?.() ?? 500;
     const body = exception.getResponse?.() as any; // may be string | object
+    const isObj = typeof body === 'object' && body !== null;
+    const isProd = process.env.NODE_ENV === 'production';
 
     // ── 429 telemetry (unchanged) ───────────────────────────────────────────────
     if (status === 429) {
       const r = req.__risk || {};
-      console.warn(JSON.stringify({
-        evt: 'rate_limit',
-        path: req.originalUrl || req.url,
-        ip: r.ip || null,
-        ip_subnet24: r.ip ? subnet24(r.ip) : null,
-        deviceIdHash: r.deviceIdHash || null,
-        emailHash: r.emailHash || null,
-        uaHash: r.uaHash || null,
-        domain: r.domain || null,
-        reason: r.reason || 'throttle',
-        ts: new Date().toISOString(),
-      }));
+      console.warn(
+        JSON.stringify({
+          evt: 'rate_limit',
+          path: req.originalUrl || req.url,
+          ip: r.ip || null,
+          ip_subnet24: r.ip ? subnet24(r.ip) : null,
+          deviceIdHash: r.deviceIdHash || null,
+          emailHash: r.emailHash || null,
+          uaHash: r.uaHash || null,
+          domain: r.domain || null,
+          reason: r.reason || 'throttle',
+          ts: new Date().toISOString(),
+        }),
+      );
     } else {
-      // ── DEV diagnostics for non-429 ──────────────────────────────────────────
+      // ── diagnostics for non-429 ──────────────────────────────────────────────
       const url = req.originalUrl || req.url;
       const method = req.method;
       const keys = Object.keys((req as any).body || {});
@@ -57,43 +61,82 @@ export class HttpErrorFilter implements ExceptionFilter {
     }
 
     // ── Normalize fields ───────────────────────────────────────────────────────
-    const isObj = typeof body === 'object' && body !== null;
-
-    // Prefer a domain code from the thrown exception body; otherwise map by status
     const codeFromBody: string | undefined = isObj ? body.code : undefined;
     const defaultCode =
-      status === 400 ? 'BAD_REQUEST' :
-      status === 401 ? 'AUTH_UNAUTHORIZED' :
-      status === 403 ? 'FORBIDDEN' :
-      status === 404 ? 'NOT_FOUND' :
-      status === 409 ? 'CONFLICT' :
-      status === 422 ? 'UNPROCESSABLE_ENTITY' :
-      status === 429 ? 'RATE_LIMITED' :
-      status >= 500 ? 'INTERNAL_ERROR' :
-      'HTTP_ERROR';
+      status === 400
+        ? 'BAD_REQUEST'
+        : status === 401
+        ? 'AUTH_UNAUTHORIZED'
+        : status === 403
+        ? 'FORBIDDEN'
+        : status === 404
+        ? 'NOT_FOUND'
+        : status === 409
+        ? 'CONFLICT'
+        : status === 422
+        ? 'UNPROCESSABLE_ENTITY'
+        : status === 429
+        ? 'RATE_LIMITED'
+        : status >= 500
+        ? 'INTERNAL_ERROR'
+        : 'HTTP_ERROR';
 
     const code = codeFromBody ?? defaultCode;
 
-    // Message: join arrays, otherwise use provided message or Nest default
+    // ── Build safe message & details ──────────────────────────────────────────
     const rawMsg = Array.isArray(body?.message)
       ? body.message
-      : (isObj ? body?.message : undefined);
+      : isObj
+      ? body?.message
+      : undefined;
 
-    const message =
+    let message: string;
+    let details: string[] | undefined;
+
+    if (status === 429) {
+      message = 'Too many requests. Try again later.';
+    } else if (isProd) {
+      // In production: keep responses generic
+      if (status === 404) {
+        message = 'Resource not found';
+      } else if (status === 401) {
+        message = 'Unauthorized';
+      } else if (status === 403) {
+        message = 'Forbidden';
+      } else if (status === 400 || status === 422) {
+        message = 'Invalid request data';
+      } else if (status >= 500) {
+        message = 'Unexpected error';
+      } else {
+        message = 'Request failed';
+      }
+
+      // In prod we do NOT expose detailed validation messages
+      details = undefined;
+    } else {
+      // In dev/staging: keep your current detailed behavior
+      message = Array.isArray(rawMsg)
+        ? rawMsg.join('; ')
+        : rawMsg || exception.message || 'Error';
+
+      details = Array.isArray(body?.message) ? body.message : undefined;
+    }
+
+    // error field: generic for 5xx in prod, more detailed otherwise
+    const errorField =
       status === 429
-        ? 'Too many requests. Try again later.'
-        : (Array.isArray(rawMsg) ? rawMsg.join('; ') : (rawMsg || exception.message || 'Error'));
-
-    // Keep the array details separately when available (useful for validation errors)
-    const details = Array.isArray(body?.message) ? body.message : undefined;
+        ? 'TooManyRequests'
+        : isProd && status >= 500
+        ? 'InternalError'
+        : body?.error || exception.name;
 
     res.status(status).json({
       success: false,
       statusCode: status,
       code,
       message,
-      error: status === 429 ? 'TooManyRequests' : (body?.error || exception.name),
-      ...(details ? { details } : {}),
+      error: errorField,
+      ...(details && !isProd ? { details } : {}),
       timestamp: new Date().toISOString(),
       path: req.originalUrl || req.url,
     });
