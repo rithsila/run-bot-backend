@@ -66,20 +66,20 @@ export class HttpErrorFilter implements ExceptionFilter {
       status === 400
         ? 'BAD_REQUEST'
         : status === 401
-        ? 'AUTH_UNAUTHORIZED'
-        : status === 403
-        ? 'FORBIDDEN'
-        : status === 404
-        ? 'NOT_FOUND'
-        : status === 409
-        ? 'CONFLICT'
-        : status === 422
-        ? 'UNPROCESSABLE_ENTITY'
-        : status === 429
-        ? 'RATE_LIMITED'
-        : status >= 500
-        ? 'INTERNAL_ERROR'
-        : 'HTTP_ERROR';
+          ? 'AUTH_UNAUTHORIZED'
+          : status === 403
+            ? 'FORBIDDEN'
+            : status === 404
+              ? 'NOT_FOUND'
+              : status === 409
+                ? 'CONFLICT'
+                : status === 422
+                  ? 'UNPROCESSABLE_ENTITY'
+                  : status === 429
+                    ? 'RATE_LIMITED'
+                    : status >= 500
+                      ? 'INTERNAL_ERROR'
+                      : 'HTTP_ERROR';
 
     const code = codeFromBody ?? defaultCode;
 
@@ -87,8 +87,8 @@ export class HttpErrorFilter implements ExceptionFilter {
     const rawMsg = Array.isArray(body?.message)
       ? body.message
       : isObj
-      ? body?.message
-      : undefined;
+        ? body?.message
+        : undefined;
 
     let message: string;
     let details: string[] | undefined;
@@ -112,7 +112,12 @@ export class HttpErrorFilter implements ExceptionFilter {
       } else if (status === 403) {
         message = 'Forbidden';
       } else if (status === 400 || status === 422) {
-        message = 'Invalid request data';
+        if (typeof rawMsg === 'string' && rawMsg.trim().length > 0) {
+          message = rawMsg;
+        } else {
+          // Fallback if nothing custom was provided
+          message = 'Invalid email or password.';
+        }
       } else if (status >= 500) {
         message = 'Unexpected error';
       } else {
@@ -136,8 +141,8 @@ export class HttpErrorFilter implements ExceptionFilter {
       status === 429
         ? 'TooManyRequests'
         : isProd && status >= 500
-        ? 'InternalError'
-        : body?.error || exception.name;
+          ? 'InternalError'
+          : body?.error || exception.name;
 
     res.status(status).json({
       success: false,
