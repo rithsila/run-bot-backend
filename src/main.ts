@@ -66,11 +66,17 @@ async function bootstrap() {
   app.use(bodyParser.json({ limit: '64kb', verify: (req: any, _res, buf) => { req.rawBody = buf; } }));
   app.use(bodyParser.urlencoded({ extended: false, limit: '16kb', verify: (req: any, _res, buf) => { req.rawBody = buf; } }));
 
+  const allowNonJsonPrefixes = ['/trading/upload'];
+
   app.use((req, res, next) => {
     const m = req.method;
     const hasBody = Number(req.headers['content-length'] || 0) > 0;
+    const isNonJsonAllowed =
+      allowNonJsonPrefixes.some((prefix) => req.path?.startsWith(prefix)) &&
+      req.is?.('multipart/form-data');
+
     if (m === 'POST' || m === 'PUT' || m === 'PATCH' || (m === 'DELETE' && hasBody)) {
-      if (hasBody && (!req.is || !req.is('application/json'))) {
+      if (hasBody && (!req.is || (!req.is('application/json') && !isNonJsonAllowed))) {
         return res.status(415).json({ message: 'Unsupported Media Type' });
       }
     }

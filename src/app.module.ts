@@ -51,6 +51,7 @@ import { OrderModule } from './order/order.module';
 import { SubscriptionsModule } from './subscriptions/subscriptions.module';
 import { StorageModule } from './storage/storage.module';
 import { ProductsModule } from './products/products.module';
+import { TradingModule } from './robots/trading/trading.module';
 
 @Module({
   imports: [
@@ -172,6 +173,7 @@ import { ProductsModule } from './products/products.module';
     SubscriptionsModule,
     StorageModule,
     ProductsModule,
+    TradingModule,
   ],
 
   controllers: [AppController],
