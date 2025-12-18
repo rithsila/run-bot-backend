@@ -168,6 +168,7 @@ export class MembershipsController {
 
     @Post('activate')
     @Public()
+    @Throttle({ default: { limit: 2, ttl: 60_000 } })
     @HttpCode(HttpStatus.OK)
     async activate(
         @Body() dto: ActivateLicenseDto,

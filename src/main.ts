@@ -19,7 +19,8 @@ import { RequiredHeadersMiddleware } from './middleware/required-headers.middlew
 
 async function bootstrap() {
   const app = await NestFactory.create<NestExpressApplication>(AppModule, { bufferLogs: true });
-
+  
+  app.set('trust proxy', 1);
   app.useLogger(app.get(PinoLogger));
   const logger = new Logger('Bootstrap');
   const config = app.get(ConfigService);
@@ -54,7 +55,7 @@ async function bootstrap() {
   await wsAdapter.connectToRedisIfNeeded();
   app.useWebSocketAdapter(wsAdapter);
 
-  app.set('trust proxy', 1);
+
   app.useGlobalFilters(new HttpErrorFilter());
 
   // ---- Body parsers (must come before any middleware that inspects body/cookies) ----

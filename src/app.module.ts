@@ -62,7 +62,7 @@ import { TradingModule } from './robots/trading/trading.module';
         `.env.${process.env.NODE_ENV || 'development'}`,
         '.env',
       ],
-      ignoreEnvFile: false, 
+      ignoreEnvFile: false,
       expandVariables: true,
       cache: true,
       validationSchema: envValidationSchema,
@@ -138,6 +138,17 @@ import { TradingModule } from './robots/trading/trading.module';
 
         common: {
           getTracker: async (req: Request) => {
+            const xff = (req.headers['x-forwarded-for'] as string | undefined)
+              ?.split(',')[0]
+              ?.trim();
+
+            const ip =
+              xff ||
+              (req.headers['cf-connecting-ip'] as string | undefined) || // if Cloudflare
+              req.ip ||
+              req.socket.remoteAddress ||
+              'unknown';
+
             const rawDev =
               (req.headers['x-device-id'] as string | undefined) ??
               (req as any).cookies?.device_id ??
@@ -148,9 +159,9 @@ import { TradingModule } from './robots/trading/trading.module';
                 ? sha256Hex(rawDev)
                 : 'no-dev';
 
-            const ip = req.ip || req.socket.remoteAddress || 'unknown';
             return `${ip}|${devHash}`;
           },
+
         },
       }),
     }),

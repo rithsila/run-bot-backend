@@ -22,7 +22,7 @@ import { CreateTradingRobotDto } from './dto/create-trading-robot.dto';
 import { Public } from 'src/auth/guard/public.decorator';
 import { TradingRobot } from './trading-robot.schema';
 
-const MAX_ROBOT_FILE_BYTES = 25 * 1024 * 1024; // 25MB
+const MAX_ROBOT_FILE_BYTES = 25 * 1024 * 1024; 
 
 @Controller('trading')
 export class TradingController {
