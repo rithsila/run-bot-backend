@@ -6,6 +6,7 @@ import {
     HttpCode,
     HttpStatus,
     NotFoundException,
+    ForbiddenException,
     Param,
     Patch,
     Post,
@@ -174,6 +175,9 @@ export class MembershipsController {
         @Req() req: AuthRequest,
     ): Promise<ApiSuccess<ActivationResponseData>> {
         const xffHeader = req.headers['x-forwarded-for'];
+        if (!xffHeader) {
+            throw new ForbiddenException('X_FORWARDED_FOR_REQUIRED');
+        }
         const xff = Array.isArray(xffHeader) ? xffHeader[0] : xffHeader;
         const ua = req.headers['user-agent'];
         const ip = typeof xff === 'string' && xff.trim() ? xff.split(',')[0].trim() : req.ip;
@@ -190,6 +194,36 @@ export class MembershipsController {
             },
             timestamp: new Date().toISOString(),
             path: '/memberships/activate',
+        };
+    }
+
+    @Post('activate/free')
+    @Public()
+    @HttpCode(HttpStatus.OK)
+    async activateFree(
+        @Body() dto: ActivateLicenseDto,
+        @Req() req: AuthRequest,
+    ): Promise<ApiSuccess<ActivationResponseData>> {
+        const xffHeader = req.headers['x-forwarded-for'];
+        if (!xffHeader) {
+            throw new ForbiddenException('X_FORWARDED_FOR_REQUIRED');
+        }
+        const xff = Array.isArray(xffHeader) ? xffHeader[0] : xffHeader;
+        const ua = req.headers['user-agent'];
+        const ip = typeof xff === 'string' && xff.trim() ? xff.split(',')[0].trim() : req.ip;
+
+        const result = await this.memberships.activateFreeLicense(dto, ip, ua ?? undefined);
+        return {
+            success: true,
+            statusCode: HttpStatus.OK,
+            code: 'LICENSE_ACTIVATED_FREE',
+            message: 'Free license activated successfully',
+            data: {
+                status: 'OK',
+                token: result.token,
+            },
+            timestamp: new Date().toISOString(),
+            path: '/memberships/activate/free',
         };
     }
 }

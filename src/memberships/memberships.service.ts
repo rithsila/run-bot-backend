@@ -46,23 +46,7 @@ export class MembershipsService {
 
     async findAll(): Promise<MembershipDocument[]> {
 
-        const memberships = await this.membershipModel
-            .find({})
-        memberships.map(async membership => {
-
-            await this.subscriptionModel.create({
-
-                user: membership.user,
-                product: '692183ad57d3a0afb8623144',
-                status: membership.status === MembershipStatus.Verified ? SubscriptionStatus.Active : SubscriptionStatus.Paused,
-
-                nextBill: new Date('2025-12-31T00:00:00.000Z'),
-                notes: "Dear user, if the expiry date is incorrect, please resubmit the Sn1Per Flip to the marketplace."
-            })
-
-        })
-
-
+    
         return this.membershipModel
             .find({})
             .populate('user', '_id email firstName lastName')
@@ -526,6 +510,21 @@ export class MembershipsService {
     }
 
     async activate(dto: ActivateLicenseDto, ip?: string, ua?: string) {
+        return this.performActivation(dto, ip, ua, { requireSubscription: true });
+    }
+
+    async activateFreeLicense(dto: ActivateLicenseDto, ip?: string, ua?: string) {
+        // Same activation flow as activate but skips subscription checks for free licenses
+        return this.performActivation(dto, ip, ua, { requireSubscription: false });
+    }
+
+    private async performActivation(
+        dto: ActivateLicenseDto,
+        ip?: string,
+        ua?: string,
+        options?: { requireSubscription?: boolean },
+    ) {
+        const { requireSubscription = true } = options ?? {};
         const key = dto.key?.trim();
         const accountLogin = String(dto.accountLogin ?? '').trim();
         const maskedKey = key ? `${key.slice(0, 4)}***` : undefined; // don't log full key
@@ -560,13 +559,15 @@ export class MembershipsService {
             this.deny('not_found', { maskedKey, accountLogin, ip, ua });
         }
 
-        await this.ensureLicenseRequiredSubscription(membership?.user as unknown as PublicUser, {
-            maskedKey,
-            accountLogin,
-            ip,
-            ua,
-            membershipId: String(membership._id),
-        });
+        if (requireSubscription) {
+            await this.ensureLicenseRequiredSubscription(membership?.user as unknown as PublicUser, {
+                maskedKey,
+                accountLogin,
+                ip,
+                ua,
+                membershipId: String(membership._id),
+            });
+        }
 
         if (membership.status !== membershipsSchema.MembershipStatus.Verified) {
             this.deny('membership_not_verified', {
