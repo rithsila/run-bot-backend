@@ -534,13 +534,13 @@ export class MembershipsService {
         );
 
         // Slow down known abusive IPs
-        if (ip) {
-            const blacklisted = await this.ipBlacklistModel.findOne({ ip }).lean().exec();
-            if (blacklisted) {
-                this.logger.warn(`[Memberships.activate] throttling blacklisted IP ${ip}`);
-                await this.delayMs(5 * 60 * 1000);
-            }
-        }
+        // if (ip) {
+        //     const blacklisted = await this.ipBlacklistModel.findOne({ ip }).lean().exec();
+        //     if (blacklisted) {
+        //         this.logger.warn(`[Memberships.activate] throttling blacklisted IP ${ip}`);
+        //         await this.delayMs(5 * 60 * 1000);
+        //     }
+        // }
 
         if (!key) {
             this.deny('key_required', { maskedKey, accountLogin, ip, ua });
