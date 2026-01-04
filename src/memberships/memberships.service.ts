@@ -569,6 +569,8 @@ export class MembershipsService {
                 membershipId: String(membership._id),
             });
         }
+        
+        console.log("membership.status--------------", membership.status !== membershipsSchema.MembershipStatus.Verified);
 
         if (membership.status !== membershipsSchema.MembershipStatus.Verified) {
             this.deny('membership_not_verified', {
@@ -579,7 +581,7 @@ export class MembershipsService {
                 membershipId: String(membership._id),
             });
         }
-
+        console.log("under if membership.status -------------- ");
         // 🔍 Require account in membership.accounts with isVerified = true
         const accounts = Array.isArray(membership.accounts) ? membership.accounts : [];
 
