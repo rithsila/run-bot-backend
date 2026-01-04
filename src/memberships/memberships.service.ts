@@ -46,7 +46,7 @@ export class MembershipsService {
 
     async findAll(): Promise<MembershipDocument[]> {
 
-    
+
         return this.membershipModel
             .find({})
             .populate('user', '_id email firstName lastName')
@@ -558,8 +558,9 @@ export class MembershipsService {
         if (!membership) {
             this.deny('not_found', { maskedKey, accountLogin, ip, ua });
         }
-
+        console.log("requireSubscription--------------", requireSubscription);
         if (requireSubscription) {
+
             await this.ensureLicenseRequiredSubscription(membership?.user as unknown as PublicUser, {
                 maskedKey,
                 accountLogin,
@@ -648,7 +649,6 @@ export class MembershipsService {
         }
 
         const checkIsRequiresLicenseKey = subscription.find(sub => sub?.product?.requiresLicenseKey === true)
-        // console.log("=========================checkIsRequiresLicenseKey: ", checkIsRequiresLicenseKey)
         if (!checkIsRequiresLicenseKey) {
             this.deny('product_not_license', ctx);
         }
