@@ -182,6 +182,8 @@ export class MembershipsController {
         const ua = req.headers['user-agent'];
         const ip = typeof xff === 'string' && xff.trim() ? xff.split(',')[0].trim() : req.ip;
         const result = await this.memberships.activate(dto, ip, ua ?? undefined);
+
+        console.log("-------------- result", result);
         return {
             success: true,
             statusCode: HttpStatus.OK,
@@ -211,6 +213,7 @@ export class MembershipsController {
         const ua = req.headers['user-agent'];
         const ip = typeof xff === 'string' && xff.trim() ? xff.split(',')[0].trim() : req.ip;
         const result = await this.memberships.activateFreeLicense(dto, ip, ua ?? undefined);
+        console.log("--------------Free result", result);
         return {
             success: true,
             statusCode: HttpStatus.OK,
