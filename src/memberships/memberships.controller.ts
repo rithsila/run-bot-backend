@@ -181,8 +181,9 @@ export class MembershipsController {
         const xff = Array.isArray(xffHeader) ? xffHeader[0] : xffHeader;
         const ua = req.headers['user-agent'];
         const ip = typeof xff === 'string' && xff.trim() ? xff.split(',')[0].trim() : req.ip;
-
+        console.log('ActivateLicenseDto==============', dto);
         const result = await this.memberships.activate(dto, ip, ua ?? undefined);
+        console.log('result==============', result);
         return {
             success: true,
             statusCode: HttpStatus.OK,
@@ -208,10 +209,10 @@ export class MembershipsController {
         if (!xffHeader) {
             throw new ForbiddenException('X_FORWARDED_FOR_REQUIRED');
         }
+        console.log('ActivateLicenseDto==============', dto);
         const xff = Array.isArray(xffHeader) ? xffHeader[0] : xffHeader;
         const ua = req.headers['user-agent'];
         const ip = typeof xff === 'string' && xff.trim() ? xff.split(',')[0].trim() : req.ip;
-        console.log('dto==============', dto);
         const result = await this.memberships.activateFreeLicense(dto, ip, ua ?? undefined);
         console.log('result==============', result);
         return {

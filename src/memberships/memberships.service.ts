@@ -570,11 +570,7 @@ export class MembershipsService {
             });
         }
 
-        console.log(`Membership Status---------------: ${membership.status}`);
-        console.log(`membershipsSchema.MembershipStatus.Verified---------------: ${membershipsSchema.MembershipStatus.Verified}`);
-        console.log(`membership.status !== membershipsSchema.MembershipStatus.Verified---------------: ${membership.status !== membershipsSchema.MembershipStatus.Verified}`);
-
-
+    
         if (membership.status !== membershipsSchema.MembershipStatus.Verified) {
             this.deny('membership_not_verified', {
                 maskedKey,
@@ -621,7 +617,7 @@ export class MembershipsService {
         };
 
         const { token } = await this.jose.signToken(payload);
-        console.log('Generated Token---------------: ', token);
+   
         // Success log
         this.logger.log(
             `Activation success | membershipId=${membershipId} | userId=${userId ?? 'N/A'} | account=${accountLogin} | ip=${ip ?? 'N/A'}`,
