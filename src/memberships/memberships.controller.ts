@@ -213,6 +213,7 @@ export class MembershipsController {
         const ip = typeof xff === 'string' && xff.trim() ? xff.split(',')[0].trim() : req.ip;
         console.log('dto==============', dto);
         const result = await this.memberships.activateFreeLicense(dto, ip, ua ?? undefined);
+        console.log('result==============', result);
         return {
             success: true,
             statusCode: HttpStatus.OK,
