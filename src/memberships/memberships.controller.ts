@@ -217,7 +217,7 @@ export class MembershipsController {
         return {
             success: true,
             statusCode: HttpStatus.OK,
-            code: 'LICENSE_ACTIVATED_FREE',
+            code: 'LICENSE_ACTIVATED',
             message: 'Free license activated successfully',
             data: {
                 status: 'OK',
