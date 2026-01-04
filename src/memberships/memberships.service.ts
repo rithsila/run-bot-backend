@@ -570,7 +570,11 @@ export class MembershipsService {
             });
         }
 
-        console.log(`Membership Status: ${membership.status}`);
+        console.log(`Membership Status---------------: ${membership.status}`);
+        console.log(`membershipsSchema.MembershipStatus.Verified---------------: ${membershipsSchema.MembershipStatus.Verified}`);
+        console.log(`membership.status !== membershipsSchema.MembershipStatus.Verified---------------: ${membershipsSchema.MembershipStatus.Verified}`);
+
+
         if (membership.status !== membershipsSchema.MembershipStatus.Verified) {
             this.deny('membership_not_verified', {
                 maskedKey,
