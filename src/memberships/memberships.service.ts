@@ -560,7 +560,6 @@ export class MembershipsService {
         }
 
         if (requireSubscription) {
-            console.log('Checking license subscription for membership');
             await this.ensureLicenseRequiredSubscription(membership?.user as unknown as PublicUser, {
                 maskedKey,
                 accountLogin,

@@ -179,6 +179,79 @@ export class AwsS3Service {
     });
   }
 
+  async deleteFileByKey(key: string): Promise<void> {
+    if (!key) return;
+
+    const host = `${this.bucket}.s3.${this.region}.amazonaws.com`;
+    const encodedKey = key
+      .split('/')
+      .map((segment) => encodeURIComponent(segment))
+      .join('/');
+    const url = `https://${host}/${encodedKey}`;
+
+    const now = new Date();
+    const amzDate = this.formatAmzDate(now);
+    const dateStamp = amzDate.slice(0, 8);
+    const payloadHash = this.sha256Hex(Buffer.from(''));
+
+    const headers: Record<string, string> = {
+      host,
+      'x-amz-content-sha256': payloadHash,
+      'x-amz-date': amzDate,
+    };
+
+    const canonicalHeaders = this.buildCanonicalHeaders(headers);
+    const signedHeaders = Object.keys(canonicalHeaders).join(';');
+    const canonicalHeadersString = Object.entries(canonicalHeaders)
+      .map(([name, value]) => `${name}:${value}\n`)
+      .join('');
+
+    const canonicalRequest = [
+      'DELETE',
+      `/${encodedKey}`,
+      '',
+      canonicalHeadersString,
+      signedHeaders,
+      payloadHash,
+    ].join('\n');
+
+    const credentialScope = `${dateStamp}/${this.region}/s3/aws4_request`;
+    const stringToSign = [
+      'AWS4-HMAC-SHA256',
+      amzDate,
+      credentialScope,
+      this.sha256Hex(Buffer.from(canonicalRequest, 'utf8')),
+    ].join('\n');
+
+    const signingKey = this.getSignatureKey(this.secretKey, dateStamp, this.region, 's3');
+    const signature = createHmac('sha256', signingKey).update(stringToSign).digest('hex');
+
+    headers.authorization = [
+      `AWS4-HMAC-SHA256 Credential=${this.accessKey}/${credentialScope}`,
+      `SignedHeaders=${signedHeaders}`,
+      `Signature=${signature}`,
+    ].join(', ');
+
+    const response = await fetch(url, {
+      method: 'DELETE',
+      headers,
+    });
+
+    if (!response.ok) {
+      const text = await response.text().catch(() => 'Unknown error');
+      throw new InternalServerErrorException(
+        `Failed to delete from S3 (${response.status}): ${text}`,
+      );
+    }
+  }
+
+  async deleteFileByUrl(fileUrl: string): Promise<boolean> {
+    const key = this.getKeyFromUrl(fileUrl);
+    if (!key) return false;
+    await this.deleteFileByKey(key);
+    return true;
+  }
+
   getPublicUrl(key: string): string {
     const encodedKey = key
       .split('/')
@@ -210,5 +283,32 @@ export class AwsS3Service {
         acc[key.toLowerCase()] = headers[key].trim().replace(/\s+/g, ' ');
         return acc;
       }, {});
+  }
+
+  private getKeyFromUrl(fileUrl: string): string | null {
+    if (!fileUrl) return null;
+    try {
+      const u = new URL(fileUrl);
+      const host = u.hostname;
+      const bucketHost = `${this.bucket}.s3.${this.region}.amazonaws.com`;
+      const bucketHostAlt = `${this.bucket}.s3.amazonaws.com`;
+      const regionalHost = `s3.${this.region}.amazonaws.com`;
+      const globalHost = 's3.amazonaws.com';
+
+      const path = decodeURIComponent(u.pathname.replace(/^\/+/, ''));
+
+      if (host === bucketHost || host === bucketHostAlt) {
+        return path || null;
+      }
+
+      if (host === regionalHost || host === globalHost) {
+        if (!path.startsWith(`${this.bucket}/`)) return null;
+        return path.slice(this.bucket.length + 1) || null;
+      }
+    } catch {
+      return null;
+    }
+
+    return null;
   }
 }

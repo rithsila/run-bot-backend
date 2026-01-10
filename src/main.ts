@@ -67,7 +67,7 @@ async function bootstrap() {
   app.use(bodyParser.json({ limit: '64kb', verify: (req: any, _res, buf) => { req.rawBody = buf; } }));
   app.use(bodyParser.urlencoded({ extended: false, limit: '16kb', verify: (req: any, _res, buf) => { req.rawBody = buf; } }));
 
-  const allowNonJsonPrefixes = ['/trading/upload'];
+  const allowNonJsonPrefixes = ['/trading/upload', '/analyze-news'];
 
   app.use((req, res, next) => {
     const m = req.method;

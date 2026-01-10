@@ -1,10 +1,12 @@
 // src/analyze-news/analyze-news.service.ts
 import {
+    BadRequestException,
     Injectable,
     NotFoundException,
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
+import type { File as MulterFile } from 'multer';
 import { AnalyzeNews, AnalyzeNewsDocument } from './analyze-news.schema';
 import { CreateAnalyzeNewsDto } from './dto/create-analyze-news.dto';
 import { Direction } from 'src/trading-plan/trading-plan.enum';
@@ -12,6 +14,7 @@ import { PersistImageService } from 'src/common/persist-image.service';
 import { RealtimeGateway } from 'src/real-time/realtime.gateway';
 import { WebPushSubService } from 'src/web-push-sub/web-push-sub.service';
 import { PushProducer } from 'src/queue/push.producer';
+import { AwsS3Service } from 'src/storage/aws-s3.service';
 
 export type AnalyzeNewsLean = {
     _id: Types.ObjectId;
@@ -24,34 +27,24 @@ export type AnalyzeNewsLean = {
     updatedAt?: Date;
 };
 const MAX_ANALYZE_NEWS = 6;
+const MAX_THUMBNAIL_BYTES = 8 * 1024 * 1024;
 
 @Injectable()
 export class AnalyzeNewsService {
     constructor(
         @InjectModel(AnalyzeNews.name)
         private readonly newsModel: Model<AnalyzeNewsDocument>,
+        private readonly s3: AwsS3Service,
         private readonly img: PersistImageService,
         private readonly realtime: RealtimeGateway,
         private readonly pushProducer: PushProducer,
         private readonly webPushSubService: WebPushSubService
     ) { }
 
-    async create(dto: CreateAnalyzeNewsDto) {
+    async create(dto: CreateAnalyzeNewsDto, file?: MulterFile) {
         if (dto.impact == null) dto.impact = Direction.Bearish;
 
-        let finalThumb = (dto.thumbnailUrl ?? '').trim();
-
-        if (finalThumb) {
-            try {
-                const up = await this.img.uploadFromUrl(finalThumb, {
-                    folder: 'analyze-news',
-                });
-                finalThumb = up.secure_url; // <- permanent URL
-            } catch (e) {
-                console.warn('[AnalyzeNews.create] thumbnail persist failed:', e);
-                finalThumb = '';
-            }
-        }
+        const finalThumb = await this.resolveThumbnailUrl(dto, file);
 
         // 2) Build payload with the *persisted* URL (avoid saving empty string)
         const payload: CreateAnalyzeNewsDto = {
@@ -178,25 +171,15 @@ export class AnalyzeNewsService {
     async remove(_id: Types.ObjectId) {
         const deleted = await this.newsModel.findOneAndDelete({ _id }).lean<AnalyzeNewsLean | null>();
         if (!deleted) throw new NotFoundException('Analyze news not found');
+        await this.deleteThumbnailIfNeeded(deleted.thumbnailUrl);
         return { ok: true, id: String(deleted._id) };
     }
 
-    async update(_id: Types.ObjectId, dto: CreateAnalyzeNewsDto) {
+    async update(_id: Types.ObjectId, dto: CreateAnalyzeNewsDto, file?: MulterFile) {
+        const existing = await this.newsModel.findById(_id).lean<AnalyzeNewsLean | null>();
+        if (!existing) throw new NotFoundException('Analyze news not found');
 
-
-        let finalThumb = (dto.thumbnailUrl ?? '').trim();
-
-        if (finalThumb) {
-            try {
-                const up = await this.img.uploadFromUrl(finalThumb, {
-                    folder: 'analyze-news',
-                });
-                finalThumb = up.secure_url; // <- permanent URL
-            } catch (e) {
-                console.warn('[AnalyzeNews.create] thumbnail persist failed:', e);
-                finalThumb = '';
-            }
-        }
+        const finalThumb = await this.resolveThumbnailUrl(dto, file);
 
 
         const updated = await this.newsModel
@@ -213,7 +196,59 @@ export class AnalyzeNewsService {
 
 
         if (!updated) throw new NotFoundException('Analyze news not found');
+        if (existing.thumbnailUrl && existing.thumbnailUrl !== finalThumb) {
+            await this.deleteThumbnailIfNeeded(existing.thumbnailUrl);
+        }
         return updated;
+    }
+
+    async uploadThumbnailFile(file: MulterFile): Promise<{ thumbnailUrl: string }> {
+        if (!file) throw new BadRequestException('FILE_REQUIRED');
+        if (!file.buffer?.length) throw new BadRequestException('FILE_EMPTY');
+        if (file.size > MAX_THUMBNAIL_BYTES) throw new BadRequestException('FILE_TOO_LARGE');
+        if (!file.mimetype?.startsWith('image/')) throw new BadRequestException('FILE_NOT_IMAGE');
+
+        const upload = await this.s3.uploadFile(file, {
+            folder: 'analyze-news',
+            cacheControl: 'public, max-age=31536000',
+        });
+
+        return { thumbnailUrl: upload.url };
+    }
+
+    private async resolveThumbnailUrl(
+        dto: CreateAnalyzeNewsDto,
+        file?: MulterFile,
+    ): Promise<string> {
+        if (file) {
+            const { thumbnailUrl } = await this.uploadThumbnailFile(file);
+            return thumbnailUrl;
+        }
+
+        let finalThumb = (dto.thumbnailUrl ?? '').trim();
+
+        if (finalThumb) {
+            try {
+                const up = await this.img.uploadFromUrl(finalThumb, {
+                    folder: 'analyze-news',
+                });
+                finalThumb = up.secure_url; // <- permanent URL
+            } catch (e) {
+                console.warn('[AnalyzeNews.create] thumbnail persist failed:', e);
+                finalThumb = '';
+            }
+        }
+
+        return finalThumb;
+    }
+
+    private async deleteThumbnailIfNeeded(thumbnailUrl?: string): Promise<void> {
+        if (!thumbnailUrl) return;
+        try {
+            await this.s3.deleteFileByUrl(thumbnailUrl);
+        } catch (e) {
+            console.warn('[AnalyzeNews] delete thumbnail failed:', e);
+        }
     }
 
 }
