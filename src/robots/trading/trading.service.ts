@@ -1,4 +1,5 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
+import { basename } from 'node:path';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { AwsS3Service } from 'src/storage/aws-s3.service';
@@ -31,8 +32,10 @@ export class TradingService {
       throw new BadRequestException('FILE_TOO_LARGE');
     }
 
+    const originalName = basename(file.originalname || 'file');
+    const safeOriginal = originalName.replace(/[^\w.\-]+/g, '-');
     const upload = await this.s3.uploadFile(file, {
-      folder: 'trading-robots',
+      key: `trading-robots/${safeOriginal}`,
       cacheControl: 'public, max-age=31536000',
     });
 
