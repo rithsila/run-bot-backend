@@ -52,6 +52,7 @@ import { SubscriptionsModule } from './subscriptions/subscriptions.module';
 import { StorageModule } from './storage/storage.module';
 import { ProductsModule } from './products/products.module';
 import { TradingModule } from './robots/trading/trading.module';
+import { ApiKeyGuard } from './auth/guard/api-key.guard.ts';
 
 @Module({
   imports: [
@@ -194,6 +195,7 @@ import { TradingModule } from './robots/trading/trading.module';
     { provide: APP_GUARD, useClass: JwtAuthGuard },
     { provide: APP_GUARD, useClass: RolesGuard },
     { provide: APP_GUARD, useClass: CsrfGuard },
+    { provide: APP_GUARD, useClass: ApiKeyGuard },
   ],
 })
 export class AppModule { }

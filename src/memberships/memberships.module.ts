@@ -11,6 +11,8 @@ import { ReferralsModule } from './referrals.module';
 import { Referral, ReferralSchema } from './referral.schema';
 import { MembershipIpBlacklist, MembershipIpBlacklistSchema } from './membership-ip-blacklist.schema';
 import { Subscription, SubscriptionSchema } from 'src/subscriptions/subscriptions.schema';
+import { KolsMembershipService } from './kols-membership.service';
+import { KolsMembershipsController } from './kols-memberships.controller';
 
 @Module({
   imports: [
@@ -25,7 +27,7 @@ import { Subscription, SubscriptionSchema } from 'src/subscriptions/subscription
     QueueModule,
     ReferralsModule
   ],
-  providers: [MembershipsService, JoseService],
-  controllers: [MembershipsController]
+  providers: [MembershipsService, JoseService, KolsMembershipService],
+  controllers: [MembershipsController, KolsMembershipsController]
 })
 export class MembershipsModule { }
