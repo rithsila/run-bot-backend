@@ -17,6 +17,17 @@ export class KolsMembershipService {
         private readonly referralModel: Model<ReferralDocument>
     ) { }
 
+    async findByUserId(userId: string) {
+        if (!Types.ObjectId.isValid(userId)) {
+            throw new BadRequestException('INVALID_USER');
+        }
+
+        return this.membershipModel
+            .findOne({ user: new Types.ObjectId(userId) })
+            .lean()
+            .exec();
+    }
+
     async requestJoin(dto: KolsJoinMembershipDto){
         
         // normalize email
@@ -66,8 +77,7 @@ export class KolsMembershipService {
                 referral: referralId ?? undefined,
             });
 
-         
-            return this.membershipModel.findById(created._id).lean();
+            return { userId: created.user?.toString?.() ?? created.user };
         } catch (err: any) {
             if (err?.code === 11000) {
                 throw new ConflictException(
