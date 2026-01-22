@@ -32,7 +32,8 @@ export class UserService {
     'example.com',
     'user.com',
     'test.com',
-     'mail.com',
+    'mail.com',
+    'hmail.com',
   ]);
   constructor(@InjectModel(User.name) private readonly model: UserPaginateModel,
 
