@@ -616,21 +616,35 @@ export class MembershipsService {
         };
 
         const { token } = await this.jose.signToken(payload);
-   
+
         // Success log
         this.logger.log(
             `Activation success | membershipId=${membershipId} | userId=${userId ?? 'N/A'} | account=${accountLogin} | ip=${ip ?? 'N/A'}`,
         );
+
+        // Fire-and-forget push notification via BullMQ
+        try {
+            if (userId) {
+                const tinyPayload = {
+                    title: 'License activated',
+                    body: `Your EA license was activated for account ${accountLogin}.`,
+                };
+
+                await this.pushProducer.enqueueSendToUsers(
+                    [userId],
+                    tinyPayload,
+                    { ttl: 3600, chunkSize: 10 },
+                );
+            }
+        } catch (e) {
+            this.logger.warn('[Memberships.activate] push enqueue failed:', e);
+        }
 
         // 🔥 RETURN EA-SAFE JSON
         return {
             status: 'OK',
             token,
         };
-    }
-
-    private delayMs(ms: number) {
-        return new Promise<void>((resolve) => setTimeout(resolve, ms));
     }
 
     private async ensureLicenseRequiredSubscription(
