@@ -44,14 +44,16 @@ export class JoseService {
             if (pubEnv && pubEnv.trim().length > 0) {
                 this.publicJwks = JSON.parse(pubEnv);
             } else {
-                const pub = await exportJWK(
-                    await importJWK(this.privateJwk, 'ES256', { extractable: true })
-                );
+                // Derive public portion manually to avoid extractable restrictions
+                const { kty, crv, x, y } = this.privateJwk as any;
+                if (!kty || !x || !y) {
+                    throw new InternalServerErrorException('Invalid SIGNING_PRIVATE_JWK: missing public components');
+                }
                 this.publicJwks = [{
-                    kty: pub.kty,
-                    crv: pub.crv,
-                    x: pub.x,
-                    y: pub.y,
+                    kty,
+                    crv,
+                    x,
+                    y,
                     kid,
                     alg: 'ES256',
                     use: 'sig'
@@ -66,7 +68,7 @@ export class JoseService {
     async signToken(payload: Record<string, any>) {
         await this.init();
 
-        const privateKey = await importJWK(this.privateJwk!, 'ES256');
+        const privateKey = await importJWK(this.privateJwk!, 'ES256', { extractable: true });
         const ttlDays = Number(this.cfg.get('TOKEN_TTL_DAYS') || 30);
         const now = Math.floor(Date.now() / 1000);
         const exp = now + ttlDays * 24 * 3600;
