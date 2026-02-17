@@ -45,7 +45,10 @@ export class JoseService {
             if (pubEnv && pubEnv.trim().length > 0) {
                 this.publicJwks = JSON.parse(pubEnv);
             } else {
-                const pub = await exportJWK(await importJWK(this.privateJwk, 'ES256'));
+                // Make key extractable so exportJWK works in all runtimes
+                const pub = await exportJWK(
+                    await importJWK(this.privateJwk, 'ES256', { extractable: true })
+                );
                 this.publicJwks = [{
                     kty: pub.kty,
                     crv: pub.crv,
