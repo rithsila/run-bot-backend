@@ -40,12 +40,10 @@ export class JoseService {
             this.signingKid = kid;
             this.privateJwk = JSON.parse(priv) as JWK;
 
-            // If PUBLIC_JWKS provided, use it; otherwise derive public key
             const pubEnv = this.cfg.get<string>('PUBLIC_JWKS');
             if (pubEnv && pubEnv.trim().length > 0) {
                 this.publicJwks = JSON.parse(pubEnv);
             } else {
-                // Make key extractable so exportJWK works in all runtimes
                 const pub = await exportJWK(
                     await importJWK(this.privateJwk, 'ES256', { extractable: true })
                 );
