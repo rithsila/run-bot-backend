@@ -89,6 +89,9 @@ export class User {
 
   @Prop({ type: SignupMetaSchema, required: false })
   signupMeta?: SignupMeta;
+
+  @Prop({ type: Boolean, default: false, index: true })
+  isBanned?: boolean;
 }
 
 export const UserSchema = SchemaFactory.createForClass(User);
