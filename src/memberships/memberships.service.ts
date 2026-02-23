@@ -8,12 +8,11 @@ import { User, UserDocument } from 'src/user/user.schema';
 import { PaginateMembershipsDto } from './dto/paginate-memberships.dto';
 import { UpdateMembershipAdminDto } from './dto/update-membership-admin.dto';
 import { buildAdminTinyPayload, normalizeAccounts } from './memberships.helper';
-import { PushProducer } from 'src/queue/push.producer';
 import { WebPushSubService } from 'src/web-push-sub/web-push-sub.service';
 import { randomBytes } from 'crypto';
 import { ActivateLicenseDto } from './dto/activate-license.dto';
 import { JoseService } from './jose.service';
-import { MembershipAccountType, MembershipDocument, MembershipStatus } from './memberships.schema';
+import { MembershipAccountType, MembershipDocument } from './memberships.schema';
 import { Referral } from './referral.schema';
 import { MembershipIpBlacklist, MembershipIpBlacklistDocument } from './membership-ip-blacklist.schema';
 import { Subscription, SubscriptionDocument, SubscriptionStatus } from 'src/subscriptions/subscriptions.schema';
@@ -39,7 +38,6 @@ export class MembershipsService {
         private readonly ipBlacklistModel: Model<MembershipIpBlacklistDocument>,
         @InjectModel(Subscription.name)
         private readonly subscriptionModel: Model<SubscriptionDocument>,
-        private readonly pushProducer: PushProducer,
         private readonly webPushSubService: WebPushSubService,
         private readonly jose: JoseService
     ) { }
@@ -141,10 +139,7 @@ export class MembershipsService {
                 const recipients = await this.webPushSubService.getAdminIds();
 
                 if (recipients.length) {
-                    await this.pushProducer.enqueueSendToUsers(recipients, tinyPayload, {
-                        ttl: 3600,
-                        chunkSize: 500,
-                    });
+                    await this.webPushSubService.sendToUsers(recipients, tinyPayload, 3600);
                 }
             } catch (e) {
                 console.warn('[AnalyzeNews.create] push enqueue failed:', e);
@@ -284,10 +279,7 @@ export class MembershipsService {
                 const recipients = await this.webPushSubService.getAdminIds();
 
                 if (recipients.length) {
-                    await this.pushProducer.enqueueSendToUsers(recipients, tinyPayload, {
-                        ttl: 3600,
-                        chunkSize: 500,
-                    });
+                    await this.webPushSubService.sendToUsers(recipients, tinyPayload, 3600);
                 }
             } catch (e) {
                 console.warn('[AnalyzeNews.create] push enqueue failed:', e);
@@ -418,10 +410,10 @@ export class MembershipsService {
             const recipients = [new Types.ObjectId(userId?.toString())];
 
             if (recipients.length) {
-                await this.pushProducer.enqueueSendToUsers(
-                    recipients,
+                await this.webPushSubService.sendToUsers(
+                    recipients as Types.ObjectId[],
                     tinyPayload,
-                    { ttl: 3600, chunkSize: 500 },
+                    3600,
                 );
             }
         } catch (e) {
@@ -476,10 +468,10 @@ export class MembershipsService {
 
                 const recipients = [recipientId];
 
-                await this.pushProducer.enqueueSendToUsers(
-                    recipients,
+                await this.webPushSubService.sendToUsers(
+                    recipients as Types.ObjectId[],
                     tinyPayload,
-                    { ttl: 3600, chunkSize: 100 },
+                    3600,
                 );
             }
         } catch (e) {
@@ -616,21 +608,35 @@ export class MembershipsService {
         };
 
         const { token } = await this.jose.signToken(payload);
-   
+
         // Success log
         this.logger.log(
             `Activation success | membershipId=${membershipId} | userId=${userId ?? 'N/A'} | account=${accountLogin} | ip=${ip ?? 'N/A'}`,
         );
+
+        // Fire-and-forget push notification via BullMQ
+        try {
+            if (userId) {
+                const tinyPayload = {
+                    title: 'License activated',
+                    body: `Your EA license was activated for account ${accountLogin}.`,
+                };
+
+                await this.webPushSubService.sendToUsers(
+                    [new Types.ObjectId(userId)],
+                    tinyPayload,
+                    3600,
+                );
+            }
+        } catch (e) {
+            this.logger.warn('[Memberships.activate] push enqueue failed:', e);
+        }
 
         // 🔥 RETURN EA-SAFE JSON
         return {
             status: 'OK',
             token,
         };
-    }
-
-    private delayMs(ms: number) {
-        return new Promise<void>((resolve) => setTimeout(resolve, ms));
     }
 
     private async ensureLicenseRequiredSubscription(

@@ -142,6 +142,10 @@ export class AuthService {
 
     const existing = await this.users.findByEmail(email);
 
+    if (existing?.isBanned) {
+      throw new ForbiddenException('This account is banned.');
+    }
+
     const isExisting = await this.users.findByEmail(email);
     if (isExisting) {
       throw new ConflictException('Email already registered!');
@@ -212,7 +216,10 @@ export class AuthService {
 
     const existing = await this.users.findByEmail(email);
 
- 
+    if (existing?.isBanned) {
+      throw new ForbiddenException('This account is banned.');
+    }
+
     try {
       const authDoc = await this.users.getAuthForLoginByEmail(email);
 

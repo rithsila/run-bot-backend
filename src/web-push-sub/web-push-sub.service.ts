@@ -80,7 +80,7 @@ export class WebPushSubService {
 
   async sendToUsers(
     userIds: Types.ObjectId[],
-    payload: string,
+    payload: unknown,
     ttl = 60,
   ) {
     const cursor = this.sub
