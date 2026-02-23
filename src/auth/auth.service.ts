@@ -6,6 +6,7 @@ import {
   UnauthorizedException,
   BadRequestException,
   ConflictException,
+  ForbiddenException,
 } from '@nestjs/common';
 import { UserService } from '../user/user.service';
 import { SignupDto } from './dto/signup.dto';
@@ -101,7 +102,7 @@ export class AuthService {
     ip?: string,
     ua?: string,
   ) {
-   
+
     await this.pwResetModel.updateMany(
       { userId, usedAt: null, expiresAt: { $gt: new Date() } },
       { $set: { expiresAt: new Date() } },
@@ -137,6 +138,10 @@ export class AuthService {
     reqMeta: Partial<SignupMeta> = {},
   ): Promise<PublicUser> {
     const email = this.users.normalizeEmail(dto.email);
+
+
+    const existing = await this.users.findByEmail(email);
+
     const isExisting = await this.users.findByEmail(email);
     if (isExisting) {
       throw new ConflictException('Email already registered!');
@@ -204,6 +209,10 @@ export class AuthService {
   ): Promise<{ tokenType: 'Bearer'; accessToken: string; expiresIn: number }> {
     const email = this.users.normalizeEmail(dto.email);
 
+
+    const existing = await this.users.findByEmail(email);
+
+ 
     try {
       const authDoc = await this.users.getAuthForLoginByEmail(email);
 
