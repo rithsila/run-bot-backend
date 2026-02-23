@@ -32,13 +32,13 @@ export class MailService {
 
     this.transporter = nodemailer.createTransport({
       host: 'smtp.gmail.com',
-      port: 465,
-      secure: true, // 465
+      port: 587,
+      secure: false,
+      requireTLS: true,
       auth: { user, pass },
       pool: true,
       maxConnections: 3,
       maxMessages: 100,
-      // Production-friendly timeouts
       connectionTimeout: 15_000,
       greetingTimeout: 10_000,
       socketTimeout: 30_000,
@@ -48,8 +48,8 @@ export class MailService {
       await this.transporter.verify();
       this.logger.log('Nodemailer SMTP verified (Gmail App Password).');
     } catch (e) {
-      this.logger.error('SMTP verify failed', e as any);
-      // Keep instance but mark transporter undefined so sends no-op/fail fast
+      this.logger.error('SMTP verify failed', e?.message);
+      this.logger.error(e); // logs stack + code in many setups
       this.transporter = undefined;
     }
   }
