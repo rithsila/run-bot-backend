@@ -57,7 +57,7 @@ export class PushProducer {
     async enqueueSendToUsers(
         userIds: ObjectIdLike[],
         payload: unknown,
-        opts?: { ttl?: number; chunkSize?: number; delayMs?: number; jobOpts?: JobsOptions },
+        opts?: { ttl?: number; chunkSize?: number; delayMs?: number; dedupe?: boolean; jobOpts?: JobsOptions },
     ) {
         const ttl = opts?.ttl ?? 60;
         const chunkSize = Math.max(1, opts?.chunkSize ?? 1000);
@@ -76,6 +76,7 @@ export class PushProducer {
                 backoff: { type: 'exponential', delay: 2000 },
                 removeOnComplete: 1000,
                 removeOnFail: false,
+                jobId: opts?.dedupe !== false ? `${ids.join(',')}:${ttl}:${JSON.stringify(payload).slice(0,64)}` : undefined,
                 ...(opts?.jobOpts || {}),
             } as JobsOptions,
         }));

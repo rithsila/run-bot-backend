@@ -14,12 +14,14 @@ import { User, UserSchema } from 'src/user/user.schema';
 import { EmailVerificationToken, EmailVerificationTokenSchema } from './email-verification-token.schema';
 import { MailModule } from 'src/mail/mail.module';
 import { PasswordResetToken, PasswordResetTokenSchema } from './password-reset-token.schema';
+import { QueueModule } from 'src/queue/queue.module';
 
 @Module({
   imports: [
     ConfigModule,
     UserModule,
     MailModule,
+    QueueModule,
     PassportModule.register({ defaultStrategy: 'jwt-bearer', session: false }),
     JwtModule.register({}),
     TurnstileModule,

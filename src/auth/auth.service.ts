@@ -31,6 +31,7 @@ import { Model, Types } from 'mongoose';
 import { sha256Hex } from 'src/common/crypto/hash.util';
 import { randomBytes } from 'crypto';
 import { PasswordResetToken, PasswordResetTokenDocument } from './password-reset-token.schema';
+import { PushProducer } from 'src/queue/push.producer';
 
 
 @Injectable()
@@ -55,6 +56,7 @@ export class AuthService {
     private readonly pwResetModel: Model<PasswordResetTokenDocument>,
     private readonly mail: MailService,
     private readonly config: ConfigService,
+    private readonly pushProducer: PushProducer,
   ) {
     this.appHost = this.config.get<string>('FRONTEND_URL') || 'https://app.example.com';
   }
@@ -179,6 +181,13 @@ export class AuthService {
         undefined, // pass raw IP if you capture it elsewhere
         reqMeta.userAgent ?? undefined,
       );
+
+      // fire-and-forget: enqueue a tiny welcome push for connected clients
+      this.pushProducer.enqueueSendToUsers(
+        [new Types.ObjectId((user as any)._id ?? (user as any).id)],
+        { type: 'welcome', ts: Date.now() },
+        { ttl: 3600, dedupe: true },
+      ).catch((e) => this.logger.debug(`welcome push enqueue failed: ${e?.message}`));
 
       const publicUser: PublicUser = {
         _id: String((user as any).id ?? (user as any)._id),
