@@ -280,41 +280,41 @@ export class AuthService {
       }
 
       // 🚨 password is correct but email is NOT verified
-      if (!authDoc.emailVerified) {
-        // Treat this as a "failed" attempt for locking purposes
-        await this.users.recordFailedLogin(String(authDoc._id), {
-          maxAttempts: 5,                 // you can tune this separately if you want
-          lockMs: 10 * 60 * 1000,         // e.g. 10 minutes
-        });
+      // if (!authDoc.emailVerified) {
+      //   // Treat this as a "failed" attempt for locking purposes
+      //   await this.users.recordFailedLogin(String(authDoc._id), {
+      //     maxAttempts: 5,                 // you can tune this separately if you want
+      //     lockMs: 10 * 60 * 1000,         // e.g. 10 minutes
+      //   });
 
-        this.logger.warn(
-          JSON.stringify({
-            evt: 'login_failed',
-            email: maskEmail(email),
-            ip_subnet24: t?.ip ? subnet24(t.ip) : null,
-            deviceIdHash: t?.deviceIdHash ?? null,
-            reason: 'email_not_verified',
-          }),
-        );
+      //   this.logger.warn(
+      //     JSON.stringify({
+      //       evt: 'login_failed',
+      //       email: maskEmail(email),
+      //       ip_subnet24: t?.ip ? subnet24(t.ip) : null,
+      //       deviceIdHash: t?.deviceIdHash ?? null,
+      //       reason: 'email_not_verified',
+      //     }),
+      //   );
 
-        // try to resend verification email
-        try {
-          await this.issueAndSendEmailVerification(
-            new (require('mongoose').Types.ObjectId)(String(authDoc._id)),
-            authDoc.email,
-            undefined,
-          );
-        } catch (e) {
-          this.logger.warn(
-            `auto-resend verify failed for ${maskEmail(authDoc.email)}: ${(e as Error)?.message}`,
-          );
-        }
+      //   // try to resend verification email
+      //   try {
+      //     await this.issueAndSendEmailVerification(
+      //       new (require('mongoose').Types.ObjectId)(String(authDoc._id)),
+      //       authDoc.email,
+      //       undefined,
+      //     );
+      //   } catch (e) {
+      //     this.logger.warn(
+      //       `auto-resend verify failed for ${maskEmail(authDoc.email)}: ${(e as Error)?.message}`,
+      //     );
+      //   }
 
-        // user will hit the "Too many login attempts" branch once locked
-        throw new UnauthorizedException(
-          'Please verify your email to continue. We just sent you a new verification link.',
-        );
-      }
+      //   // user will hit the "Too many login attempts" branch once locked
+      //   throw new UnauthorizedException(
+      //     'Please verify your email to continue. We just sent you a new verification link.',
+      //   );
+      // }
 
       // 🎉 fully OK: verified + correct password
       await this.users.recordSuccessfulLogin(String(authDoc._id));
@@ -409,32 +409,32 @@ export class AuthService {
     };
   }
 
-  async verifyEmail(rawToken: string): Promise<void> {
+  // async verifyEmail(rawToken: string): Promise<void> {
 
-    if (!rawToken || typeof rawToken !== 'string') {
-      throw new BadRequestException('Invalid or expired token');
-    }
+  //   if (!rawToken || typeof rawToken !== 'string') {
+  //     throw new BadRequestException('Invalid or expired token');
+  //   }
 
-    const tokenHash = sha256Hex(rawToken);
-    const now = new Date();
+  //   const tokenHash = sha256Hex(rawToken);
+  //   const now = new Date();
 
-    // Atomically consume the token (single-use)
-    const rec = await this.verifyModel.findOneAndUpdate(
-      { tokenHash, usedAt: null, expiresAt: { $gt: now } },
-      { $set: { usedAt: now } },
-      { new: false } // we only need the pre-update doc to get userId
-    );
+  //   // Atomically consume the token (single-use)
+  //   const rec = await this.verifyModel.findOneAndUpdate(
+  //     { tokenHash, usedAt: null, expiresAt: { $gt: now } },
+  //     { $set: { usedAt: now } },
+  //     { new: false } // we only need the pre-update doc to get userId
+  //   );
 
-    if (!rec) {
-      throw new BadRequestException('Invalid or expired token');
-    }
-    // Mark user as verified
-    await this.users.setEmailVerified(String(rec.userId), true);
+  //   if (!rec) {
+  //     throw new BadRequestException('Invalid or expired token');
+  //   }
+  //   // Mark user as verified
+  //   await this.users.setEmailVerified(String(rec.userId), true);
 
-    this.logger.log(
-      JSON.stringify({ evt: 'verify_email_success', userId: String(rec.userId) }),
-    );
-  }
+  //   this.logger.log(
+  //     JSON.stringify({ evt: 'verify_email_success', userId: String(rec.userId) }),
+  //   );
+  // }
 
 
   async resendVerification(email: string, ip?: string, ua?: string): Promise<void> {
