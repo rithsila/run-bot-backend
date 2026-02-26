@@ -176,7 +176,7 @@ export class AuthController {
   @Throttle({ default: { limit: 10, ttl: 60_000 } }) // 10 requests/min per IP (tune as you like)
   @HttpCode(HttpStatus.NO_CONTENT)
   async verifyEmail(@Body() dto: VerifyEmailDto): Promise<void> {
-    await this.auth.verifyEmail(dto.token);
+    // await this.auth.verifyEmail(dto.token);
   }
 
   @Public()
