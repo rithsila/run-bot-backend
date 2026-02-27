@@ -459,7 +459,6 @@ export class UserService {
       this.enforceMx(email),
       argon2.hash(p.password, {
         type: argon2.argon2id,
-        // sensible explicit params; tune if needed
         memoryCost: 2 ** 16, // 64 MiB
         timeCost: 3,
         parallelism: 1,

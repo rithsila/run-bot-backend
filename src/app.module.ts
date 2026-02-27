@@ -52,6 +52,7 @@ import { SubscriptionsModule } from './subscriptions/subscriptions.module';
 import { StorageModule } from './storage/storage.module';
 import { ProductsModule } from './products/products.module';
 import { TradingModule } from './robots/trading/trading.module';
+import { IndicatorModule } from './indicator/indicator.module';
 
 @Module({
   imports: [
@@ -185,6 +186,7 @@ import { TradingModule } from './robots/trading/trading.module';
     StorageModule,
     ProductsModule,
     TradingModule,
+    IndicatorModule,
   ],
 
   controllers: [AppController],
