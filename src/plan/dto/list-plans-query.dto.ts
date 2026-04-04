@@ -12,8 +12,6 @@ import {
 import { PlanCategory } from '../plan.enum';
 
 export class ListPlansQueryDto {
- 
-
     @IsOptional()
     @IsEnum(PlanCategory)
     category?: PlanCategory;

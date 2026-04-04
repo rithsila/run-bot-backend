@@ -16,7 +16,11 @@ export class AnalyzeNews {
     @Prop({ type: String, enum: Object.values(Pair), required: false })
     pair?: Pair;
 
-    @Prop({ type: String, enum: Object.values(Direction), default: Direction.Bearish })
+    @Prop({
+        type: String,
+        enum: Object.values(Direction),
+        default: Direction.Bearish,
+    })
     impact!: Direction;
 
     @Prop({ type: String, default: '', trim: true, maxlength: 500 })

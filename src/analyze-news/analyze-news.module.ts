@@ -9,13 +9,15 @@ import { RealtimeModule } from 'src/real-time/real-time.module';
 import { QueueModule } from 'src/queue/queue.module';
 
 @Module({
-  imports: [
-    MongooseModule.forFeature([{ name: AnalyzeNews.name, schema: AnalyzeNewsSchema }]),
-    RealtimeModule,
-    WebPushSubModule,
-    QueueModule
-  ],
-  providers: [AnalyzeNewsService, PersistImageService],
-  controllers: [AnalyzeNewsController]
+    imports: [
+        MongooseModule.forFeature([
+            { name: AnalyzeNews.name, schema: AnalyzeNewsSchema },
+        ]),
+        RealtimeModule,
+        WebPushSubModule,
+        QueueModule,
+    ],
+    providers: [AnalyzeNewsService, PersistImageService],
+    controllers: [AnalyzeNewsController],
 })
-export class AnalyzeNewsModule { }
+export class AnalyzeNewsModule {}

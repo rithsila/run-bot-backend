@@ -1,15 +1,15 @@
 // src/order/order.controller.ts
 import {
-  BadRequestException,
-  Controller,
-  Headers,
-  Post,
-  Body,
-  Req,
-  Get,
-  Query,
-  Param,
-  Patch,
+    BadRequestException,
+    Controller,
+    Headers,
+    Post,
+    Body,
+    Req,
+    Get,
+    Query,
+    Param,
+    Patch,
 } from '@nestjs/common';
 import { Throttle } from '@nestjs/throttler';
 import { Logger } from 'nestjs-pino';
@@ -24,72 +24,76 @@ import { Role } from 'src/user/user.enum';
 
 @Controller('orders')
 export class OrderController {
-  constructor(
-    private readonly orderService: OrderService,
-    private readonly logger: Logger,
-  ) { }
+    constructor(
+        private readonly orderService: OrderService,
+        private readonly logger: Logger,
+    ) {}
 
-  @Post()
-  @Throttle({ short: { ttl: 10_000, limit: 5 } })
-  async createOrder(
-    @Req() req: AuthRequest,
-    @Body() dto: UserCreateOrderDto,
-    @Headers('x-idempotency-key') xIdem?: string,
-    @Headers('idempotency-key') idem?: string,
-  ) {
-    const userId = req?.user?.userId;
-    if (!userId) throw new BadRequestException('AUTH_REQUIRED');
+    @Post()
+    @Throttle({ short: { ttl: 10_000, limit: 5 } })
+    async createOrder(
+        @Req() req: AuthRequest,
+        @Body() dto: UserCreateOrderDto,
+        @Headers('x-idempotency-key') xIdem?: string,
+        @Headers('idempotency-key') idem?: string,
+    ) {
+        const userId = req?.user?.userId;
+        if (!userId) throw new BadRequestException('AUTH_REQUIRED');
 
-    const idempotencyKey = (xIdem || idem || '').trim() || undefined;
-    if (idempotencyKey && idempotencyKey.length > 128) {
-      throw new BadRequestException('Invalid idempotency key length');
+        const idempotencyKey = (xIdem || idem || '').trim() || undefined;
+        if (idempotencyKey && idempotencyKey.length > 128) {
+            throw new BadRequestException('Invalid idempotency key length');
+        }
+
+        this.logger.log(
+            `Create order: user=${userId} reqId=${(req as any).id} idem=${idempotencyKey ?? 'none'}`,
+        );
+
+        return this.orderService.createUserRequestOrder(
+            userId,
+            dto,
+            idempotencyKey,
+        );
     }
 
-    this.logger.log(
-      `Create order: user=${userId} reqId=${(req as any).id} idem=${idempotencyKey ?? 'none'}`,
-    );
+    @Patch('id/:id/reorder')
+    async reorderOrder(
+        @Param('id') id: string,
+        @Req() req: AuthRequest,
+        @Body() dto: UserCreateOrderDto,
+    ) {
+        const userId = req?.user?.userId;
+        if (!userId) throw new BadRequestException('AUTH_REQUIRED');
+        this.logger.log(
+            `Reorder: user=${userId} order=${id} reqId=${(req as any).id}`,
+        );
+        return this.orderService.updateUserOrder(id, userId, dto);
+    }
 
-    return this.orderService.createUserRequestOrder(userId, dto, idempotencyKey);
-  }
+    @Get('id/:id')
+    @Roles(Role.Admin)
+    async getOrderById(@Param('id') id: string) {
+        return this.orderService.getOrderById(id);
+    }
 
-  @Patch('id/:id/reorder')
-  async reorderOrder(
-    @Param('id') id: string,
-    @Req() req: AuthRequest,
-    @Body() dto: UserCreateOrderDto,
-  ) {
-    const userId = req?.user?.userId;
-    if (!userId) throw new BadRequestException('AUTH_REQUIRED');
-    this.logger.log(
-      `Reorder: user=${userId} order=${id} reqId=${(req as any).id}`,
-    );
-    return this.orderService.updateUserOrder(id, userId, dto);
-  }
+    @Patch('id/:id/status')
+    @Roles(Role.Admin)
+    async updateOrderStatus(
+        @Param('id') id: string,
+        @Body() dto: UpdateOrderStatusDto,
+        @Req() req: AuthRequest,
+    ) {
+        return this.orderService.updateOrderStatus(id, dto, req?.user?.userId);
+    }
 
-  @Get('id/:id')
-  @Roles(Role.Admin)
-  async getOrderById(@Param('id') id: string) {
-    return this.orderService.getOrderById(id);
-  }
+    @Get()
+    @Roles(Role.Admin)
+    paginate(@Query() query: PaginateOrdersDto) {
+        return this.orderService.paginate(query);
+    }
 
-  @Patch('id/:id/status')
-  @Roles(Role.Admin)
-  async updateOrderStatus(
-    @Param('id') id: string,
-    @Body() dto: UpdateOrderStatusDto,
-    @Req() req: AuthRequest,
-  ) {
-    return this.orderService.updateOrderStatus(id, dto, req?.user?.userId);
-  }
-
-  @Get()
-  @Roles(Role.Admin)
-  paginate(@Query() query: PaginateOrdersDto) {
-    return this.orderService.paginate(query);
-  }
-
-  @Get('subscription/:subscriptionId')
-  getBySubscription(@Param('subscriptionId') subscriptionId: string) {
-    return this.orderService.getOrderBySubscription(subscriptionId);
-  }
+    @Get('subscription/:subscriptionId')
+    getBySubscription(@Param('subscriptionId') subscriptionId: string) {
+        return this.orderService.getOrderBySubscription(subscriptionId);
+    }
 }

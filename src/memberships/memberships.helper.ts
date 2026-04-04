@@ -1,21 +1,20 @@
-import { BadRequestException } from "@nestjs/common";
-import { MembershipStatus } from "./memberships.schema";
+import { BadRequestException } from '@nestjs/common';
+import { MembershipStatus } from './memberships.schema';
 
 export function normalizeAccounts(input?: string[]): string[] | undefined {
     if (!Array.isArray(input)) return undefined;
     const cleaned = Array.from(
         new Set(
             input
-                .map(v => (typeof v === 'string' ? v.trim() : ''))
-                .filter(v => v.length > 0),
+                .map((v) => (typeof v === 'string' ? v.trim() : ''))
+                .filter((v) => v.length > 0),
         ),
     );
     if (cleaned.length === 0) return [];
-    if (cleaned.length > 10) throw new BadRequestException('accounts can have at most 10 entries');
+    if (cleaned.length > 10)
+        throw new BadRequestException('accounts can have at most 10 entries');
     return cleaned;
 }
-
-
 
 type TinyPayload = { title: string; body: string };
 
@@ -47,7 +46,7 @@ type BuildOptions = {
 export function buildAdminTinyPayload(
     membership: MembershipLike,
     dto: UpdateMembershipAdminDtoLike = {},
-    options: BuildOptions = {}
+    options: BuildOptions = {},
 ): TinyPayload {
     const maxReasonLength = options.maxReasonLength ?? 160;
 
@@ -56,8 +55,11 @@ export function buildAdminTinyPayload(
             .filter(Boolean)
             .join(' ') || 'A user';
 
-    const membershipLabel =
-        (membership?.name || membership?.membershipName || '').trim();
+    const membershipLabel = (
+        membership?.name ||
+        membership?.membershipName ||
+        ''
+    ).trim();
 
     const reason = (dto.adminNotes?.trim() || '').slice(0, maxReasonLength);
 
@@ -66,7 +68,9 @@ export function buildAdminTinyPayload(
 
     switch (statusToUse) {
         case MembershipStatus.Request: {
-            const tail = membershipLabel ? ` ${membershipLabel}` : ' the membership';
+            const tail = membershipLabel
+                ? ` ${membershipLabel}`
+                : ' the membership';
             return {
                 title: 'New membership request',
                 body: `${fullName} just requested to join${tail}.`,

@@ -25,7 +25,7 @@ import { MembershipDocument } from './memberships.schema';
 @SkipCsrf()
 @UseGuards(ApiKeyGuard)
 export class KolsMembershipsController {
-    constructor(private readonly kolsMemberships: KolsMembershipService) { }
+    constructor(private readonly kolsMemberships: KolsMembershipService) {}
 
     @Get('user/:userId')
     @HttpCode(HttpStatus.OK)
@@ -52,10 +52,9 @@ export class KolsMembershipsController {
     @Post('request')
     @HttpCode(HttpStatus.CREATED)
     async request(
-    @Body() dto: KolsJoinMembershipDto,
-    @Req() req: AuthRequest,
-  ): Promise<ApiSuccess<{ userId: string }>> {
-    
+        @Body() dto: KolsJoinMembershipDto,
+        @Req() req: AuthRequest,
+    ): Promise<ApiSuccess<{ userId: string }>> {
         const data = await this.kolsMemberships.requestJoin(dto);
 
         return {

@@ -1,6 +1,6 @@
 import { Injectable, InternalServerErrorException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { SignJWT, importJWK, JWK, exportJWK } from 'jose';
+import { SignJWT, jwtVerify, importJWK, JWK, exportJWK } from 'jose';
 import { randomUUID } from 'crypto';
 
 type PublicJwk = {
@@ -13,7 +13,6 @@ type PublicJwk = {
     use?: string;
 };
 
-
 @Injectable()
 export class JoseService {
     private signingKid?: string;
@@ -21,7 +20,7 @@ export class JoseService {
     private publicJwks: PublicJwk[] = [];
     private ready?: Promise<void>;
 
-    constructor(private readonly cfg: ConfigService) { }
+    constructor(private readonly cfg: ConfigService) {}
 
     /** Load keys only once */
     private async init() {
@@ -33,7 +32,7 @@ export class JoseService {
 
             if (!kid || !priv) {
                 throw new InternalServerErrorException(
-                    'Missing SIGNING_KID or SIGNING_PRIVATE_JWK'
+                    'Missing SIGNING_KID or SIGNING_PRIVATE_JWK',
                 );
             }
 
@@ -47,17 +46,21 @@ export class JoseService {
                 // Derive public portion manually to avoid extractable restrictions
                 const { kty, crv, x, y } = this.privateJwk as any;
                 if (!kty || !x || !y) {
-                    throw new InternalServerErrorException('Invalid SIGNING_PRIVATE_JWK: missing public components');
+                    throw new InternalServerErrorException(
+                        'Invalid SIGNING_PRIVATE_JWK: missing public components',
+                    );
                 }
-                this.publicJwks = [{
-                    kty,
-                    crv,
-                    x,
-                    y,
-                    kid,
-                    alg: 'ES256',
-                    use: 'sig'
-                }];
+                this.publicJwks = [
+                    {
+                        kty,
+                        crv,
+                        x,
+                        y,
+                        kid,
+                        alg: 'ES256',
+                        use: 'sig',
+                    },
+                ];
             }
         })();
 
@@ -68,7 +71,9 @@ export class JoseService {
     async signToken(payload: Record<string, any>) {
         await this.init();
 
-        const privateKey = await importJWK(this.privateJwk!, 'ES256', { extractable: true });
+        const privateKey = await importJWK(this.privateJwk!, 'ES256', {
+            extractable: true,
+        });
         const ttlDays = Number(this.cfg.get('TOKEN_TTL_DAYS') || 30);
         const now = Math.floor(Date.now() / 1000);
         const exp = now + ttlDays * 24 * 3600;
@@ -84,6 +89,16 @@ export class JoseService {
             .sign(privateKey);
 
         return { token, exp };
+    }
+
+    /** Verify a JOSE-signed token. Returns the payload or throws on failure. */
+    async verifyToken(token: string): Promise<Record<string, unknown>> {
+        await this.init();
+        const jwk = this.publicJwks[0];
+        if (!jwk) throw new Error('No public JWK available for verification');
+        const publicKey = await importJWK(jwk as JWK, 'ES256');
+        const { payload } = await jwtVerify(token, publicKey);
+        return payload as Record<string, unknown>;
     }
 
     /** JWKS endpoint for EA (public key) */

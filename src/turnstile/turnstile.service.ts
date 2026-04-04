@@ -12,7 +12,8 @@ type VerifyResp = {
 
 @Injectable()
 export class TurnstileService {
-    private readonly url = 'https://challenges.cloudflare.com/turnstile/v0/siteverify';
+    private readonly url =
+        'https://challenges.cloudflare.com/turnstile/v0/siteverify';
 
     async verify(token: string, remoteip?: string, expectedAction?: string) {
         const secret = process.env.CF_TURNSTILE_SECRET!;
@@ -26,7 +27,10 @@ export class TurnstileService {
         });
         const data = (await r.json()) as VerifyResp;
 
-        if (!data.success || (expectedAction && data.action !== expectedAction)) {
+        if (
+            !data.success ||
+            (expectedAction && data.action !== expectedAction)
+        ) {
             throw new BadRequestException({
                 message: 'Turnstile verification failed',
                 codes: data['error-codes'] ?? [],

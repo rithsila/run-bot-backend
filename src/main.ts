@@ -18,116 +18,166 @@ import { SocketIoAdapter } from './real-time/socketio.adapter';
 import { RequiredHeadersMiddleware } from './middleware/required-headers.middleware';
 
 async function bootstrap() {
-  const app = await NestFactory.create<NestExpressApplication>(AppModule, { bufferLogs: true });
-  
-  app.set('trust proxy', 1);
-  app.useLogger(app.get(PinoLogger));
-  const logger = new Logger('Bootstrap');
-  const config = app.get(ConfigService);
+    const app = await NestFactory.create<NestExpressApplication>(AppModule, {
+        bufferLogs: true,
+    });
 
-  // 👉 flag for environment
-  const isProd = config.get('NODE_ENV') === 'production';
+    app.set('trust proxy', 1);
+    app.useLogger(app.get(PinoLogger));
+    const logger = new Logger('Bootstrap');
+    const config = app.get(ConfigService);
 
-  // ---- build origins at RUNTIME ----
-  const allowedOrigins = buildAllowedOrigins([
-    config.get<string>('FRONTEND_URL'),
-  ]);
+    // 👉 flag for environment
+    const isProd = config.get('NODE_ENV') === 'production';
 
-  logger.log(`[CORS] allowed origins: ${allowedOrigins.join(', ')}`);
+    // ---- build origins at RUNTIME ----
+    const allowedOrigins = buildAllowedOrigins([
+        config.get<string>('FRONTEND_URL'),
+    ]);
 
-  app.enableCors({
-    origin: allowedOrigins,
-    credentials: true,
-    methods: ['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-    allowedHeaders: [
-      'content-type', 'accept', 'authorization',
-      'x-csrf-token', 'x-client-device-id', 'x-device-id', 'x-device-hash',
-      'x-internal-signature', 'x-internal-timestamp',
-      'x-idempotency-key', 'idempotency-key', 'x-api-key',
-      'x-request-id',
-    ],
-    optionsSuccessStatus: 204,
-    maxAge: 86400,
-  });
+    logger.log(`[CORS] allowed origins: ${allowedOrigins.join(', ')}`);
 
-  // WebSocket adapter (after CORS config)
-  const wsAdapter = new SocketIoAdapter(app, allowedOrigins);
-  await wsAdapter.connectToRedisIfNeeded();
-  app.useWebSocketAdapter(wsAdapter);
+    app.enableCors({
+        origin: allowedOrigins,
+        credentials: true,
+        methods: ['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+        allowedHeaders: [
+            'content-type',
+            'accept',
+            'authorization',
+            'x-csrf-token',
+            'x-client-device-id',
+            'x-device-id',
+            'x-device-hash',
+            'x-internal-signature',
+            'x-internal-timestamp',
+            'x-idempotency-key',
+            'idempotency-key',
+            'x-api-key',
+            'x-request-id',
+        ],
+        optionsSuccessStatus: 204,
+        maxAge: 86400,
+    });
 
+    // WebSocket adapter (after CORS config)
+    const wsAdapter = new SocketIoAdapter(app, allowedOrigins);
+    await wsAdapter.connectToRedisIfNeeded();
+    app.useWebSocketAdapter(wsAdapter);
 
-  app.useGlobalFilters(new HttpErrorFilter());
+    app.useGlobalFilters(new HttpErrorFilter());
 
-  // ---- Body parsers (must come before any middleware that inspects body/cookies) ----
-  const express = app.getHttpAdapter().getInstance();
-  express.use(
-    '/retailer',
-    bodyParser.json({ limit: '1mb', verify: (req: any, _r, buf) => { req.rawBody = buf; } }),
-  );
-  app.use(bodyParser.json({ limit: '64kb', verify: (req: any, _res, buf) => { req.rawBody = buf; } }));
-  app.use(bodyParser.urlencoded({ extended: false, limit: '16kb', verify: (req: any, _res, buf) => { req.rawBody = buf; } }));
+    // ---- Body parsers (must come before any middleware that inspects body/cookies) ----
+    const express = app.getHttpAdapter().getInstance();
+    express.use(
+        '/retailer',
+        bodyParser.json({
+            limit: '1mb',
+            verify: (req: any, _r, buf) => {
+                req.rawBody = buf;
+            },
+        }),
+    );
+    app.use(
+        bodyParser.json({
+            limit: '64kb',
+            verify: (req: any, _res, buf) => {
+                req.rawBody = buf;
+            },
+        }),
+    );
+    app.use(
+        bodyParser.urlencoded({
+            extended: false,
+            limit: '16kb',
+            verify: (req: any, _res, buf) => {
+                req.rawBody = buf;
+            },
+        }),
+    );
 
-  const allowNonJsonPrefixes = ['/trading/upload', '/analyze-news'];
+    const allowNonJsonPrefixes = ['/trading/upload', '/analyze-news'];
 
-  app.use((req, res, next) => {
-    const m = req.method;
-    const hasBody = Number(req.headers['content-length'] || 0) > 0;
-    const isNonJsonAllowed =
-      allowNonJsonPrefixes.some((prefix) => req.path?.startsWith(prefix)) &&
-      req.is?.('multipart/form-data');
+    app.use((req, res, next) => {
+        const m = req.method;
+        const hasBody = Number(req.headers['content-length'] || 0) > 0;
+        const isNonJsonAllowed =
+            allowNonJsonPrefixes.some((prefix) =>
+                req.path?.startsWith(prefix),
+            ) && req.is?.('multipart/form-data');
 
-    if (m === 'POST' || m === 'PUT' || m === 'PATCH' || (m === 'DELETE' && hasBody)) {
-      if (hasBody && (!req.is || (!req.is('application/json') && !isNonJsonAllowed))) {
-        return res.status(415).json({ message: 'Unsupported Media Type' });
-      }
+        if (
+            m === 'POST' ||
+            m === 'PUT' ||
+            m === 'PATCH' ||
+            (m === 'DELETE' && hasBody)
+        ) {
+            if (
+                hasBody &&
+                (!req.is || (!req.is('application/json') && !isNonJsonAllowed))
+            ) {
+                return res
+                    .status(415)
+                    .json({ message: 'Unsupported Media Type' });
+            }
+        }
+        next();
+    });
+
+    // Global validation
+    app.useGlobalPipes(
+        new ValidationPipe({
+            whitelist: true,
+            forbidNonWhitelisted: true,
+            transform: true,
+            transformOptions: { enableImplicitConversion: true },
+            validationError: { target: false, value: false },
+            // 👇 this is the new part
+            disableErrorMessages: isProd,
+        }),
+    );
+
+    // Security / hardening
+    app.use(
+        helmet({
+            // you can later replace this with a real CSP in prod if you want
+            contentSecurityPolicy: false,
+            crossOriginEmbedderPolicy: false,
+        }),
+    );
+
+    app.use(hpp());
+    app.use(compression({ threshold: '1kb' }));
+    app.use(cookieParser());
+
+    // ✅ Global required headers (placed AFTER parsers, BEFORE everything else)
+    app.use(new RequiredHeadersMiddleware().use);
+
+    app.disable('x-powered-by');
+    app.set('etag', 'strong');
+
+    app.enableShutdownHooks();
+
+    // ---- Redis health ping (non-fatal) ----
+    try {
+        const redis = app.get<Redis>(REDIS);
+        if (redis.status === 'ready') {
+            const pong = await redis.ping();
+            logger.log(
+                `✅ Redis connected: ${pong} (URL=${process.env.REDIS_URL || 'redis://localhost:6379'})`,
+            );
+        } else {
+            logger.warn(
+                `Redis not ready at startup (status=${redis.status}). Continuing without Redis health ping.`,
+            );
+        }
+    } catch (e: any) {
+        logger.error(`❌ Redis connection failed: ${e?.message || e}`);
     }
-    next();
-  });
 
-  // Global validation
-  app.useGlobalPipes(new ValidationPipe({
-    whitelist: true,
-    forbidNonWhitelisted: true,
-    transform: true,
-    transformOptions: { enableImplicitConversion: true },
-    validationError: { target: false, value: false },
-    // 👇 this is the new part
-    disableErrorMessages: isProd,
-  }));
-
-  // Security / hardening
-  app.use(
-    helmet({
-      // you can later replace this with a real CSP in prod if you want
-      contentSecurityPolicy: false,
-      crossOriginEmbedderPolicy: false,
-    }),
-  );
-
-  app.use(hpp());
-  app.use(compression({ threshold: '1kb' }));
-  app.use(cookieParser());
-
-  // ✅ Global required headers (placed AFTER parsers, BEFORE everything else)
-  app.use(new RequiredHeadersMiddleware().use);
-
-  app.disable('x-powered-by');
-  app.set('etag', 'strong');
-
-  app.enableShutdownHooks();
-
-  // ---- Redis health ping (non-fatal) ----
-  try {
-    const redis = app.get<Redis>(REDIS);
-    const pong = await redis.ping();
-    logger.log(`✅ Redis connected: ${pong} (URL=${process.env.REDIS_URL || 'redis://localhost:6379'})`);
-  } catch (e: any) {
-    logger.error(`❌ Redis connection failed: ${e?.message || e}`);
-  }
-
-  const port = Number(process.env.PORT) || config.get<number>('PORT', 4000);
-  await app.listen(port);
-  logger.log(`🚀 Application listening on port ${port}`);
+    const port = Number(process.env.PORT) || config.get<number>('PORT', 4000);
+    await app.listen(port);
+    logger.log(`🚀 Application listening on port ${port}`);
 }
 
 bootstrap();

@@ -34,14 +34,13 @@ interface ActivationResponseData {
 
 @Controller('memberships')
 export class MembershipsController {
-    constructor(private readonly memberships: MembershipsService) { }
+    constructor(private readonly memberships: MembershipsService) {}
 
     @Get()
     @Roles(Role.Admin)
     @Throttle({ default: { limit: 30, ttl: 60_000 } })
     @HttpCode(HttpStatus.OK)
     async list(@Query() q: PaginateMembershipsDto) {
-
         return this.memberships.paginate(q);
     }
 
@@ -150,13 +149,16 @@ export class MembershipsController {
 
     @Post(':id/license')
     @Roles(Role.Admin)
-    @Throttle({ default: { limit: 10, ttl: 60_000 } })  // ✅ Rate limit
+    @Throttle({ default: { limit: 10, ttl: 60_000 } }) // ✅ Rate limit
     @HttpCode(HttpStatus.CREATED)
     async createLicense(
         @Param('id') id: string,
         @Req() req: AuthRequest,
     ): Promise<ApiSuccess<MembershipDocument>> {
-        const membership = await this.memberships.createLicenseKeyForMembership(id, req.user?.userId);
+        const membership = await this.memberships.createLicenseKeyForMembership(
+            id,
+            req.user?.userId,
+        );
         return {
             success: true,
             statusCode: HttpStatus.CREATED,
@@ -180,8 +182,15 @@ export class MembershipsController {
         }
         const xff = Array.isArray(xffHeader) ? xffHeader[0] : xffHeader;
         const ua = req.headers['user-agent'];
-        const ip = typeof xff === 'string' && xff.trim() ? xff.split(',')[0].trim() : req.ip;
-        const result = await this.memberships.activate(dto, ip, ua ?? undefined);
+        const ip =
+            typeof xff === 'string' && xff.trim()
+                ? xff.split(',')[0].trim()
+                : req.ip;
+        const result = await this.memberships.activate(
+            dto,
+            ip,
+            ua ?? undefined,
+        );
 
         return {
             success: true,
@@ -210,8 +219,15 @@ export class MembershipsController {
         }
         const xff = Array.isArray(xffHeader) ? xffHeader[0] : xffHeader;
         const ua = req.headers['user-agent'];
-        const ip = typeof xff === 'string' && xff.trim() ? xff.split(',')[0].trim() : req.ip;
-        const result = await this.memberships.activateFreeLicense(dto, ip, ua ?? undefined);
+        const ip =
+            typeof xff === 'string' && xff.trim()
+                ? xff.split(',')[0].trim()
+                : req.ip;
+        const result = await this.memberships.activateFreeLicense(
+            dto,
+            ip,
+            ua ?? undefined,
+        );
         return {
             success: true,
             statusCode: HttpStatus.OK,

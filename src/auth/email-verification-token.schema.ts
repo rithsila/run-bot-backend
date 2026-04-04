@@ -1,7 +1,8 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { HydratedDocument, Types } from 'mongoose';
 
-export type EmailVerificationTokenDocument = HydratedDocument<EmailVerificationToken>;
+export type EmailVerificationTokenDocument =
+    HydratedDocument<EmailVerificationToken>;
 
 @Schema({ timestamps: true })
 export class EmailVerificationToken {
@@ -22,7 +23,9 @@ export class EmailVerificationToken {
     @Prop() issuedIp?: string;
     @Prop() issuedUa?: string;
 }
-export const EmailVerificationTokenSchema = SchemaFactory.createForClass(EmailVerificationToken);
+export const EmailVerificationTokenSchema = SchemaFactory.createForClass(
+    EmailVerificationToken,
+);
 
 // fast validation lookups
 EmailVerificationTokenSchema.index({ tokenHash: 1, usedAt: 1, expiresAt: 1 });

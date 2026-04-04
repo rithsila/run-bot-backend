@@ -3,11 +3,11 @@ import { RealtimeGateway } from './realtime.gateway';
 
 @Controller('realtime')
 export class RealtimeController {
-  constructor(private readonly rt: RealtimeGateway) {}
+    constructor(private readonly rt: RealtimeGateway) {}
 
-  @Post('test-publish')
-  test(@Body('id') id: string) {
-    this.rt.publishBadge(id || 'news');
-    return { ok: true, id: id || 'news' };
-  }
+    @Post('test-publish')
+    test(@Body('id') id: string) {
+        this.rt.publishBadge(id || 'news');
+        return { ok: true, id: id || 'news' };
+    }
 }

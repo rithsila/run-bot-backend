@@ -7,46 +7,46 @@ export type IndicatorDocument = Indicator & Document;
 export type IndicatorPaginateModel = PaginateModel<IndicatorDocument>;
 
 export enum IndicatorStatus {
-  Request = 'Request',
-  Verified = 'Verified',
-  Rejected = 'Rejected',
+    Request = 'Request',
+    Verified = 'Verified',
+    Rejected = 'Rejected',
 }
 
 @Schema({ collection: 'indicators', timestamps: true, versionKey: false })
 export class Indicator {
-  @Prop({
-    type: Types.ObjectId,
-    ref: 'User',
-    index: true,
-    required: true,
-  })
-  user!: User;
+    @Prop({
+        type: Types.ObjectId,
+        ref: 'User',
+        index: true,
+        required: true,
+    })
+    user!: User;
 
-  @Prop({
-    type: String,
-    trim: true,
-    maxlength: 120,
-    index: true,
-    required: true,
-  })
-  username!: string;
+    @Prop({
+        type: String,
+        trim: true,
+        maxlength: 120,
+        index: true,
+        required: true,
+    })
+    username!: string;
 
-  @Prop({
-    type: String,
-    enum: Object.values(IndicatorStatus),
-    default: IndicatorStatus.Request,
-    index: true,
-  })
-  status!: IndicatorStatus;
+    @Prop({
+        type: String,
+        enum: Object.values(IndicatorStatus),
+        default: IndicatorStatus.Request,
+        index: true,
+    })
+    status!: IndicatorStatus;
 
-  @Prop({ type: String, trim: true })
-  notes?: string;
+    @Prop({ type: String, trim: true })
+    notes?: string;
 
-  @Prop({ type: String, trim: true })
-  adminNotes?: string;
+    @Prop({ type: String, trim: true })
+    adminNotes?: string;
 
-  @Prop({ type: Types.ObjectId, ref: 'User', index: true })
-  updatedBy?: Types.ObjectId | User;
+    @Prop({ type: Types.ObjectId, ref: 'User', index: true })
+    updatedBy?: Types.ObjectId | User;
 }
 
 export const IndicatorSchema = SchemaFactory.createForClass(Indicator);

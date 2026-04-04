@@ -40,7 +40,7 @@ export class Coupon {
     @Prop({
         type: String,
         enum: Object.values(CouponStatus),
-        default: CouponStatus.Request, 
+        default: CouponStatus.Request,
         index: true,
     })
     status!: CouponStatus;
@@ -54,9 +54,6 @@ export class Coupon {
 
 export const CouponSchema = SchemaFactory.createForClass(Coupon);
 CouponSchema.plugin(paginate);
-
-CouponSchema.index({ code: 1 });
-CouponSchema.index({ status: 1 });
 
 CouponSchema.pre('validate', function (next) {
     const doc = this as CouponDocument;

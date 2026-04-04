@@ -13,7 +13,6 @@ import { UpdateIndicatorAdminDto } from './dto/update-indicator-admin.dto';
 import * as membershipsSchema from 'src/memberships/memberships.schema';
 import { MembershipStatus } from 'src/memberships/memberships.schema';
 
-
 @Injectable()
 export class IndicatorService {
     constructor(
@@ -21,7 +20,7 @@ export class IndicatorService {
         private readonly indicatorModel: indicatorSchema.IndicatorPaginateModel,
         @InjectModel(membershipsSchema.Membership.name)
         private readonly membershipModel: membershipsSchema.MembershipPaginateModel,
-    ) { }
+    ) {}
 
     async requestIndicator(params: {
         userId: string | Types.ObjectId;
@@ -51,7 +50,9 @@ export class IndicatorService {
                     $set: {
                         username, // <-- added
                         status: indicatorSchema.IndicatorStatus.Request,
-                        ...(params.notes !== undefined ? { notes: params.notes } : {}),
+                        ...(params.notes !== undefined
+                            ? { notes: params.notes }
+                            : {}),
                     },
                 },
                 { new: true, upsert: true },
@@ -60,12 +61,17 @@ export class IndicatorService {
             if (err?.code === 11000) {
                 return this.indicatorModel.findOne({ user }).orFail();
             }
-            throw new InternalServerErrorException(err?.message ?? 'Request failed');
+            throw new InternalServerErrorException(
+                err?.message ?? 'Request failed',
+            );
         }
     }
 
-    async getMyIndicator(userId: string | Types.ObjectId): Promise<indicatorSchema.IndicatorDocument | null> {
-        const user = typeof userId === 'string' ? new Types.ObjectId(userId) : userId;
+    async getMyIndicator(
+        userId: string | Types.ObjectId,
+    ): Promise<indicatorSchema.IndicatorDocument | null> {
+        const user =
+            typeof userId === 'string' ? new Types.ObjectId(userId) : userId;
         return this.indicatorModel.findOne({ user });
     }
 
@@ -99,7 +105,9 @@ export class IndicatorService {
             sort: { createdAt: -1 },
             lean: true,
             leanWithId: false,
-            populate: [{ path: 'user', select: '_id email firstName lastName' }],
+            populate: [
+                { path: 'user', select: '_id email firstName lastName' },
+            ],
         };
 
         return this.indicatorModel.paginate(filter, options);
@@ -109,7 +117,11 @@ export class IndicatorService {
         return s.replace(/[.*+?^${}()|[\\]\\]/g, '\\$&');
     }
 
-    async updateAdmin(id: string, dto: UpdateIndicatorAdminDto, updatedBy?: string) {
+    async updateAdmin(
+        id: string,
+        dto: UpdateIndicatorAdminDto,
+        updatedBy?: string,
+    ) {
         if (!Types.ObjectId.isValid(id)) {
             throw new BadRequestException('INVALID_ID');
         }
@@ -134,5 +146,4 @@ export class IndicatorService {
         await indicator.save();
         return this.indicatorModel.findById(indicator._id).lean().exec();
     }
-
 }

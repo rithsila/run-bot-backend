@@ -16,7 +16,10 @@ import { CouponsService } from './coupons.service';
 import { CreateCouponRequestDto } from './dto/create-coupon-request.dto';
 
 import type { AuthRequest } from 'src/common/types/auth-request.type';
-import type { ApiSuccess, PaginatedResult } from 'src/common/types/api-response.type';
+import type {
+    ApiSuccess,
+    PaginatedResult,
+} from 'src/common/types/api-response.type';
 import { CouponStatus } from './coupon.schema';
 import { Throttle } from '@nestjs/throttler';
 import { PaginateCouponsDto } from './dto/paginate-coupons.dto';
@@ -27,7 +30,7 @@ import { Role } from 'src/user/user.enum';
 
 @Controller('coupons')
 export class CouponsController {
-    constructor(private readonly coupons: CouponsService) { }
+    constructor(private readonly coupons: CouponsService) {}
 
     @Get()
     @Roles(Role.Admin)
@@ -70,7 +73,6 @@ export class CouponsController {
         };
     }
 
-
     @Post('request')
     @Throttle({ default: { limit: 3, ttl: 60_000 } })
     @HttpCode(HttpStatus.CREATED)
@@ -95,9 +97,13 @@ export class CouponsController {
 
     @Get('me/code')
     @HttpCode(HttpStatus.OK)
-    async getMyCode(
-        @Req() req: AuthRequest
-    ): Promise<ApiSuccess<{ code: string; status: CouponStatus; percent: number } | null>> {
+    async getMyCode(@Req() req: AuthRequest): Promise<
+        ApiSuccess<{
+            code: string;
+            status: CouponStatus;
+            percent: number;
+        } | null>
+    > {
         const userId = req.user?.userId;
         if (!userId) throw new UnauthorizedException('AUTH_REQUIRED');
 
@@ -113,7 +119,6 @@ export class CouponsController {
             path: req.url,
         };
     }
-
 
     @Patch(':id/status')
     @Roles(Role.Admin)
@@ -162,6 +167,4 @@ export class CouponsController {
             path: req.url,
         };
     }
-
-
 }

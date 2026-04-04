@@ -16,8 +16,8 @@ export class PasswordResetToken {
     tokenHash: string;
 
     // TTL: MongoDB will auto-delete the doc once this time passes
-    // NOTE: index below uses { expireAfterSeconds: 0 }
-    @Prop({ type: Date, required: true, index: true })
+    // NOTE: TTL index defined below via schema.index({ expireAfterSeconds: 0 })
+    @Prop({ type: Date, required: true })
     expiresAt: Date;
 
     // Single-use flag
@@ -36,7 +36,8 @@ export class PasswordResetToken {
     reason?: PasswordResetReason;
 }
 
-export const PasswordResetTokenSchema = SchemaFactory.createForClass(PasswordResetToken);
+export const PasswordResetTokenSchema =
+    SchemaFactory.createForClass(PasswordResetToken);
 
 // ---------- Indexes ----------
 // TTL cleanup: expire exactly at expiresAt

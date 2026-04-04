@@ -8,13 +8,15 @@ import { RealtimeModule } from 'src/real-time/real-time.module';
 import { QueueModule } from 'src/queue/queue.module';
 
 @Module({
-  imports: [
-    MongooseModule.forFeature([{ name: TradingPlan.name, schema: TradingPlanSchema }]),
-    WebPushSubModule,
-    RealtimeModule,
-    QueueModule
-  ],
-  providers: [TradingPlanService],
-  controllers: [TradingPlanController]
+    imports: [
+        MongooseModule.forFeature([
+            { name: TradingPlan.name, schema: TradingPlanSchema },
+        ]),
+        WebPushSubModule,
+        RealtimeModule,
+        QueueModule,
+    ],
+    providers: [TradingPlanService],
+    controllers: [TradingPlanController],
 })
-export class TradingPlanModule { }
+export class TradingPlanModule {}

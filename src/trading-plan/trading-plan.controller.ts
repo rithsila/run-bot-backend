@@ -24,7 +24,7 @@ import { Roles } from 'src/auth/decorators/roles.decorator';
 
 @Controller('trading-plan')
 export class TradingPlanController {
-    constructor(private readonly service: TradingPlanService) { }
+    constructor(private readonly service: TradingPlanService) {}
 
     @Post()
     @Roles(Role.Creator, Role.Admin)
@@ -89,7 +89,9 @@ export class TradingPlanController {
     @Patch(':id')
     @Roles(Role.Creator, Role.Admin)
     @HttpCode(HttpStatus.OK)
-    @UsePipes(new ValidationPipe({ whitelist: true, forbidNonWhitelisted: true }))
+    @UsePipes(
+        new ValidationPipe({ whitelist: true, forbidNonWhitelisted: true }),
+    )
     async update(
         @Req() req: AuthRequest,
         @Param('id') id: string,
@@ -115,5 +117,4 @@ export class TradingPlanController {
     async remove(@Param('id') id: string, @Req() req: any) {
         return this.service.remove(id);
     }
-
 }

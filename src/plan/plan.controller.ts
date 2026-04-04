@@ -20,8 +20,7 @@ import { Role } from 'src/user/user.enum';
 @Controller('plan')
 @UsePipes(new ValidationPipe({ transform: true, whitelist: true }))
 export class PlanController {
-
-    constructor(private readonly plans: PlanService) { }
+    constructor(private readonly plans: PlanService) {}
 
     @Post()
     @Roles(Role.Admin)

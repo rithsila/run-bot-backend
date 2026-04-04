@@ -1,5 +1,10 @@
 // src/turnstile/turnstile.guard.ts
-import { Injectable, CanActivate, ExecutionContext, BadRequestException } from '@nestjs/common';
+import {
+    Injectable,
+    CanActivate,
+    ExecutionContext,
+    BadRequestException,
+} from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { TURNSTILE_ACTION } from './turnstile.decorator';
 import { TurnstileService } from './turnstile.service';
@@ -9,7 +14,7 @@ export class TurnstileGuard implements CanActivate {
     constructor(
         private readonly turnstile: TurnstileService,
         private readonly reflector: Reflector,
-    ) { }
+    ) {}
 
     async canActivate(ctx: ExecutionContext) {
         const req = ctx.switchToHttp().getRequest();

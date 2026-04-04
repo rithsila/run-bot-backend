@@ -14,10 +14,10 @@ export type SortField = 'createdAt' | 'price' | 'title';
 export type SortOrder = 1 | -1;
 
 export interface ListPlansOptions {
-    page?: number;            // 1-based
-    limit?: number;           // default 20
+    page?: number; // 1-based
+    limit?: number; // default 20
     category?: PlanCategory;
-    q?: string;               // full-text search on title/description/features
+    q?: string; // full-text search on title/description/features
     minPrice?: number;
     maxPrice?: number;
     sortBy?: SortField;
@@ -28,7 +28,7 @@ export interface ListPlansOptions {
 export class PlanService {
     constructor(
         @InjectModel(Plan.name) private readonly planModel: Model<PlanDocument>,
-    ) { }
+    ) {}
 
     private ensureId(id: string) {
         if (!id || !isValidObjectId(id)) {
@@ -65,11 +65,9 @@ export class PlanService {
             .find()
             .sort({ createdAt: -1 })
             .lean()
-            .exec()
-        return items
+            .exec();
+        return items;
     }
-
-
 
     async update(id: string, dto: CreatePlanDto): Promise<Plan> {
         this.ensureId(id);
@@ -79,12 +77,16 @@ export class PlanService {
             const probe: FilterQuery<PlanDocument> = {
                 _id: { $ne: id },
                 ...(dto.title ? { title: dto.title.trim() } : {}),
-                ...(dto.billingPeriod ? { billingPeriod: dto.billingPeriod } : {}),
+                ...(dto.billingPeriod
+                    ? { billingPeriod: dto.billingPeriod }
+                    : {}),
                 ...(dto.category ? { category: dto.category } : {}),
             };
             // only run exists() if at least two of the tuple parts present, to reduce false positives
             const tupleParts =
-                (dto.title ? 1 : 0) + (dto.billingPeriod ? 1 : 0) + (dto.category ? 1 : 0);
+                (dto.title ? 1 : 0) +
+                (dto.billingPeriod ? 1 : 0) +
+                (dto.category ? 1 : 0);
             if (tupleParts >= 2) {
                 const dupe = await this.planModel.exists(probe);
                 if (dupe) {
@@ -104,14 +106,19 @@ export class PlanService {
             ...(dto.paymentUrl !== undefined
                 ? { paymentUrl: dto.paymentUrl?.trim() }
                 : {}),
-            ...(dto.features !== undefined ? { features: dto.features?.trim() ?? '' } : {}),
+            ...(dto.features !== undefined
+                ? { features: dto.features?.trim() ?? '' }
+                : {}),
             ...(dto.marketingTagline !== undefined
                 ? { marketingTagline: dto.marketingTagline?.trim() ?? '' }
                 : {}),
         };
 
         const doc = await this.planModel
-            .findByIdAndUpdate(id, updateDoc, { new: true, runValidators: true })
+            .findByIdAndUpdate(id, updateDoc, {
+                new: true,
+                runValidators: true,
+            })
             .lean<Plan>()
             .exec();
 

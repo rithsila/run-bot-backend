@@ -18,4 +18,4 @@ import { User, UserSchema } from 'src/user/user.schema';
     controllers: [ReferralsController],
     exports: [ReferralsService], // 👈 so other modules (like MembershipsModule) can inject it
 })
-export class ReferralsModule { }
+export class ReferralsModule {}

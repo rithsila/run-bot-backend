@@ -3,7 +3,7 @@ import { AwsS3Service } from './aws-s3.service';
 
 @Global()
 @Module({
-  providers: [AwsS3Service],
-  exports: [AwsS3Service],
+    providers: [AwsS3Service],
+    exports: [AwsS3Service],
 })
 export class StorageModule {}

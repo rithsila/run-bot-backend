@@ -3,7 +3,11 @@ import { Transform } from 'class-transformer';
 import { IsNotEmpty, IsString, Matches } from 'class-validator';
 
 export class CreateCouponRequestDto {
-    @Transform(({ value }) => String(value ?? '').trim().toUpperCase())
+    @Transform(({ value }) =>
+        String(value ?? '')
+            .trim()
+            .toUpperCase(),
+    )
     @IsString()
     @IsNotEmpty()
     // 5–32 chars; A–Z, 0–9, dashes only

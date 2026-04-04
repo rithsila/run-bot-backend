@@ -10,7 +10,10 @@ import { InjectModel } from '@nestjs/mongoose';
 import { FilterQuery, Model, PaginateOptions, Types } from 'mongoose';
 
 import { Referral } from './referral.schema';
-import type { ReferralDocument, ReferralPaginateModel } from './referral.schema';
+import type {
+    ReferralDocument,
+    ReferralPaginateModel,
+} from './referral.schema';
 import { User, UserDocument } from 'src/user/user.schema';
 import { Role } from 'src/user/user.enum';
 
@@ -40,7 +43,7 @@ export class ReferralsService {
 
         @InjectModel(User.name)
         private readonly userModel: Model<UserDocument>,
-    ) { }
+    ) {}
 
     // --- Helpers --------------------------------------------------------------
 
@@ -80,7 +83,9 @@ export class ReferralsService {
         const ownerId = this.toObjectId(dto.ownerId, 'owner_id');
 
         // make sure owner exists
-        const ownerExists = await this.userModel.exists({ _id: ownerId }).exec();
+        const ownerExists = await this.userModel
+            .exists({ _id: ownerId })
+            .exec();
         if (!ownerExists) {
             throw new NotFoundException('OWNER_NOT_FOUND');
         }
@@ -109,11 +114,7 @@ export class ReferralsService {
 
     // --- Update (admin only) --------------------------------------------------
 
-    async updateReferralById(
-        id: string,
-        dto: UpdateReferralInput,
-    ) {
-
+    async updateReferralById(id: string, dto: UpdateReferralInput) {
         const _id = this.toObjectId(id, 'id');
 
         const doc = await this.referralModel.findById(_id).exec();
@@ -123,7 +124,9 @@ export class ReferralsService {
 
         if (dto.ownerId) {
             const ownerId = this.toObjectId(dto.ownerId, 'owner_id');
-            const ownerExists = await this.userModel.exists({ _id: ownerId }).exec();
+            const ownerExists = await this.userModel
+                .exists({ _id: ownerId })
+                .exec();
             if (!ownerExists) {
                 throw new NotFoundException('OWNER_NOT_FOUND');
             }
@@ -146,7 +149,10 @@ export class ReferralsService {
             await doc.save();
             return this.referralModel
                 .findById(doc._id)
-                .populate({ path: 'owner', select: '_id firstName lastName email' })
+                .populate({
+                    path: 'owner',
+                    select: '_id firstName lastName email',
+                })
                 .lean()
                 .exec();
         } catch (err: any) {
@@ -164,7 +170,10 @@ export class ReferralsService {
 
         const _id = this.toObjectId(id, 'id');
 
-        const deleted = await this.referralModel.findByIdAndDelete(_id).lean().exec();
+        const deleted = await this.referralModel
+            .findByIdAndDelete(_id)
+            .lean()
+            .exec();
         if (!deleted) {
             throw new NotFoundException('REFERRAL_NOT_FOUND');
         }
@@ -214,7 +223,7 @@ export class ReferralsService {
                 .lean()
                 .exec();
 
-            const ownerIds = users.map((u) => u._id as Types.ObjectId);
+            const ownerIds = users.map((u) => u._id);
 
             if (!ownerIds.length) {
                 // No matching users → return empty paginated response
@@ -237,7 +246,9 @@ export class ReferralsService {
             limit,
             sort: { createdAt: -1 },
             lean: true,
-            populate: [{ path: 'owner', select: '_id firstName lastName email' }],
+            populate: [
+                { path: 'owner', select: '_id firstName lastName email' },
+            ],
             customLabels: {
                 totalDocs: 'total',
                 docs: 'items',

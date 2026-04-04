@@ -1,5 +1,14 @@
 // src/analyze-news/dto/create-analyze-news.dto.ts
-import { IsArray, ArrayUnique, IsEnum, IsOptional, IsString, Length, MaxLength, IsUrl } from 'class-validator';
+import {
+    IsArray,
+    ArrayUnique,
+    IsEnum,
+    IsOptional,
+    IsString,
+    Length,
+    MaxLength,
+    IsUrl,
+} from 'class-validator';
 import { Direction, Pair } from 'src/trading-plan/trading-plan.enum';
 
 export class CreateAnalyzeNewsDto {
@@ -16,7 +25,7 @@ export class CreateAnalyzeNewsDto {
 
     @IsOptional()
     description: string;
-    
+
     @IsOptional()
     @IsUrl({ require_tld: false })
     @MaxLength(500)

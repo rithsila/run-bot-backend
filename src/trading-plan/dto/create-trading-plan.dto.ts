@@ -1,4 +1,12 @@
-import { IsEnum, IsOptional, IsString, Length, Matches, MaxLength, IsUrl } from 'class-validator';
+import {
+    IsEnum,
+    IsOptional,
+    IsString,
+    Length,
+    Matches,
+    MaxLength,
+    IsUrl,
+} from 'class-validator';
 import { Direction, Pair } from '../trading-plan.enum';
 
 export class CreateTradingPlanDto {
@@ -15,7 +23,7 @@ export class CreateTradingPlanDto {
 
     @IsOptional()
     @IsString()
-    tradingViewId?: string;   // ✅ now optional
+    tradingViewId?: string; // ✅ now optional
 
     /** Optional thumbnail (e.g., Cloudinary/S3 URL) */
     @IsOptional()

@@ -53,149 +53,167 @@ import { StorageModule } from './storage/storage.module';
 import { ProductsModule } from './products/products.module';
 import { TradingModule } from './robots/trading/trading.module';
 import { IndicatorModule } from './indicator/indicator.module';
+import { ConsoleModule } from './console/console.module';
+
+const useRedisThrottle = process.env.NODE_ENV !== 'development';
 
 @Module({
-  imports: [
-    // ─── Global Config ────────────────────────────────────────────────────────
-    ConfigModule.forRoot({
-      isGlobal: true,
-      envFilePath: [
-        `.env.${process.env.NODE_ENV || 'development'}`,
-        '.env',
-      ],
-      ignoreEnvFile: false,
-      expandVariables: true,
-      cache: true,
-      validationSchema: envValidationSchema,
-      validationOptions: { abortEarly: false, allowUnknown: true, stripUnknown: false },
-    }),
+    imports: [
+        // ─── Global Config ────────────────────────────────────────────────────────
+        ConfigModule.forRoot({
+            isGlobal: true,
+            envFilePath: [
+                `.env.${process.env.NODE_ENV || 'development'}`,
+                '.env',
+            ],
+            ignoreEnvFile: false,
+            expandVariables: true,
+            cache: true,
+            validationSchema: envValidationSchema,
+            validationOptions: {
+                abortEarly: false,
+                allowUnknown: true,
+                stripUnknown: false,
+            },
+        }),
 
-    // ─── Logging (Pino) ───────────────────────────────────────────────────────
-    LoggerModule.forRootAsync({
-      inject: [ConfigService],
-      useFactory: (cfg: ConfigService) => {
-        const isDev = cfg.get('NODE_ENV') !== 'production';
+        // ─── Logging (Pino) ───────────────────────────────────────────────────────
+        LoggerModule.forRootAsync({
+            inject: [ConfigService],
+            useFactory: (cfg: ConfigService) => {
+                const isDev = cfg.get('NODE_ENV') !== 'production';
 
-        return {
-          pinoHttp: {
-            level: cfg.get<string>('LOG_LEVEL') ?? (isDev ? 'debug' : 'info'),
-            transport: isDev
-              ? {
-                target: 'pino-pretty',
-                options: {
-                  singleLine: true,
-                  translateTime: 'SYS:standard',
-                  messageKey: 'msg',
-                },
-              }
-              : undefined,
+                return {
+                    pinoHttp: {
+                        level:
+                            cfg.get<string>('LOG_LEVEL') ??
+                            (isDev ? 'debug' : 'info'),
+                        transport: isDev
+                            ? {
+                                  target: 'pino-pretty',
+                                  options: {
+                                      singleLine: true,
+                                      translateTime: 'SYS:standard',
+                                      messageKey: 'msg',
+                                  },
+                              }
+                            : undefined,
 
-            genReqId: (req) =>
-              (req.headers['x-request-id'] as string) || crypto.randomUUID(),
+                        genReqId: (req) =>
+                            (req.headers['x-request-id'] as string) ||
+                            crypto.randomUUID(),
 
-            customProps: (req) => ({
-              reqId: (req as any).id,
-              userId: (req as any)?.user?.id,
+                        customProps: (req) => ({
+                            reqId: (req as any).id,
+                            userId: (req as any)?.user?.id,
+                        }),
+
+                        autoLogging: {
+                            ignore: (req) =>
+                                req.url === '/health' ||
+                                req.url?.startsWith('/_next') ||
+                                req.method === 'OPTIONS',
+                        },
+
+                        redact: {
+                            paths: [
+                                'req.headers.authorization',
+                                'req.headers.cookie',
+                                'req.body.password',
+                                'req.body.*.password',
+                            ],
+                            censor: '[REDACTED]',
+                        },
+                    },
+                };
+            },
+        }),
+
+        // ─── Database (MongoDB) ───────────────────────────────────────────────────
+        MongooseModule.forRootAsync({
+            imports: [ConfigModule],
+            inject: [ConfigService],
+            useFactory: async (cs: ConfigService) => ({
+                uri: cs.get<string>('MONGO_URI'),
             }),
+        }),
 
-            autoLogging: {
-              ignore: (req) =>
-                req.url === '/health' ||
-                req.url?.startsWith('/_next') ||
-                req.method === 'OPTIONS',
-            },
+        // ─── Redis & Throttling ───────────────────────────────────────────────────
+        RedisModule,
+        ThrottlerModule.forRootAsync({
+            imports: useRedisThrottle ? [RedisModule] : [],
+            inject: useRedisThrottle ? [REDIS] : [],
+            useFactory: (redis?: Redis) => ({
+                throttlers: [{ limit: 10, ttl: seconds(60) }], // 10 req/min
+                ...(useRedisThrottle && redis
+                    ? { storage: new ThrottlerStorageRedisService(redis) }
+                    : {}),
 
-            redact: {
-              paths: [
-                'req.headers.authorization',
-                'req.headers.cookie',
-                'req.body.password',
-                'req.body.*.password',
-              ],
-              censor: '[REDACTED]',
-            },
-          },
-        };
-      },
-    }),
+                common: {
+                    getTracker: async (req: Request) => {
+                        const xff = (
+                            req.headers['x-forwarded-for'] as string | undefined
+                        )
+                            ?.split(',')[0]
+                            ?.trim();
 
-    // ─── Database (MongoDB) ───────────────────────────────────────────────────
-    MongooseModule.forRootAsync({
-      imports: [ConfigModule],
-      inject: [ConfigService],
-      useFactory: async (cs: ConfigService) => ({
-        uri: cs.get<string>('MONGO_URI'),
-      }),
-    }),
+                        const ip =
+                            xff ||
+                            (req.headers['cf-connecting-ip'] as
+                                | string
+                                | undefined) || // if Cloudflare
+                            req.ip ||
+                            req.socket.remoteAddress ||
+                            'unknown';
 
-    // ─── Redis & Throttling ───────────────────────────────────────────────────
-    RedisModule,
-    ThrottlerModule.forRootAsync({
-      imports: [RedisModule],
-      inject: [REDIS],
-      useFactory: (redis: Redis) => ({
-        throttlers: [{ limit: 10, ttl: seconds(60) }], // 10 req/min
-        storage: new ThrottlerStorageRedisService(redis),
+                        const rawDev =
+                            (req.headers['x-device-id'] as
+                                | string
+                                | undefined) ??
+                            (req as any).cookies?.device_id ??
+                            '';
 
-        common: {
-          getTracker: async (req: Request) => {
-            const xff = (req.headers['x-forwarded-for'] as string | undefined)
-              ?.split(',')[0]
-              ?.trim();
+                        const devHash =
+                            rawDev && rawDev.length >= 8 && rawDev.length <= 128
+                                ? sha256Hex(rawDev)
+                                : 'no-dev';
 
-            const ip =
-              xff ||
-              (req.headers['cf-connecting-ip'] as string | undefined) || // if Cloudflare
-              req.ip ||
-              req.socket.remoteAddress ||
-              'unknown';
+                        return `${ip}|${devHash}`;
+                    },
+                },
+            }),
+        }),
+        ScheduleModule.forRoot(),
+        // ─── Feature Modules ──────────────────────────────────────────────────────
+        UserModule,
+        MailModule,
+        AuthModule,
+        PlanModule,
+        TradingPlanModule,
+        WebPushSubModule,
+        TurnstileModule,
+        AnalyzeNewsModule,
+        RealtimeModule,
+        MembershipsModule,
+        CouponsModule,
+        QueueModule,
+        RetailerModule,
+        OrderModule,
+        SubscriptionsModule,
+        StorageModule,
+        ProductsModule,
+        TradingModule,
+        IndicatorModule,
+        ConsoleModule,
+    ],
 
-            const rawDev =
-              (req.headers['x-device-id'] as string | undefined) ??
-              (req as any).cookies?.device_id ??
-              '';
+    controllers: [AppController],
 
-            const devHash =
-              rawDev && rawDev.length >= 8 && rawDev.length <= 128
-                ? sha256Hex(rawDev)
-                : 'no-dev';
-
-            return `${ip}|${devHash}`;
-          },
-
-        },
-      }),
-    }),
-    ScheduleModule.forRoot(),
-    // ─── Feature Modules ──────────────────────────────────────────────────────
-    UserModule,
-    MailModule,
-    AuthModule,
-    PlanModule,
-    TradingPlanModule,
-    WebPushSubModule,
-    TurnstileModule,
-    AnalyzeNewsModule,
-    RealtimeModule,
-    MembershipsModule,
-    CouponsModule,
-    QueueModule,
-    RetailerModule,
-    OrderModule,
-    SubscriptionsModule,
-    StorageModule,
-    ProductsModule,
-    TradingModule,
-    IndicatorModule,
-  ],
-
-  controllers: [AppController],
-
-  providers: [
-    { provide: APP_GUARD, useClass: ThrottlerGuard },
-    { provide: APP_GUARD, useClass: JwtAuthGuard },
-    { provide: APP_GUARD, useClass: RolesGuard },
-    { provide: APP_GUARD, useClass: CsrfGuard },
-  ],
+    providers: [
+        { provide: APP_GUARD, useClass: ThrottlerGuard },
+        { provide: APP_GUARD, useClass: JwtAuthGuard },
+        { provide: APP_GUARD, useClass: RolesGuard },
+        { provide: APP_GUARD, useClass: CsrfGuard },
+    ],
 })
-export class AppModule { }
+export class AppModule {}

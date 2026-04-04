@@ -6,7 +6,6 @@ import {
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
-import type { File as MulterFile } from 'multer';
 import { AnalyzeNews, AnalyzeNewsDocument } from './analyze-news.schema';
 import { CreateAnalyzeNewsDto } from './dto/create-analyze-news.dto';
 import { Direction } from 'src/trading-plan/trading-plan.enum';
@@ -15,6 +14,8 @@ import { RealtimeGateway } from 'src/real-time/realtime.gateway';
 import { WebPushSubService } from 'src/web-push-sub/web-push-sub.service';
 import { PushProducer } from 'src/queue/push.producer';
 import { AwsS3Service } from 'src/storage/aws-s3.service';
+
+type MulterFile = Express.Multer.File;
 
 export type AnalyzeNewsLean = {
     _id: Types.ObjectId;
@@ -38,8 +39,8 @@ export class AnalyzeNewsService {
         private readonly img: PersistImageService,
         private readonly realtime: RealtimeGateway,
         private readonly pushProducer: PushProducer,
-        private readonly webPushSubService: WebPushSubService
-    ) { }
+        private readonly webPushSubService: WebPushSubService,
+    ) {}
 
     async create(dto: CreateAnalyzeNewsDto, file?: MulterFile) {
         if (dto.impact == null) dto.impact = Direction.Bearish;
@@ -58,7 +59,9 @@ export class AnalyzeNewsService {
         const session = await this.newsModel.db.startSession();
         try {
             await session.withTransaction(async () => {
-                const count = await this.newsModel.countDocuments({}).session(session);
+                const count = await this.newsModel
+                    .countDocuments({})
+                    .session(session);
                 const toDelete = Math.max(0, count - MAX_ANALYZE_NEWS + 1);
 
                 if (toDelete > 0) {
@@ -70,14 +73,16 @@ export class AnalyzeNewsService {
                         .lean()
                         .session(session);
 
-                    const ids = oldest.map(d => d._id);
+                    const ids = oldest.map((d) => d._id);
                     if (ids.length) {
                         await this.newsModel
                             .deleteMany({ _id: { $in: ids } })
                             .session(session);
                     }
                 }
-                const [doc] = await this.newsModel.create([payload], { session });
+                const [doc] = await this.newsModel.create([payload], {
+                    session,
+                });
                 created = await this.newsModel
                     .findById(doc._id)
                     .lean<AnalyzeNewsLean>()
@@ -86,7 +91,11 @@ export class AnalyzeNewsService {
             });
         } catch (err: any) {
             // Standalone Mongo fallback (no replica set)
-            if (String(err?.message || '').includes('Transaction numbers are only allowed on a replica set')) {
+            if (
+                String(err?.message || '').includes(
+                    'Transaction numbers are only allowed on a replica set',
+                )
+            ) {
                 const count = await this.newsModel.countDocuments({});
 
                 const toDelete = Math.max(0, count - MAX_ANALYZE_NEWS + 1);
@@ -99,7 +108,7 @@ export class AnalyzeNewsService {
                         .select({ _id: 1 })
                         .lean();
 
-                    const ids = oldest.map(d => d._id);
+                    const ids = oldest.map((d) => d._id);
                     if (ids.length) {
                         await this.newsModel.deleteMany({ _id: { $in: ids } });
                     }
@@ -128,22 +137,20 @@ export class AnalyzeNewsService {
             };
 
             // Exclude author if provided on dto (optional)
-            let excludeId: Types.ObjectId | null = null;
-
-
+            const excludeId: Types.ObjectId | null = null;
 
             // Get recipients (all active users, optionally excluding author).
             const recipients = await this.webPushSubService.getUserIdsExcept(
-                excludeId ?? new Types.ObjectId('000000000000000000000000') // excludes no one if author unknown
+                excludeId ?? new Types.ObjectId('000000000000000000000000'), // excludes no one if author unknown
             );
 
-            console.log("=======AnalyzeNews.create", recipients)
+            console.log('=======AnalyzeNews.create', recipients);
 
             if (recipients.length) {
                 await this.pushProducer.enqueueSendToUsers(
                     recipients,
                     tinyPayload,
-                    { ttl: 3600, chunkSize: 500 }
+                    { ttl: 3600, chunkSize: 500 },
                 );
             }
         } catch (e) {
@@ -157,43 +164,53 @@ export class AnalyzeNewsService {
         return created;
     }
 
-
     async findAll() {
-        return this.newsModel.find({}).sort({ createdAt: -1 }).lean<AnalyzeNewsLean[]>();
+        return this.newsModel
+            .find({})
+            .sort({ createdAt: -1 })
+            .lean<AnalyzeNewsLean[]>();
     }
 
     async findById(_id: Types.ObjectId) {
-        const doc = await this.newsModel.findById(_id).lean<AnalyzeNewsLean | null>();
+        const doc = await this.newsModel
+            .findById(_id)
+            .lean<AnalyzeNewsLean | null>();
         if (!doc) throw new NotFoundException('Analyze news not found');
         return doc;
     }
 
     async remove(_id: Types.ObjectId) {
-        const deleted = await this.newsModel.findOneAndDelete({ _id }).lean<AnalyzeNewsLean | null>();
+        const deleted = await this.newsModel
+            .findOneAndDelete({ _id })
+            .lean<AnalyzeNewsLean | null>();
         if (!deleted) throw new NotFoundException('Analyze news not found');
         await this.deleteThumbnailIfNeeded(deleted.thumbnailUrl);
         return { ok: true, id: String(deleted._id) };
     }
 
-    async update(_id: Types.ObjectId, dto: CreateAnalyzeNewsDto, file?: MulterFile) {
-        const existing = await this.newsModel.findById(_id).lean<AnalyzeNewsLean | null>();
+    async update(
+        _id: Types.ObjectId,
+        dto: CreateAnalyzeNewsDto,
+        file?: MulterFile,
+    ) {
+        const existing = await this.newsModel
+            .findById(_id)
+            .lean<AnalyzeNewsLean | null>();
         if (!existing) throw new NotFoundException('Analyze news not found');
 
         const finalThumb = await this.resolveThumbnailUrl(dto, file);
 
-
-        const updated = await this.newsModel
-            .findByIdAndUpdate(_id,
-                {
-                    title: dto?.title,
-                    description: dto?.description,
-                    pair: dto?.pair,
-                    impact: dto?.impact,
-                    thumbnailUrl: finalThumb
-                },
-                { new: true, lean: true },
-            )
-
+        const updated = await this.newsModel.findByIdAndUpdate(
+            _id,
+            {
+                title: dto?.title,
+                description: dto?.description,
+                pair: dto?.pair,
+                impact: dto?.impact,
+                thumbnailUrl: finalThumb,
+            },
+            { new: true, lean: true },
+        );
 
         if (!updated) throw new NotFoundException('Analyze news not found');
         if (existing.thumbnailUrl && existing.thumbnailUrl !== finalThumb) {
@@ -202,11 +219,15 @@ export class AnalyzeNewsService {
         return updated;
     }
 
-    async uploadThumbnailFile(file: MulterFile): Promise<{ thumbnailUrl: string }> {
+    async uploadThumbnailFile(
+        file: MulterFile,
+    ): Promise<{ thumbnailUrl: string }> {
         if (!file) throw new BadRequestException('FILE_REQUIRED');
         if (!file.buffer?.length) throw new BadRequestException('FILE_EMPTY');
-        if (file.size > MAX_THUMBNAIL_BYTES) throw new BadRequestException('FILE_TOO_LARGE');
-        if (!file.mimetype?.startsWith('image/')) throw new BadRequestException('FILE_NOT_IMAGE');
+        if (file.size > MAX_THUMBNAIL_BYTES)
+            throw new BadRequestException('FILE_TOO_LARGE');
+        if (!file.mimetype?.startsWith('image/'))
+            throw new BadRequestException('FILE_NOT_IMAGE');
 
         const upload = await this.s3.uploadFile(file, {
             folder: 'analyze-news',
@@ -234,7 +255,10 @@ export class AnalyzeNewsService {
                 });
                 finalThumb = up.secure_url; // <- permanent URL
             } catch (e) {
-                console.warn('[AnalyzeNews.create] thumbnail persist failed:', e);
+                console.warn(
+                    '[AnalyzeNews.create] thumbnail persist failed:',
+                    e,
+                );
                 finalThumb = '';
             }
         }
@@ -242,7 +266,9 @@ export class AnalyzeNewsService {
         return finalThumb;
     }
 
-    private async deleteThumbnailIfNeeded(thumbnailUrl?: string): Promise<void> {
+    private async deleteThumbnailIfNeeded(
+        thumbnailUrl?: string,
+    ): Promise<void> {
         if (!thumbnailUrl) return;
         try {
             await this.s3.deleteFileByUrl(thumbnailUrl);
@@ -250,5 +276,4 @@ export class AnalyzeNewsService {
             console.warn('[AnalyzeNews] delete thumbnail failed:', e);
         }
     }
-
 }

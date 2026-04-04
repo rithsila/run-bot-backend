@@ -1,5 +1,5 @@
 // src/queue/push.producer.ts
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger, Optional } from '@nestjs/common';
 import { InjectQueue } from '@nestjs/bullmq';
 import { Queue, JobsOptions } from 'bullmq';
 import { Types } from 'mongoose';
@@ -7,20 +7,26 @@ import { Types } from 'mongoose';
 type ObjectIdLike = string | Types.ObjectId;
 
 export interface FanoutJob {
-    contentId: string;               // stringified ObjectId
-    segment: string;                 // e.g., 'en', 'sports:nba'
-    ttl?: number;                    // seconds for push retention (optional)
+    contentId: string; // stringified ObjectId
+    segment: string; // e.g., 'en', 'sports:nba'
+    ttl?: number; // seconds for push retention (optional)
 }
 
 export interface SendToUsersJob {
-    userIds: string[];               // stringified ObjectIds
-    payload: unknown;                // already-small payload for web-push
-    ttl?: number;                    // seconds for push retention (default 60)
+    userIds: string[]; // stringified ObjectIds
+    payload: unknown; // already-small payload for web-push
+    ttl?: number; // seconds for push retention (default 60)
 }
 
 @Injectable()
 export class PushProducer {
-    constructor(@InjectQueue('push') private readonly queue: Queue) { }
+    private readonly logger = new Logger(PushProducer.name);
+
+    constructor(
+        @Optional()
+        @InjectQueue('push')
+        private readonly queue?: Queue,
+    ) {}
 
     /**
      * Enqueue a fanout job (segment/topic-based).
@@ -29,18 +35,31 @@ export class PushProducer {
     async enqueueFanout(
         contentId: ObjectIdLike,
         segment: string,
-        opts?: { ttl?: number; delayMs?: number; dedupe?: boolean; jobOpts?: JobsOptions },
+        opts?: {
+            ttl?: number;
+            delayMs?: number;
+            dedupe?: boolean;
+            jobOpts?: JobsOptions;
+        },
     ) {
+        if (!this.queue) {
+            this.logger.warn('Push queue disabled in development');
+            return;
+        }
+
         const payload: FanoutJob = {
             contentId: String(contentId),
             segment,
             ttl: opts?.ttl,
         };
 
-        const jobId = opts?.dedupe !== false ? `${payload.contentId}:${segment}` : undefined;
+        const jobId =
+            opts?.dedupe !== false
+                ? `${payload.contentId}:${segment}`
+                : undefined;
 
         await this.queue.add('fanout', payload, {
-            jobId,                                 // idempotent by default
+            jobId, // idempotent by default
             delay: opts?.delayMs ?? 0,
             attempts: 8,
             backoff: { type: 'exponential', delay: 2000 },
@@ -57,8 +76,19 @@ export class PushProducer {
     async enqueueSendToUsers(
         userIds: ObjectIdLike[],
         payload: unknown,
-        opts?: { ttl?: number; chunkSize?: number; delayMs?: number; dedupe?: boolean; jobOpts?: JobsOptions },
+        opts?: {
+            ttl?: number;
+            chunkSize?: number;
+            delayMs?: number;
+            dedupe?: boolean;
+            jobOpts?: JobsOptions;
+        },
     ) {
+        if (!this.queue) {
+            this.logger.warn('Push queue disabled in development');
+            return;
+        }
+
         const ttl = opts?.ttl ?? 60;
         const chunkSize = Math.max(1, opts?.chunkSize ?? 1000);
 
@@ -76,7 +106,10 @@ export class PushProducer {
                 backoff: { type: 'exponential', delay: 2000 },
                 removeOnComplete: 1000,
                 removeOnFail: false,
-                jobId: opts?.dedupe !== false ? `${ids.join(',')}:${ttl}:${JSON.stringify(payload).slice(0,64)}` : undefined,
+                jobId:
+                    opts?.dedupe !== false
+                        ? `${ids.join(',')}:${ttl}:${JSON.stringify(payload).slice(0, 64)}`
+                        : undefined,
                 ...(opts?.jobOpts || {}),
             } as JobsOptions,
         }));

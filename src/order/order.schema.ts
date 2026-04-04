@@ -8,59 +8,59 @@ export type OrderDocument = Order & Document;
 export type OrderPaginateModel = PaginateModel<OrderDocument>;
 
 export enum OrderStatus {
-  INIT = 'INIT',
-  UNPAID = 'UNPAID',
-  PAID = 'PAID',
-  CANCELLED = 'CANCELLED',
-  FAILED = 'FAILED',
-  REFUNDED = 'REFUNDED',
+    INIT = 'INIT',
+    UNPAID = 'UNPAID',
+    PAID = 'PAID',
+    CANCELLED = 'CANCELLED',
+    FAILED = 'FAILED',
+    REFUNDED = 'REFUNDED',
 }
 
 @Schema({
-  collection: 'orders',
-  timestamps: true,
+    collection: 'orders',
+    timestamps: true,
 })
 export class Order {
-  @Prop({ type: Types.ObjectId, ref: 'User', required: true, index: true })
-  user!: Types.ObjectId;
+    @Prop({ type: Types.ObjectId, ref: 'User', required: true, index: true })
+    user!: Types.ObjectId;
 
-  @Prop({ type: Types.ObjectId, ref: 'Product', required: true, index: true })
-  product!: Types.ObjectId;
+    @Prop({ type: Types.ObjectId, ref: 'Product', required: true, index: true })
+    product!: Types.ObjectId;
 
-  @Prop({
-    type: String,
-    enum: Object.values(OrderStatus),
-    default: OrderStatus.INIT,
-    index: true,
-  })
-  status!: OrderStatus;
+    @Prop({
+        type: String,
+        enum: Object.values(OrderStatus),
+        default: OrderStatus.INIT,
+        index: true,
+    })
+    status!: OrderStatus;
 
-  @Prop({ type: String, required: true, trim: true })
-  idempotencyKey!: string;
+    @Prop({ type: String, required: true, trim: true })
+    idempotencyKey!: string;
 
-  @Prop({ type: String, required: true, unique: true, trim: true })
-  orderId!: string;
+    @Prop({ type: String, required: true, unique: true, trim: true })
+    orderId!: string;
 
-  @Prop({ type: String, enum: Object.values(BillPeriod), required: true })
-  billPeriod!: BillPeriod;
+    @Prop({ type: String, enum: Object.values(BillPeriod), required: true })
+    billPeriod!: BillPeriod;
 
-  @Prop({ type: Number, required: true, min: 0 })
-  amount!: number;
+    @Prop({ type: Number, required: true, min: 0 })
+    amount!: number;
 
-  @Prop({ type: String, required: true, trim: true, maxlength: 120 })
-  bankAccountName!: string;
+    @Prop({ type: String, required: true, trim: true, maxlength: 120 })
+    bankAccountName!: string;
 
-  @Prop({ type: String, trim: true, maxlength: 120 })
-  tradingViewUsername?: string;
+    @Prop({ type: String, trim: true, maxlength: 120 })
+    tradingViewUsername?: string;
 
-  @Prop({ type: Date, default: Date.now })
-  orderedAt!: Date;
+    @Prop({ type: Date, default: Date.now })
+    orderedAt!: Date;
 
-  @Prop({ type: Date, default: null })
-  expiredAt?: Date | null;
+    @Prop({ type: Date, default: null })
+    expiredAt?: Date | null;
 
-  @Prop({ type: Types.ObjectId, ref: 'User', index: true })
-  updatedBy?: Types.ObjectId;
+    @Prop({ type: Types.ObjectId, ref: 'User', index: true })
+    updatedBy?: Types.ObjectId;
 }
 
 export const OrderSchema = SchemaFactory.createForClass(Order);
@@ -72,11 +72,11 @@ OrderSchema.index({ user: 1, product: 1, orderedAt: -1 });
 
 /** NEW: only one INIT/UNPAID order per (user, product) */
 OrderSchema.index(
-  { user: 1, product: 1 },
-  {
-    unique: true,
-    partialFilterExpression: {
-      status: { $in: [OrderStatus.INIT, OrderStatus.UNPAID] },
+    { user: 1, product: 1 },
+    {
+        unique: true,
+        partialFilterExpression: {
+            status: { $in: [OrderStatus.INIT, OrderStatus.UNPAID] },
+        },
     },
-  },
 );

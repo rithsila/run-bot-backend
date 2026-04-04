@@ -1,5 +1,17 @@
 // src/user/users.controller.ts
-import { BadRequestException, Body, Controller, Delete, Get, HttpCode, Param, Patch, Query, Req, UnauthorizedException } from '@nestjs/common';
+import {
+    BadRequestException,
+    Body,
+    Controller,
+    Delete,
+    Get,
+    HttpCode,
+    Param,
+    Patch,
+    Query,
+    Req,
+    UnauthorizedException,
+} from '@nestjs/common';
 import { UserService } from './user.service';
 import { UserQueryDto } from './dto/user-query.dto';
 import { AdminSetPasswordDto } from './dto/admin-set-password.dto';
@@ -10,7 +22,7 @@ import { Role } from './user.enum';
 
 @Controller('user')
 export class UsersController {
-    constructor(private readonly service: UserService) { }
+    constructor(private readonly service: UserService) {}
 
     @Get()
     @Roles(Role.Admin)
@@ -26,8 +38,12 @@ export class UsersController {
 
     @Patch(':id/password')
     @Roles(Role.Admin)
-    async adminSetPassword(@Param('id') id: string, @Body() dto: AdminSetPasswordDto) {
-        if (!isValidObjectId(id)) throw new BadRequestException('Invalid user id');
+    async adminSetPassword(
+        @Param('id') id: string,
+        @Body() dto: AdminSetPasswordDto,
+    ) {
+        if (!isValidObjectId(id))
+            throw new BadRequestException('Invalid user id');
         await this.service.adminSetPassword(id, dto);
         return { ok: true };
     }
@@ -52,5 +68,4 @@ export class UsersController {
 
         return { ok: true };
     }
-
 }

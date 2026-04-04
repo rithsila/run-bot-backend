@@ -5,12 +5,12 @@ import { TradingController } from './trading.controller';
 import { TradingRobot, TradingRobotSchema } from './trading-robot.schema';
 
 @Module({
-  imports: [
-    MongooseModule.forFeature([
-      { name: TradingRobot.name, schema: TradingRobotSchema },
-    ]),
-  ],
-  providers: [TradingService],
-  controllers: [TradingController]
+    imports: [
+        MongooseModule.forFeature([
+            { name: TradingRobot.name, schema: TradingRobotSchema },
+        ]),
+    ],
+    providers: [TradingService],
+    controllers: [TradingController],
 })
 export class TradingModule {}

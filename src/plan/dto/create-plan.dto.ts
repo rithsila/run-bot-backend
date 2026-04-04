@@ -15,7 +15,7 @@ import { PlanCategory, PlanProducts } from '../plan.enum';
 
 const trim = () =>
     Transform(({ value }) =>
-        typeof value === 'string' ? value.trim() : value
+        typeof value === 'string' ? value.trim() : value,
     );
 
 export class CreatePlanDto {
@@ -64,7 +64,6 @@ export class CreatePlanDto {
     @IsOptional()
     product?: string;
 
-
     @IsString()
     @IsOptional()
     @MaxLength(4000)
@@ -79,5 +78,5 @@ export class CreatePlanDto {
     marketingTagline?: string;
 
     @IsOptional()
-    allowCoupons?: boolean
+    allowCoupons?: boolean;
 }

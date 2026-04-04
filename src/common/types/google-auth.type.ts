@@ -1,4 +1,4 @@
-import { SignInMethod } from "src/auth/signin-method.enum";
+import { SignInMethod } from 'src/auth/signin-method.enum';
 
 export type GoogleUserPayload = {
     provider: SignInMethod.Google;

@@ -1,18 +1,17 @@
 import {
-  Controller,
-  Get,
-  HttpCode,
-  HttpStatus,
-  Post,
-  Body,
-  Req,
+    Controller,
+    Get,
+    HttpCode,
+    HttpStatus,
+    Post,
+    Body,
+    Req,
     UnauthorizedException,
     UploadedFile,
     UseInterceptors,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { memoryStorage } from 'multer';
-import type { File as MulterFile } from 'multer';
 import { Roles } from 'src/auth/decorators/roles.decorator';
 import { Role } from 'src/user/user.enum';
 import type { AuthRequest } from 'src/common/types/auth-request.type';
@@ -22,15 +21,17 @@ import { CreateTradingRobotDto } from './dto/create-trading-robot.dto';
 import { Public } from 'src/auth/guard/public.decorator';
 import { TradingRobot } from './trading-robot.schema';
 
-const MAX_ROBOT_FILE_BYTES = 25 * 1024 * 1024; 
+type MulterFile = Express.Multer.File;
+
+const MAX_ROBOT_FILE_BYTES = 25 * 1024 * 1024;
 
 @Controller('trading')
 export class TradingController {
-    constructor(private readonly tradingService: TradingService) { }
+    constructor(private readonly tradingService: TradingService) {}
 
-  @Post('robots')
-  @Roles(Role.Creator, Role.Admin)
-  @HttpCode(HttpStatus.CREATED)
+    @Post('robots')
+    @Roles(Role.Creator, Role.Admin)
+    @HttpCode(HttpStatus.CREATED)
     async createRobot(
         @Req() req: AuthRequest,
         @Body() dto: CreateTradingRobotDto,
@@ -46,30 +47,30 @@ export class TradingController {
             path: req.url,
             code: 'CREATE_TRADING_ROBOT',
             message: 'Created successfully',
-      data: { id: robot.id },
-    };
-  }
+            data: { id: robot.id },
+        };
+    }
 
-  @Get('robots')
-  @Public()
-  @HttpCode(HttpStatus.OK)
-  async listRobots(
-    @Req() req: AuthRequest,
-  ): Promise<ApiSuccess<TradingRobot[]>> {
-    const robots = await this.tradingService.findAll();
-    return {
-      success: true,
-      statusCode: HttpStatus.OK,
-      timestamp: new Date().toISOString(),
-      path: req.url,
-      code: 'LIST_TRADING_ROBOTS',
-      message: 'Success',
-      data: robots,
-    };
-  }
+    @Get('robots')
+    @Public()
+    @HttpCode(HttpStatus.OK)
+    async listRobots(
+        @Req() req: AuthRequest,
+    ): Promise<ApiSuccess<TradingRobot[]>> {
+        const robots = await this.tradingService.findAll();
+        return {
+            success: true,
+            statusCode: HttpStatus.OK,
+            timestamp: new Date().toISOString(),
+            path: req.url,
+            code: 'LIST_TRADING_ROBOTS',
+            message: 'Success',
+            data: robots,
+        };
+    }
 
-  @Post('upload')
-  @Roles(Role.Creator, Role.Admin)
+    @Post('upload')
+    @Roles(Role.Creator, Role.Admin)
     @UseInterceptors(
         FileInterceptor('file', {
             storage: memoryStorage(),

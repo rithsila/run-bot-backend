@@ -24,11 +24,10 @@ export class TradingPlan {
 
     @Prop({
         type: String,
-        required: false,         
+        required: false,
         trim: true,
     })
     tradingViewId?: string;
-
 }
 
 export const TradingPlanSchema = SchemaFactory.createForClass(TradingPlan);

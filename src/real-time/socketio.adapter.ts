@@ -24,23 +24,44 @@ export class SocketIoAdapter extends IoAdapter {
 
         const url = process.env.REDIS_URL;
         if (!url) {
-            this.logger.warn('Running WITHOUT Redis adapter (single instance only)');
+            this.logger.warn(
+                'Running WITHOUT Redis adapter (single instance only)',
+            );
             return;
         }
 
-        this.pubClient = new IORedis(url);
-        this.subClient = new IORedis(url);
+        const createClient = () => {
+            const client = new IORedis(url, {
+                lazyConnect: true,
+                maxRetriesPerRequest: null,
+                enableReadyCheck: true,
+                retryStrategy: () => null,
+            });
 
-        await Promise.all([
-            this.pubClient.status === 'ready'
-                ? Promise.resolve()
-                : new Promise((r) => this.pubClient!.once('ready', r)),
-            this.subClient.status === 'ready'
-                ? Promise.resolve()
-                : new Promise((r) => this.subClient!.once('ready', r)),
-        ]);
+            client.on('error', (error) => {
+                this.logger.warn(
+                    `Socket.IO Redis unavailable: ${error.message}`,
+                );
+            });
 
-        this.logger.log(`Socket.IO Redis adapter connected (${url})`);
+            return client;
+        };
+
+        const pubClient = createClient();
+        const subClient = createClient();
+
+        try {
+            await Promise.all([pubClient.connect(), subClient.connect()]);
+            this.pubClient = pubClient;
+            this.subClient = subClient;
+            this.logger.log(`Socket.IO Redis adapter connected (${url})`);
+        } catch (error) {
+            pubClient.disconnect();
+            subClient.disconnect();
+            this.logger.warn(
+                `Running WITHOUT Redis adapter (${error instanceof Error ? error.message : String(error)})`,
+            );
+        }
     }
 
     override createIOServer(port: number, options?: ServerOptions) {
@@ -51,10 +72,17 @@ export class SocketIoAdapter extends IoAdapter {
                 credentials: true,
                 methods: ['GET', 'POST', 'OPTIONS'],
                 allowedHeaders: [
-                    'content-type', 'accept', 'authorization',
-                    'x-csrf-token', 'x-client-device-id', 'x-device-id', 'x-device-hash',
-                    'x-internal-signature', 'x-internal-timestamp',
-                    'x-idempotency-key', 'idempotency-key',
+                    'content-type',
+                    'accept',
+                    'authorization',
+                    'x-csrf-token',
+                    'x-client-device-id',
+                    'x-device-id',
+                    'x-device-hash',
+                    'x-internal-signature',
+                    'x-internal-timestamp',
+                    'x-idempotency-key',
+                    'idempotency-key',
                 ],
             },
             transports: ['websocket', 'polling'],
@@ -63,10 +91,9 @@ export class SocketIoAdapter extends IoAdapter {
                 // Option A (safer, but allows non-browser clients): allow when Origin is missing
                 const allowWhenNoOrigin = true;
 
-                const ok =
-                    origin
-                        ? this.allowedOrigins.includes(origin)
-                        : allowWhenNoOrigin;
+                const ok = origin
+                    ? this.allowedOrigins.includes(origin)
+                    : allowWhenNoOrigin;
 
                 if (!ok) {
                     this.logger.warn(`WS blocked origin=${origin || 'none'}`);

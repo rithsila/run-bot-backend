@@ -27,6 +27,9 @@ declare module 'mongoose' {
         meta?: any;
     }
     interface PaginateModel<T> extends Model<T> {
-        paginate(query?: FilterQuery<T>, options?: PaginateOptions): Promise<PaginateResult<T>>;
+        paginate(
+            query?: FilterQuery<T>,
+            options?: PaginateOptions,
+        ): Promise<PaginateResult<T>>;
     }
 }

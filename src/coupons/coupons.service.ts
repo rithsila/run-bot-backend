@@ -15,7 +15,11 @@ import { Coupon, CouponStatus } from './coupon.schema';
 // Type-only imports (erased at compile time)
 import type { CouponPaginateModel } from './coupon.schema';
 import { PaginateCouponsDto } from './dto/paginate-coupons.dto';
-import { Membership, MembershipDocument, MembershipStatus } from 'src/memberships/memberships.schema';
+import {
+    Membership,
+    MembershipDocument,
+    MembershipStatus,
+} from 'src/memberships/memberships.schema';
 import { PushProducer } from 'src/queue/push.producer';
 import { WebPushSubService } from 'src/web-push-sub/web-push-sub.service';
 import { buildCouponAdminTinyPayload } from './coupon.helper';
@@ -26,7 +30,6 @@ export type MyCouponLite = {
     percent: number;
 };
 
-
 @Injectable()
 export class CouponsService {
     constructor(
@@ -35,8 +38,8 @@ export class CouponsService {
         @InjectModel(Membership.name)
         private readonly membershipModel: Model<MembershipDocument>,
         private readonly pushProducer: PushProducer,
-        private readonly webPushSubService: WebPushSubService
-    ) { }
+        private readonly webPushSubService: WebPushSubService,
+    ) {}
 
     private normalizeCode(raw?: string): string | undefined {
         if (typeof raw !== 'string') return undefined;
@@ -54,7 +57,8 @@ export class CouponsService {
 
         // ✅ Membership gate: must exist and be Verified
         const membership = await this.membershipModel
-            .findOne({ user: userId }, { _id: 1, status: 1 }).populate('user')
+            .findOne({ user: userId }, { _id: 1, status: 1 })
+            .populate('user')
             .lean()
             .exec();
 
@@ -63,7 +67,6 @@ export class CouponsService {
             throw new ForbiddenException('MEMBERSHIP_REQUIRED');
         }
         if (membership.status !== MembershipStatus.Verified) {
-
             throw new ForbiddenException('MEMBERSHIP_NOT_VERIFIED');
         }
 
@@ -74,7 +77,9 @@ export class CouponsService {
             .exec();
 
         if (conflict) {
-            throw new ConflictException('A coupon with this code already exists.');
+            throw new ConflictException(
+                'A coupon with this code already exists.',
+            );
         }
 
         try {
@@ -91,10 +96,9 @@ export class CouponsService {
                             createdBy: userId,
                         },
                     },
-                    { new: true, upsert: true, lean: true }
+                    { new: true, upsert: true, lean: true },
                 )
                 .exec();
-
 
             try {
                 const tinyPayload = {
@@ -106,11 +110,12 @@ export class CouponsService {
                 let excludeId: Types.ObjectId | null = null;
                 const maybeAuthorId = (dto as any)?.authorId;
                 if (maybeAuthorId) {
-
-                    try { excludeId = new Types.ObjectId(String(maybeAuthorId)); } catch { /* ignore bad id */ }
+                    try {
+                        excludeId = new Types.ObjectId(String(maybeAuthorId));
+                    } catch {
+                        /* ignore bad id */
+                    }
                 }
-
-
 
                 // Get recipients (all active users, optionally excluding author).
                 const recipients = await this.webPushSubService.getAdminIds();
@@ -119,7 +124,7 @@ export class CouponsService {
                     await this.pushProducer.enqueueSendToUsers(
                         recipients,
                         tinyPayload,
-                        { ttl: 3600, chunkSize: 500 }
+                        { ttl: 3600, chunkSize: 500 },
                     );
                 }
             } catch (e) {
@@ -130,7 +135,9 @@ export class CouponsService {
             return doc;
         } catch (err: any) {
             if (err?.code === 11000) {
-                throw new ConflictException('A coupon with this code already exists.');
+                throw new ConflictException(
+                    'A coupon with this code already exists.',
+                );
             }
             throw err;
         }
@@ -152,11 +159,13 @@ export class CouponsService {
         if (!code) return null;
 
         const percent =
-            typeof row.percent === 'number' && Number.isFinite(row.percent) ? row.percent : 20;
+            typeof row.percent === 'number' && Number.isFinite(row.percent)
+                ? row.percent
+                : 20;
 
         return {
             code,
-            status: row.status as CouponStatus,
+            status: row.status,
             percent,
         };
     }
@@ -170,7 +179,9 @@ export class CouponsService {
             limit: q.limit,
             sort: { createdAt: -1 },
             lean: true,
-            populate: [{ path: 'createdBy', select: '_id email firstName lastName' }],
+            populate: [
+                { path: 'createdBy', select: '_id email firstName lastName' },
+            ],
             customLabels: {
                 totalDocs: 'total',
                 docs: 'items',
@@ -184,7 +195,7 @@ export class CouponsService {
 
         const res: any = await this.couponModel.paginate(filter, options);
         return {
-            items: res.items,      // each item now includes createdBy {...}
+            items: res.items, // each item now includes createdBy {...}
             total: res.total,
             page: res.page,
             limit: res.limit,
@@ -198,7 +209,8 @@ export class CouponsService {
         id: string,
         payload: { status?: CouponStatus; percent?: number },
     ) {
-        if (!Types.ObjectId.isValid(id)) throw new BadRequestException('INVALID_ID');
+        if (!Types.ObjectId.isValid(id))
+            throw new BadRequestException('INVALID_ID');
 
         const doc = await this.couponModel.findById(id).exec();
         if (!doc) throw new NotFoundException('COUPON_NOT_FOUND');
@@ -228,7 +240,7 @@ export class CouponsService {
                 // formatDate: (d) => new Date(d).toLocaleDateString('en-US'), // custom if you prefer
             });
 
-            const userId = doc?.createdBy || ''
+            const userId = doc?.createdBy || '';
             const recipients = [new Types.ObjectId(userId?.toString())];
 
             if (recipients.length) {
@@ -255,7 +267,11 @@ export class CouponsService {
 
         const doc = await this.couponModel
             .findOne({ code, status: CouponStatus.Active })
-            .populate({ path: 'createdBy', select: 'firstName lastName', options: { lean: true } })
+            .populate({
+                path: 'createdBy',
+                select: 'firstName lastName',
+                options: { lean: true },
+            })
             .lean()
             .exec();
 
@@ -294,5 +310,4 @@ export class CouponsService {
             .map((row) => String(row.code ?? '').trim())
             .filter((code) => !!code);
     }
-
 }

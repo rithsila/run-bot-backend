@@ -1,5 +1,5 @@
-import { Types } from "mongoose";
-import { Direction, Pair } from "src/trading-plan/trading-plan.enum";
+import { Types } from 'mongoose';
+import { Direction, Pair } from 'src/trading-plan/trading-plan.enum';
 
 export type TradingPlanLean = {
     _id: Types.ObjectId;

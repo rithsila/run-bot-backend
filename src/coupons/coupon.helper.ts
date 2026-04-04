@@ -1,6 +1,6 @@
 // src/coupons/helpers/build-admin-tiny-payload.ts
 
-import { CouponStatus } from "./coupon.schema";
+import { CouponStatus } from './coupon.schema';
 
 type TinyPayload = { title: string; body: string };
 
@@ -10,7 +10,7 @@ type CouponLike = {
     status?: CouponStatus | null;
     percent?: number | null;
     validFrom?: Date | string | null; // optional, if your schema has it
-    validTo?: Date | string | null;   // optional, if your schema has it
+    validTo?: Date | string | null; // optional, if your schema has it
 };
 
 type UpdateCouponPayloadLike = {
@@ -47,13 +47,19 @@ function labelForCoupon(doc: CouponLike): string {
 function percentPart(p?: number | null): string {
     if (typeof p === 'number' && !Number.isNaN(p)) {
         // Show up to two decimals, trim trailing zeros
-        const pretty = Number.isInteger(p) ? String(p) : String(Number(p.toFixed(2)));
+        const pretty = Number.isInteger(p)
+            ? String(p)
+            : String(Number(p.toFixed(2)));
         return ` (discount set to ${pretty}%)`;
     }
     return '';
 }
 
-function validityPart(doc: CouponLike, include: boolean, fmt: (d: Date | string) => string): string {
+function validityPart(
+    doc: CouponLike,
+    include: boolean,
+    fmt: (d: Date | string) => string,
+): string {
     if (!include) return '';
     const from = doc?.validFrom ? fmt(doc.validFrom) : '';
     const to = doc?.validTo ? fmt(doc.validTo) : '';
@@ -69,9 +75,10 @@ function validityPart(doc: CouponLike, include: boolean, fmt: (d: Date | string)
 export function buildCouponAdminTinyPayload(
     doc: CouponLike,
     payload: UpdateCouponPayloadLike = {},
-    options: BuildOptions = {}
+    options: BuildOptions = {},
 ): TinyPayload {
-    const statusToUse: CouponStatus = payload.status ?? doc.status ?? CouponStatus.Request;
+    const statusToUse: CouponStatus =
+        payload.status ?? doc.status ?? CouponStatus.Request;
     const showValidity = options.includeValidity ?? false;
     const fmt = options.formatDate ?? defaultFormatDate;
 

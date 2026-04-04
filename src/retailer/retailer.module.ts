@@ -7,12 +7,14 @@ import { QueueModule } from 'src/queue/queue.module';
 import { WebPushSubModule } from 'src/web-push-sub/web-push-sub.module';
 
 @Module({
-  imports: [
-    MongooseModule.forFeature([{ name: Retailer.name, schema: RetailerSchema }]),
-    WebPushSubModule,
-    QueueModule
-  ],
-  providers: [RetailerService],
-  controllers: [RetailerController]
+    imports: [
+        MongooseModule.forFeature([
+            { name: Retailer.name, schema: RetailerSchema },
+        ]),
+        WebPushSubModule,
+        QueueModule,
+    ],
+    providers: [RetailerService],
+    controllers: [RetailerController],
 })
-export class RetailerModule { }
+export class RetailerModule {}

@@ -1,0 +1,240 @@
+import {
+    WebSocketGateway,
+    WebSocketServer,
+    SubscribeMessage,
+    MessageBody,
+    ConnectedSocket,
+    OnGatewayConnection,
+    OnGatewayDisconnect,
+} from '@nestjs/websockets';
+import { Logger, Inject } from '@nestjs/common';
+import { Server, Socket } from 'socket.io';
+import { JwtService } from '@nestjs/jwt';
+import { InjectModel } from '@nestjs/mongoose';
+import { Model } from 'mongoose';
+import type { Redis } from 'ioredis';
+
+import { REDIS } from '../redis/redis.constants';
+import { JoseService } from '../memberships/jose.service';
+import { EaInstance, EaInstanceDocument } from './schemas/ea-instance.schema';
+import { TelemetryDto } from './dto/telemetry.dto';
+
+const TELEMETRY_TTL_SECONDS = 60;
+
+@WebSocketGateway({ namespace: '/console' })
+export class ConsoleGateway
+    implements OnGatewayConnection, OnGatewayDisconnect
+{
+    @WebSocketServer() io!: Server;
+    private readonly logger = new Logger(ConsoleGateway.name);
+
+    // commandId → socketId of the browser client waiting for ACK
+    private readonly pendingAck = new Map<string, string>();
+
+    constructor(
+        private readonly jwt: JwtService,
+        private readonly jose: JoseService,
+        @Inject(REDIS) private readonly redis: Redis,
+        @InjectModel(EaInstance.name)
+        private readonly instanceModel: Model<EaInstanceDocument>,
+    ) {}
+
+    async handleConnection(client: Socket) {
+        const token = client.handshake.auth?.token as string | undefined;
+        if (!token) {
+            this.logger.warn(`WS /console rejected: no token id=${client.id}`);
+            client.disconnect(true);
+            return;
+        }
+        try {
+            // Try RS256 (browser user JWT) first, fall back to ES256 (bridge membership JWT)
+            let payload: Record<string, unknown>;
+            let isBridge = false;
+            try {
+                payload = await this.jwt.verifyAsync(token);
+            } catch {
+                payload = await this.jose.verifyToken(token);
+                isBridge = true;
+            }
+            client.data.userId =
+                (payload.userId as string) ?? (payload.sub as string) ?? null;
+            client.data.isBridge = isBridge;
+        } catch {
+            this.logger.warn(
+                `WS /console rejected: invalid token id=${client.id}`,
+            );
+            client.disconnect(true);
+            return;
+        }
+        this.logger.log(`WS /console connected id=${client.id}`);
+    }
+
+    handleDisconnect(client: Socket) {
+        this.logger.log(
+            `WS /console disconnected id=${client.id} agentId=${client.data.agentId ?? 'none'}`,
+        );
+    }
+
+    // ── Bridge events ─────────────────────────────────────────────────────────
+
+    @SubscribeMessage('bridge:register')
+    async onBridgeRegister(
+        @ConnectedSocket() client: Socket,
+        @MessageBody() data: { agentId: string; bridgeVersion?: string },
+    ) {
+        const { agentId } = data;
+        client.data.agentId = agentId;
+        client.data.isBridge = true;
+
+        const room = `agent:${agentId}`;
+        client.join(room);
+
+        await this.instanceModel.findOneAndUpdate(
+            { agentId },
+            { $set: { online: true, lastSeenAt: new Date() } },
+            { upsert: true, new: true },
+        );
+
+        this.logger.log(
+            `bridge:register agentId=${agentId} socketId=${client.id}`,
+        );
+        this.io.to(room).emit('console:status', { agentId, online: true });
+    }
+
+    @SubscribeMessage('console:telemetry')
+    async onBridgeTelemetry(
+        @ConnectedSocket() client: Socket,
+        @MessageBody() telemetry: TelemetryDto,
+    ) {
+        const agentId = telemetry.agentId ?? client.data.agentId;
+        if (!agentId) return;
+
+        const redisKey = `ea:state:${agentId}`;
+        await this.redis.setex(
+            redisKey,
+            TELEMETRY_TTL_SECONDS,
+            JSON.stringify(telemetry),
+        );
+
+        this.io.to(`agent:${agentId}`).emit('console:telemetry', telemetry);
+
+        await this.instanceModel.updateOne(
+            { agentId },
+            {
+                $set: {
+                    lastTelemetry: telemetry as unknown as Record<
+                        string,
+                        unknown
+                    >,
+                    lastSeenAt: new Date(),
+                },
+            },
+        );
+    }
+
+    @SubscribeMessage('console:ack')
+    onBridgeAck(@MessageBody() data: { uuid: string }) {
+        const targetSocketId = this.pendingAck.get(data.uuid);
+        if (targetSocketId) {
+            this.io.to(targetSocketId).emit('console:ack', data);
+            this.pendingAck.delete(data.uuid);
+        }
+    }
+
+    @SubscribeMessage('console:status')
+    async onBridgeStatus(
+        @ConnectedSocket() client: Socket,
+        @MessageBody()
+        data: { agentId: string; online: boolean; lastSeenTs?: number },
+    ) {
+        const agentId = data.agentId ?? client.data.agentId;
+        if (!agentId) return;
+
+        await this.instanceModel.updateOne(
+            { agentId },
+            { $set: { online: data.online, lastSeenAt: new Date() } },
+        );
+
+        this.io.to(`agent:${agentId}`).emit('console:status', {
+            agentId,
+            online: data.online,
+            lastSeenTs: data.lastSeenTs ?? Date.now(),
+        });
+    }
+
+    @SubscribeMessage('console:offline')
+    async onBridgeOffline(
+        @ConnectedSocket() client: Socket,
+        @MessageBody() data: { agentId?: string },
+    ) {
+        const agentId = data?.agentId ?? client.data.agentId;
+        if (!agentId) return;
+
+        await this.instanceModel.updateOne(
+            { agentId },
+            { $set: { online: false } },
+        );
+
+        this.io.to(`agent:${agentId}`).emit('console:status', {
+            agentId,
+            online: false,
+            lastSeenTs: Date.now(),
+        });
+    }
+
+    // ── Browser client events ─────────────────────────────────────────────────
+
+    @SubscribeMessage('client:subscribe')
+    async onClientSubscribe(
+        @ConnectedSocket() client: Socket,
+        @MessageBody() data: { agentId: string },
+    ) {
+        const { agentId } = data;
+        client.data.agentId = agentId;
+        client.join(`agent:${agentId}`);
+
+        const cached = await this.redis.get(`ea:state:${agentId}`);
+        if (cached) {
+            try {
+                client.emit('console:hydrate', JSON.parse(cached));
+            } catch {
+                // invalid JSON in cache — skip hydration
+            }
+        }
+    }
+
+    @SubscribeMessage('client:unsubscribe')
+    onClientUnsubscribe(
+        @ConnectedSocket() client: Socket,
+        @MessageBody() data: { agentId: string },
+    ) {
+        client.leave(`agent:${data.agentId}`);
+    }
+
+    // ── Helpers (called from ConsoleService) ──────────────────────────────────
+
+    sendCommandToBridge(
+        agentId: string,
+        commandId: string,
+        verb: string,
+        value?: string,
+    ) {
+        this.pendingAck.set(commandId, ''); // will be set with actual socket ID in service
+        this.io.to(`agent:${agentId}`).emit('bridge:command', { verb, value });
+    }
+
+    sendCommandToBridgeWithAck(
+        agentId: string,
+        commandId: string,
+        originSocketId: string,
+        verb: string,
+        value?: string,
+    ) {
+        this.pendingAck.set(commandId, originSocketId);
+        this.io.to(`agent:${agentId}`).emit('bridge:command', { verb, value });
+    }
+
+    emitToRoom(room: string, event: string, payload: unknown) {
+        this.io.to(room).emit(event, payload);
+    }
+}

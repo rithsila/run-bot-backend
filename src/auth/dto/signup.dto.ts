@@ -1,50 +1,62 @@
 // src/auth/dto/signup.dto.ts
-import { IsOptional, IsString, Matches, MaxLength, MinLength } from 'class-validator';
+import {
+    IsOptional,
+    IsString,
+    Matches,
+    MaxLength,
+    MinLength,
+} from 'class-validator';
 import { Transform } from 'class-transformer';
 import { EmailField } from 'src/common/validators/email-field.decorator';
 
 export class SignupDto {
-  @IsString()
-  @MinLength(1)
-  @MaxLength(60)
-  @Transform(({ value }) => (typeof value === 'string' ? value.trim() : value))
-  firstName!: string;
+    @IsString()
+    @MinLength(1)
+    @MaxLength(60)
+    @Transform(({ value }) =>
+        typeof value === 'string' ? value.trim() : value,
+    )
+    firstName!: string;
 
-  @IsOptional()
-  @IsString()
-  @MaxLength(60)
-  @Transform(({ value }) => {
-    if (typeof value !== 'string') return value;
-    const v = value.trim();
-    return v.length ? v : undefined; // empty → undefined
-  })
-  lastName?: string;
+    @IsOptional()
+    @IsString()
+    @MaxLength(60)
+    @Transform(({ value }) => {
+        if (typeof value !== 'string') return value;
+        const v = value.trim();
+        return v.length ? v : undefined; // empty → undefined
+    })
+    lastName?: string;
 
-  @EmailField()
-  email!: string;
+    @EmailField()
+    email!: string;
 
-  @IsString()
-  @MinLength(6)
-  @MaxLength(128)
-  @Matches(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d).+$/, {
-    message: 'Password must include upper, lower, and number',
-  })
-  password!: string;
+    @IsString()
+    @MinLength(6)
+    @MaxLength(128)
+    @Matches(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d).+$/, {
+        message: 'Password must include upper, lower, and number',
+    })
+    password!: string;
 
-  // Accept-but-ignore if some layer injects them
-  @IsOptional()
-  @IsString()
-  @MaxLength(200)
-  @Transform(({ value }) => (typeof value === 'string' ? value.slice(0, 200) : value))
-  userAgent?: string;
+    // Accept-but-ignore if some layer injects them
+    @IsOptional()
+    @IsString()
+    @MaxLength(200)
+    @Transform(({ value }) =>
+        typeof value === 'string' ? value.slice(0, 200) : value,
+    )
+    userAgent?: string;
 
-  @IsOptional()
-  @IsString()
-  @MaxLength(200)
-  @Transform(({ value }) => (typeof value === 'string' ? value.slice(0, 200) : value))
-  referer?: string;
+    @IsOptional()
+    @IsString()
+    @MaxLength(200)
+    @Transform(({ value }) =>
+        typeof value === 'string' ? value.slice(0, 200) : value,
+    )
+    referer?: string;
 
-  @IsOptional()
-  @IsString()
-  turnstileToken?: string;
+    @IsOptional()
+    @IsString()
+    turnstileToken?: string;
 }

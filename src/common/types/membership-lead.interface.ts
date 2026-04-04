@@ -1,6 +1,9 @@
 // src/memberships/interfaces/membership-lead.interface.ts
 import { Types } from 'mongoose';
-import { MembershipAccountType, MembershipStatus } from 'src/memberships/memberships.schema';
+import {
+    MembershipAccountType,
+    MembershipStatus,
+} from 'src/memberships/memberships.schema';
 import { User } from 'src/user/user.schema';
 
 // 🔹 Lean version of Referral (from referral.schema.ts)

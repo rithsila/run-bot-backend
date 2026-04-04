@@ -6,19 +6,22 @@ export type MembershipIpBlacklistDocument = MembershipIpBlacklist & Document;
 
 @Schema({ collection: 'membership_ip_blacklist', timestamps: true })
 export class MembershipIpBlacklist {
-  @Prop({
-    type: String,
-    required: true,
-    trim: true,
-    match: [/^(?:\d{1,3}\.){3}\d{1,3}$|^[0-9a-fA-F:]+$/, 'Invalid IP address'],
-    index: true,
-  })
-  ip!: string;
+    @Prop({
+        type: String,
+        required: true,
+        trim: true,
+        match: [
+            /^(?:\d{1,3}\.){3}\d{1,3}$|^[0-9a-fA-F:]+$/,
+            'Invalid IP address',
+        ],
+    })
+    ip!: string;
 
-  @Prop({ type: String, trim: true, maxlength: 500 })
-  reason?: string;
-
+    @Prop({ type: String, trim: true, maxlength: 500 })
+    reason?: string;
 }
 
-export const MembershipIpBlacklistSchema = SchemaFactory.createForClass(MembershipIpBlacklist);
+export const MembershipIpBlacklistSchema = SchemaFactory.createForClass(
+    MembershipIpBlacklist,
+);
 MembershipIpBlacklistSchema.index({ ip: 1 }, { unique: true });

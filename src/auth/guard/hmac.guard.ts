@@ -1,12 +1,23 @@
 // auth/internal-hmac.guard.ts
-import { CanActivate, ExecutionContext, ForbiddenException, Injectable } from '@nestjs/common';
+import {
+    CanActivate,
+    ExecutionContext,
+    ForbiddenException,
+    Injectable,
+} from '@nestjs/common';
 import * as crypto from 'crypto';
 
 const stable = (v: any): string => {
     if (v === null || typeof v !== 'object') return JSON.stringify(v);
     if (Array.isArray(v)) return '[' + v.map(stable).join(',') + ']';
-    return '{' + Object.entries(v).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
-        .map(([k, val]) => JSON.stringify(k) + ':' + stable(val)).join(',') + '}';
+    return (
+        '{' +
+        Object.entries(v)
+            .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+            .map(([k, val]) => JSON.stringify(k) + ':' + stable(val))
+            .join(',') +
+        '}'
+    );
 };
 
 @Injectable()
@@ -26,7 +37,8 @@ export class InternalHmacGuard implements CanActivate {
             throw new ForbiddenException('Stale request');
         }
 
-        const expect = crypto.createHmac('sha256', this.secret)
+        const expect = crypto
+            .createHmac('sha256', this.secret)
             .update(ts + '\n' + stable(req.body ?? {}))
             .digest('hex');
 

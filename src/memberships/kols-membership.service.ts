@@ -1,4 +1,10 @@
-import { BadRequestException, ConflictException, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import {
+    BadRequestException,
+    ConflictException,
+    Injectable,
+    Logger,
+    NotFoundException,
+} from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { FilterQuery, Model, Types } from 'mongoose';
 import * as membershipsSchema from './memberships.schema';
@@ -14,8 +20,8 @@ export class KolsMembershipService {
         @InjectModel(membershipsSchema.Membership.name)
         private readonly membershipModel: membershipsSchema.MembershipPaginateModel,
         @InjectModel(Referral.name)
-        private readonly referralModel: Model<ReferralDocument>
-    ) { }
+        private readonly referralModel: Model<ReferralDocument>,
+    ) {}
 
     async findByUserId(userId: string) {
         if (!Types.ObjectId.isValid(userId)) {
@@ -28,12 +34,13 @@ export class KolsMembershipService {
             .exec();
     }
 
-    async requestJoin(dto: KolsJoinMembershipDto){
-        
+    async requestJoin(dto: KolsJoinMembershipDto) {
         // normalize email
         const emailRaw = dto.email;
         const email =
-            typeof emailRaw === 'string' ? emailRaw.trim().toLowerCase() : undefined;
+            typeof emailRaw === 'string'
+                ? emailRaw.trim().toLowerCase()
+                : undefined;
         if (!email) throw new BadRequestException('EMAIL_REQUIRED');
 
         // normalize accounts as string[] (up to 10), then map to MembershipAccount[]
@@ -49,7 +56,9 @@ export class KolsMembershipService {
             { email },
         ];
 
-        const existing = await this.membershipModel.findOne({ $or: ors }).lean();
+        const existing = await this.membershipModel
+            .findOne({ $or: ors })
+            .lean();
         if (existing) {
             throw new ConflictException(
                 'A membership for this user or email already exists.',
@@ -57,14 +66,19 @@ export class KolsMembershipService {
         }
 
         const referralId = dto.referral
-            ? (Types.ObjectId.isValid(dto.referral) ? new Types.ObjectId(dto.referral) : null)
+            ? Types.ObjectId.isValid(dto.referral)
+                ? new Types.ObjectId(dto.referral)
+                : null
             : undefined;
         if (dto.referral && !referralId) {
             throw new BadRequestException('INVALID_REFERRAL');
         }
         if (referralId) {
-            const referralExists = await this.referralModel.exists({ _id: referralId }).exec();
-            if (!referralExists) throw new NotFoundException('REFERRAL_NOT_FOUND');
+            const referralExists = await this.referralModel
+                .exists({ _id: referralId })
+                .exec();
+            if (!referralExists)
+                throw new NotFoundException('REFERRAL_NOT_FOUND');
         }
 
         try {

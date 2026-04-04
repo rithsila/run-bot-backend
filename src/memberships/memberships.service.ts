@@ -1,7 +1,20 @@
 // memberships.service.ts
-import { BadRequestException, ConflictException, ForbiddenException, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import {
+    BadRequestException,
+    ConflictException,
+    ForbiddenException,
+    Injectable,
+    Logger,
+    NotFoundException,
+} from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
-import { FilterQuery, Model, PaginateOptions, PaginateResult, Types } from 'mongoose';
+import {
+    FilterQuery,
+    Model,
+    PaginateOptions,
+    PaginateResult,
+    Types,
+} from 'mongoose';
 import * as membershipsSchema from './memberships.schema';
 import { JoinMembershipDto } from './dto/join-membership.dto';
 import { User, UserDocument } from 'src/user/user.schema';
@@ -12,10 +25,20 @@ import { WebPushSubService } from 'src/web-push-sub/web-push-sub.service';
 import { randomBytes } from 'crypto';
 import { ActivateLicenseDto } from './dto/activate-license.dto';
 import { JoseService } from './jose.service';
-import { MembershipAccountType, MembershipDocument } from './memberships.schema';
+import {
+    MembershipAccountType,
+    MembershipDocument,
+} from './memberships.schema';
 import { Referral } from './referral.schema';
-import { MembershipIpBlacklist, MembershipIpBlacklistDocument } from './membership-ip-blacklist.schema';
-import { Subscription, SubscriptionDocument, SubscriptionStatus } from 'src/subscriptions/subscriptions.schema';
+import {
+    MembershipIpBlacklist,
+    MembershipIpBlacklistDocument,
+} from './membership-ip-blacklist.schema';
+import {
+    Subscription,
+    SubscriptionDocument,
+    SubscriptionStatus,
+} from 'src/subscriptions/subscriptions.schema';
 import { PublicUser } from 'src/common/types/public-user.type';
 
 export type ReferralWithOwner = Referral & {
@@ -39,12 +62,10 @@ export class MembershipsService {
         @InjectModel(Subscription.name)
         private readonly subscriptionModel: Model<SubscriptionDocument>,
         private readonly webPushSubService: WebPushSubService,
-        private readonly jose: JoseService
-    ) { }
+        private readonly jose: JoseService,
+    ) {}
 
     async findAll(): Promise<MembershipDocument[]> {
-
-
         return this.membershipModel
             .find({})
             .populate('user', '_id email firstName lastName')
@@ -53,7 +74,6 @@ export class MembershipsService {
     }
 
     async findByUserId(userId: string): Promise<MembershipDocument | null> {
-
         const membership = await this.membershipModel
             .findOne({ user: new Types.ObjectId(userId) })
             .populate({
@@ -62,17 +82,17 @@ export class MembershipsService {
             })
             .populate({
                 path: 'referral',
-                select: '_id code link owner',  // include whatever fields you need
+                select: '_id code link owner', // include whatever fields you need
                 populate: {
                     path: 'owner',
                     select: '_id email firstName lastName',
                 },
-            }).populate({
+            })
+            .populate({
                 path: 'updatedBy',
                 select: '_id email firstName lastName',
             })
             .exec();
-
 
         return membership;
     }
@@ -85,7 +105,9 @@ export class MembershipsService {
         // normalize email
         const emailRaw = dto.email;
         const email =
-            typeof emailRaw === 'string' ? emailRaw.trim().toLowerCase() : undefined;
+            typeof emailRaw === 'string'
+                ? emailRaw.trim().toLowerCase()
+                : undefined;
         if (!email) throw new BadRequestException('EMAIL_REQUIRED');
 
         // normalize accounts as string[] (up to 10), then map to MembershipAccount[]
@@ -102,7 +124,9 @@ export class MembershipsService {
             { email },
         ];
 
-        const existing = await this.membershipModel.findOne({ $or: ors }).lean();
+        const existing = await this.membershipModel
+            .findOne({ $or: ors })
+            .lean();
         if (existing) {
             throw new ConflictException(
                 'A membership for this user or email already exists.',
@@ -139,7 +163,11 @@ export class MembershipsService {
                 const recipients = await this.webPushSubService.getAdminIds();
 
                 if (recipients.length) {
-                    await this.webPushSubService.sendToUsers(recipients, tinyPayload, 3600);
+                    await this.webPushSubService.sendToUsers(
+                        recipients,
+                        tinyPayload,
+                        3600,
+                    );
                 }
             } catch (e) {
                 console.warn('[AnalyzeNews.create] push enqueue failed:', e);
@@ -173,9 +201,14 @@ export class MembershipsService {
         }
 
         // normalize incoming fields
-        const emailProvided = Object.prototype.hasOwnProperty.call(dto, 'email');
+        const emailProvided = Object.prototype.hasOwnProperty.call(
+            dto,
+            'email',
+        );
         const email =
-            typeof dto.email === 'string' ? dto.email.trim().toLowerCase() : undefined;
+            typeof dto.email === 'string'
+                ? dto.email.trim().toLowerCase()
+                : undefined;
 
         const accountsProvided = Object.prototype.hasOwnProperty.call(
             dto,
@@ -183,7 +216,9 @@ export class MembershipsService {
         );
 
         // 🔹 normalize accounts only if provided
-        const accountStrings = accountsProvided ? normalizeAccounts(dto.accounts) : undefined;
+        const accountStrings = accountsProvided
+            ? normalizeAccounts(dto.accounts)
+            : undefined;
 
         const referralProvided = Object.prototype.hasOwnProperty.call(
             dto,
@@ -217,7 +252,7 @@ export class MembershipsService {
 
             // 🔹 map existing accounts by account string
             const existingByAccount = new Map<string, MembershipAccountType>(
-                (membership.accounts ?? []).map(acc => [acc.account, acc]),
+                (membership.accounts ?? []).map((acc) => [acc.account, acc]),
             );
 
             const nextAccounts: MembershipAccountType[] = [];
@@ -279,7 +314,11 @@ export class MembershipsService {
                 const recipients = await this.webPushSubService.getAdminIds();
 
                 if (recipients.length) {
-                    await this.webPushSubService.sendToUsers(recipients, tinyPayload, 3600);
+                    await this.webPushSubService.sendToUsers(
+                        recipients,
+                        tinyPayload,
+                        3600,
+                    );
                 }
             } catch (e) {
                 console.warn('[AnalyzeNews.create] push enqueue failed:', e);
@@ -301,8 +340,6 @@ export class MembershipsService {
     async paginate(
         query: PaginateMembershipsDto,
     ): Promise<PaginateResult<MembershipDocument>> {
-
-
         const { q, status, referral, page = 1, limit = 20 } = query;
 
         const filter: FilterQuery<MembershipDocument> = {};
@@ -359,7 +396,10 @@ export class MembershipsService {
                 {
                     path: 'referral',
                     select: '_id code link owner',
-                    populate: { path: 'owner', select: '_id email firstName lastName' },
+                    populate: {
+                        path: 'owner',
+                        select: '_id email firstName lastName',
+                    },
                 },
             ],
         };
@@ -371,7 +411,11 @@ export class MembershipsService {
         return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     }
 
-    async updateAdmin(id: string, dto: UpdateMembershipAdminDto, updatedBy?: string) {
+    async updateAdmin(
+        id: string,
+        dto: UpdateMembershipAdminDto,
+        updatedBy?: string,
+    ) {
         if (!Types.ObjectId.isValid(id)) {
             throw new BadRequestException('INVALID_ID');
         }
@@ -405,13 +449,15 @@ export class MembershipsService {
         }
 
         try {
-            const tinyPayload = buildAdminTinyPayload(membership, dto, { maxReasonLength: 160 });
+            const tinyPayload = buildAdminTinyPayload(membership, dto, {
+                maxReasonLength: 160,
+            });
             const userId = membership?.user || '';
             const recipients = [new Types.ObjectId(userId?.toString())];
 
             if (recipients.length) {
                 await this.webPushSubService.sendToUsers(
-                    recipients as Types.ObjectId[],
+                    recipients,
                     tinyPayload,
                     3600,
                 );
@@ -424,7 +470,9 @@ export class MembershipsService {
         return this.membershipModel.findById(membership._id).lean().exec();
     }
 
-    private generateLicenseKey(membership: membershipsSchema.MembershipDocument): string {
+    private generateLicenseKey(
+        membership: membershipsSchema.MembershipDocument,
+    ): string {
         // Prefix can be anything: product ID, "EA", etc.
         const prefix = 'EA';
         const randomPart = randomBytes(6).toString('base64url').toUpperCase(); // short but random
@@ -469,7 +517,7 @@ export class MembershipsService {
                 const recipients = [recipientId];
 
                 await this.webPushSubService.sendToUsers(
-                    recipients as Types.ObjectId[],
+                    recipients,
                     tinyPayload,
                     3600,
                 );
@@ -502,12 +550,20 @@ export class MembershipsService {
     }
 
     async activate(dto: ActivateLicenseDto, ip?: string, ua?: string) {
-        return this.performActivation(dto, ip, ua, { requireSubscription: true });
+        return this.performActivation(dto, ip, ua, {
+            requireSubscription: true,
+        });
     }
 
-    async activateFreeLicense(dto: ActivateLicenseDto, ip?: string, ua?: string) {
+    async activateFreeLicense(
+        dto: ActivateLicenseDto,
+        ip?: string,
+        ua?: string,
+    ) {
         // Same activation flow as activate but skips subscription checks for free licenses
-        return this.performActivation(dto, ip, ua, { requireSubscription: false });
+        return this.performActivation(dto, ip, ua, {
+            requireSubscription: false,
+        });
     }
 
     private async performActivation(
@@ -552,16 +608,18 @@ export class MembershipsService {
         }
 
         if (requireSubscription) {
-            await this.ensureLicenseRequiredSubscription(membership?.user as unknown as PublicUser, {
-                maskedKey,
-                accountLogin,
-                ip,
-                ua,
-                membershipId: String(membership._id),
-            });
+            await this.ensureLicenseRequiredSubscription(
+                membership?.user as unknown as PublicUser,
+                {
+                    maskedKey,
+                    accountLogin,
+                    ip,
+                    ua,
+                    membershipId: String(membership._id),
+                },
+            );
         }
 
-    
         if (membership.status !== membershipsSchema.MembershipStatus.Verified) {
             this.deny('membership_not_verified', {
                 maskedKey,
@@ -572,9 +630,13 @@ export class MembershipsService {
             });
         }
         // 🔍 Require account in membership.accounts with isVerified = true
-        const accounts = Array.isArray(membership.accounts) ? membership.accounts : [];
+        const accounts = Array.isArray(membership.accounts)
+            ? membership.accounts
+            : [];
 
-        const accountDoc = accounts.find((a) => a.account === accountLogin && a.isVerified);
+        const accountDoc = accounts.find(
+            (a) => a.account === accountLogin && a.isVerified,
+        );
 
         if (!accountDoc) {
             this.deny('account_not_verified', {
@@ -643,23 +705,24 @@ export class MembershipsService {
         userId: PublicUser,
         ctx: Record<string, any>,
     ) {
-
-        const subscription = await this.subscriptionModel.find({
-            user: userId?._id,
-            status: SubscriptionStatus.Active
-        }).populate("product")
+        const subscription = await this.subscriptionModel
+            .find({
+                user: userId?._id,
+                status: SubscriptionStatus.Active,
+            })
+            .populate('product');
 
         if (!subscription) {
             this.deny('subscription_not_active', ctx);
         }
 
-        const checkIsRequiresLicenseKey = subscription.find(sub => sub?.product?.requiresLicenseKey === true)
+        const checkIsRequiresLicenseKey = subscription.find(
+            (sub) => sub?.product?.requiresLicenseKey === true,
+        );
         if (!checkIsRequiresLicenseKey) {
             this.deny('product_not_license', ctx);
         }
 
-        this.logger.log(
-            `[Memberships.activate] license subscription ok`,
-        );
+        this.logger.log(`[Memberships.activate] license subscription ok`);
     }
 }

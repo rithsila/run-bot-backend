@@ -17,7 +17,10 @@ import {
 import { Throttle } from '@nestjs/throttler';
 
 import type { AuthRequest } from 'src/common/types/auth-request.type';
-import type { ApiSuccess, PaginatedResult } from 'src/common/types/api-response.type';
+import type {
+    ApiSuccess,
+    PaginatedResult,
+} from 'src/common/types/api-response.type';
 
 import { ReferralsService } from './referrals.service';
 
@@ -28,7 +31,7 @@ import { CreateReferralDto } from './dto/create-referral.dto';
 
 @Controller('referrals')
 export class ReferralsController {
-    constructor(private readonly referrals: ReferralsService) { }
+    constructor(private readonly referrals: ReferralsService) {}
 
     @Get()
     @Throttle({ default: { limit: 30, ttl: 60_000 } })
@@ -85,7 +88,6 @@ export class ReferralsController {
         @Body() dto: CreateReferralDto,
         @Req() req: AuthRequest,
     ): Promise<ApiSuccess<any>> {
-
         const data = await this.referrals.updateReferralById(id, dto);
 
         return {

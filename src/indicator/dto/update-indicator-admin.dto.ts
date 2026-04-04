@@ -4,13 +4,15 @@ import { Transform } from 'class-transformer';
 import { IndicatorStatus } from '../indicator.schema';
 
 export class UpdateIndicatorAdminDto {
-  @IsOptional()
-  @IsEnum(IndicatorStatus)
-  status?: IndicatorStatus;
+    @IsOptional()
+    @IsEnum(IndicatorStatus)
+    status?: IndicatorStatus;
 
-  @IsOptional()
-  @IsString()
-  @MaxLength(2000)
-  @Transform(({ value }) => (typeof value === 'string' ? value.trim() : value))
-  adminNotes?: string;
+    @IsOptional()
+    @IsString()
+    @MaxLength(2000)
+    @Transform(({ value }) =>
+        typeof value === 'string' ? value.trim() : value,
+    )
+    adminNotes?: string;
 }
