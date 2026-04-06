@@ -21,6 +21,14 @@ import { TelemetryDto } from './dto/telemetry.dto';
 
 const TELEMETRY_TTL_SECONDS = 60;
 
+interface BridgeSocketData {
+    userId: string | null;
+    isBridge: boolean;
+    agentId?: string;
+}
+
+type BridgeSocket = Omit<Socket, 'data'> & { data: BridgeSocketData };
+
 @WebSocketGateway({ namespace: '/console' })
 export class ConsoleGateway
     implements OnGatewayConnection, OnGatewayDisconnect
@@ -56,9 +64,10 @@ export class ConsoleGateway
                 payload = await this.jose.verifyToken(token);
                 isBridge = true;
             }
-            client.data.userId =
+            const d = client.data as BridgeSocketData;
+            d.userId =
                 (payload.userId as string) ?? (payload.sub as string) ?? null;
-            client.data.isBridge = isBridge;
+            d.isBridge = isBridge;
         } catch {
             this.logger.warn(
                 `WS /console rejected: invalid token id=${client.id}`,
@@ -70,8 +79,9 @@ export class ConsoleGateway
     }
 
     handleDisconnect(client: Socket) {
+        const agentId = (client.data as BridgeSocketData).agentId ?? 'none';
         this.logger.log(
-            `WS /console disconnected id=${client.id} agentId=${client.data.agentId ?? 'none'}`,
+            `WS /console disconnected id=${client.id} agentId=${agentId}`,
         );
     }
 
@@ -79,7 +89,7 @@ export class ConsoleGateway
 
     @SubscribeMessage('bridge:register')
     async onBridgeRegister(
-        @ConnectedSocket() client: Socket,
+        @ConnectedSocket() client: BridgeSocket,
         @MessageBody() data: { agentId: string; bridgeVersion?: string },
     ) {
         const { agentId } = data;
@@ -87,7 +97,7 @@ export class ConsoleGateway
         client.data.isBridge = true;
 
         const room = `agent:${agentId}`;
-        client.join(room);
+        void client.join(room);
 
         await this.instanceModel.findOneAndUpdate(
             { agentId },
@@ -103,7 +113,7 @@ export class ConsoleGateway
 
     @SubscribeMessage('console:telemetry')
     async onBridgeTelemetry(
-        @ConnectedSocket() client: Socket,
+        @ConnectedSocket() client: BridgeSocket,
         @MessageBody() telemetry: TelemetryDto,
     ) {
         const agentId = telemetry.agentId ?? client.data.agentId;
@@ -143,7 +153,7 @@ export class ConsoleGateway
 
     @SubscribeMessage('console:status')
     async onBridgeStatus(
-        @ConnectedSocket() client: Socket,
+        @ConnectedSocket() client: BridgeSocket,
         @MessageBody()
         data: { agentId: string; online: boolean; lastSeenTs?: number },
     ) {
@@ -164,7 +174,7 @@ export class ConsoleGateway
 
     @SubscribeMessage('console:offline')
     async onBridgeOffline(
-        @ConnectedSocket() client: Socket,
+        @ConnectedSocket() client: BridgeSocket,
         @MessageBody() data: { agentId?: string },
     ) {
         const agentId = data?.agentId ?? client.data.agentId;
@@ -186,12 +196,12 @@ export class ConsoleGateway
 
     @SubscribeMessage('client:subscribe')
     async onClientSubscribe(
-        @ConnectedSocket() client: Socket,
+        @ConnectedSocket() client: BridgeSocket,
         @MessageBody() data: { agentId: string },
     ) {
         const { agentId } = data;
         client.data.agentId = agentId;
-        client.join(`agent:${agentId}`);
+        void client.join(`agent:${agentId}`);
 
         const cached = await this.redis.get(`ea:state:${agentId}`);
         if (cached) {
@@ -205,10 +215,10 @@ export class ConsoleGateway
 
     @SubscribeMessage('client:unsubscribe')
     onClientUnsubscribe(
-        @ConnectedSocket() client: Socket,
+        @ConnectedSocket() client: BridgeSocket,
         @MessageBody() data: { agentId: string },
     ) {
-        client.leave(`agent:${data.agentId}`);
+        void client.leave(`agent:${data.agentId}`);
     }
 
     // ── Helpers (called from ConsoleService) ──────────────────────────────────

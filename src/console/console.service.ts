@@ -195,7 +195,7 @@ export class ConsoleService {
             { preset: name },
             userId,
         );
-        return doc!;
+        return doc;
     }
 
     async listPresets(agentId: string): Promise<EaSettings[]> {
