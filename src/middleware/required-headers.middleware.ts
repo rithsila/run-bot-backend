@@ -30,9 +30,9 @@ export class RequiredHeadersMiddleware implements NestMiddleware {
             method === 'PUT' ||
             method === 'PATCH' ||
             method === 'DELETE';
-        const hasCookies = Boolean((req as any).headers.cookie);
+        const xsrfCookie = req.cookies?.['XSRF-TOKEN'];
 
-        if (mutating && hasCookies) {
+        if (mutating && xsrfCookie) {
             if (!req.headers['x-csrf-token'])
                 throw new BadRequestException('Missing X-CSRF-Token');
         }

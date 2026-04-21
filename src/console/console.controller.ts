@@ -56,7 +56,7 @@ export class ConsoleController {
 
     @Post('instances/:agentId/kill-switch')
     @HttpCode(HttpStatus.OK)
-    @Throttle({ default: { limit: 3, ttl: 60_000 } })
+    @Throttle({ default: { limit: 20, ttl: 60_000 } })
     async killSwitch(
         @Param('agentId') agentId: string,
         @Body() dto: KillSwitchDto,

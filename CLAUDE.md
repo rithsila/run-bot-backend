@@ -74,6 +74,35 @@ Applied in order via `APP_GUARD`:
 | Retailer | `src/retailer/` | Retailer integration; raw body preserved for HMAC |
 | Turnstile | `src/turnstile/` | Cloudflare Turnstile bot protection |
 | Redis | `src/redis/` | Shared `REDIS` token (ioredis), consumed by throttler and Socket.IO |
+| Console | `src/console/` | EA (Expert Advisor) remote control panel — see below |
+
+### Console Module (`src/console/`)
+
+Remote control panel for MT5 Expert Advisors connected via a Go bridge process.
+
+**Architecture:** Browser ↔ bhub-api (Socket.IO `/console`) ↔ Go bridge (ZMQ PUB/SUB)
+
+**Key pieces:**
+- `ConsoleGateway` — Socket.IO gateway at `/console` namespace; handles both browser clients and bridge connections. Dual-token auth: RS256 JWT (browsers) or JOSE membership token (bridge).
+- `ConsoleService` — REST-facing business logic; validates settings keys against `ALLOWED_SETTINGS_KEYS` whitelist before forwarding.
+- `ConsoleScheduler` — `@Cron('*/30 * * * * *')` enqueues `check-heartbeat` jobs every 30 s.
+- `HealthCheckProcessor` — BullMQ worker; marks instances offline after 5 min without telemetry and sends web-push alerts.
+- **BullMQ queue disabled in development** (`NODE_ENV === 'development'`); scheduler/processor are not registered.
+
+**Socket.IO events:**
+
+| Direction | Event | Purpose |
+|---|---|---|
+| Bridge → Server | `bridge:register` | Bridge announces itself with `agentId` |
+| Bridge → Server | `console:telemetry` | Tick data; cached in Redis at `ea:state:<agentId>` (TTL 60 s) |
+| Bridge → Server | `console:ack` | Confirms a command was received |
+| Bridge → Server | `console:status` / `console:offline` | Online/offline updates |
+| Browser → Server | `client:subscribe` | Browser joins `agent:<agentId>` room; receives cached hydration |
+| Browser → Server | `client:unsubscribe` | Browser leaves room |
+| Server → Bridge | `bridge:command` | Sends verb+value (e.g. `KILL_SWITCH`, `MASTER_ENABLE`, `SETTINGS`) |
+| Server → Browser | `console:telemetry` / `console:status` / `console:ack` / `console:hydrate` | Fan-out to room |
+
+**MongoDB collections:** `ea-instances`, `ea-settings`, `ea-audit-logs`
 
 ### Auth Guards in `src/auth/guard/`
 
@@ -111,6 +140,10 @@ type PaginatedResult<T> = {
 ```
 
 Errors go through `HttpErrorFilter` (`src/common/http/http-error.filter.ts`).
+
+### Logging
+
+Uses `nestjs-pino`. In development, `pino-pretty` is applied for human-readable output. Fields `authorization`, `cookie`, and `password` are redacted. `/health` and `OPTIONS` requests are excluded from access logs.
 
 ### Environment Variables
 

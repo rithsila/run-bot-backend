@@ -29,7 +29,7 @@ export class TurnstileService {
 
         if (
             !data.success ||
-            (expectedAction && data.action !== expectedAction)
+            (expectedAction && data.action && data.action !== expectedAction)
         ) {
             throw new BadRequestException({
                 message: 'Turnstile verification failed',

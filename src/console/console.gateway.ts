@@ -11,6 +11,7 @@ import { Logger, Inject } from '@nestjs/common';
 import { Server, Socket } from 'socket.io';
 import { JwtService } from '@nestjs/jwt';
 import { InjectModel } from '@nestjs/mongoose';
+import { fromB64Env } from 'src/common/utils/env.util';
 import { Model } from 'mongoose';
 import type { Redis } from 'ioredis';
 
@@ -59,7 +60,10 @@ export class ConsoleGateway
             let payload: Record<string, unknown>;
             let isBridge = false;
             try {
-                payload = await this.jwt.verifyAsync(token);
+                payload = await this.jwt.verifyAsync(token, {
+                    publicKey: fromB64Env('JWT_ACCESS_PUBLIC_KEY_BASE64'),
+                    algorithms: ['RS256'],
+                });
             } catch {
                 payload = await this.jose.verifyToken(token);
                 isBridge = true;
@@ -78,11 +82,24 @@ export class ConsoleGateway
         this.logger.log(`WS /console connected id=${client.id}`);
     }
 
-    handleDisconnect(client: Socket) {
-        const agentId = (client.data as BridgeSocketData).agentId ?? 'none';
+    async handleDisconnect(client: Socket) {
+        const d = client.data as BridgeSocketData;
+        const agentId = d.agentId ?? 'none';
         this.logger.log(
             `WS /console disconnected id=${client.id} agentId=${agentId}`,
         );
+
+        if (d.isBridge && d.agentId) {
+            await this.instanceModel.updateOne(
+                { agentId: d.agentId },
+                { $set: { online: false } },
+            );
+            this.io.to(`agent:${d.agentId}`).emit('console:status', {
+                agentId: d.agentId,
+                online: false,
+                lastSeenTs: Date.now(),
+            });
+        }
     }
 
     // ── Bridge events ─────────────────────────────────────────────────────────
@@ -143,12 +160,23 @@ export class ConsoleGateway
     }
 
     @SubscribeMessage('console:ack')
-    onBridgeAck(@MessageBody() data: { uuid: string }) {
+    onBridgeAck(
+        @ConnectedSocket() client: BridgeSocket,
+        @MessageBody() data: { uuid: string },
+    ) {
+        const agentId = client.data.agentId;
+
+        // Broadcast to agent room so all subscribed browser clients receive the ACK.
+        if (agentId) {
+            this.io.to(`agent:${agentId}`).emit('console:ack', data);
+        }
+
+        // Also send to the specific socket that originated the command (if any).
         const targetSocketId = this.pendingAck.get(data.uuid);
         if (targetSocketId) {
             this.io.to(targetSocketId).emit('console:ack', data);
-            this.pendingAck.delete(data.uuid);
         }
+        this.pendingAck.delete(data.uuid);
     }
 
     @SubscribeMessage('console:status')
@@ -230,7 +258,9 @@ export class ConsoleGateway
         value?: string,
     ) {
         this.pendingAck.set(commandId, ''); // will be set with actual socket ID in service
-        this.io.to(`agent:${agentId}`).emit('bridge:command', { verb, value });
+        this.io
+            .to(`agent:${agentId}`)
+            .emit('bridge:command', { commandId, verb, value });
     }
 
     sendCommandToBridgeWithAck(
@@ -241,7 +271,9 @@ export class ConsoleGateway
         value?: string,
     ) {
         this.pendingAck.set(commandId, originSocketId);
-        this.io.to(`agent:${agentId}`).emit('bridge:command', { verb, value });
+        this.io
+            .to(`agent:${agentId}`)
+            .emit('bridge:command', { commandId, verb, value });
     }
 
     emitToRoom(room: string, event: string, payload: unknown) {

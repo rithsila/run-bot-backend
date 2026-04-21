@@ -144,7 +144,7 @@ const useRedisThrottle = process.env.NODE_ENV !== 'development';
             imports: useRedisThrottle ? [RedisModule] : [],
             inject: useRedisThrottle ? [REDIS] : [],
             useFactory: (redis?: Redis) => ({
-                throttlers: [{ limit: 10, ttl: seconds(60) }], // 10 req/min
+                throttlers: [{ limit: 60, ttl: seconds(60) }], // 60 req/min
                 ...(useRedisThrottle && redis
                     ? { storage: new ThrottlerStorageRedisService(redis) }
                     : {}),

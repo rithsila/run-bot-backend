@@ -1,4 +1,4 @@
-import { IsObject, IsString, IsNotEmpty } from 'class-validator';
+import { IsBoolean, IsObject, IsString, IsNotEmpty } from 'class-validator';
 
 export class PushSettingsDto {
     @IsObject()
@@ -15,5 +15,6 @@ export class SavePresetDto {
 }
 
 export class MasterEnableDto {
+    @IsBoolean()
     enabled!: boolean;
 }
