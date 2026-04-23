@@ -257,6 +257,25 @@ export class AuthController {
         return res.redirect('/');
     }
 
+    @Get('ws-token')
+    @SkipCsrf()
+    @HttpCode(HttpStatus.OK)
+    async wsToken(@Req() req: AuthRequest) {
+        // Authenticated via global JwtAuthGuard. The same JWT that authenticated
+        // this request is returned in the response body so the browser can use it
+        // for Socket.IO handshake (where httpOnly cookies are not accessible).
+        const token = (req as any).cookies?.accessToken;
+        if (!token) throw new UnauthorizedException('AUTH_REQUIRED');
+        return {
+            success: true,
+            statusCode: HttpStatus.OK,
+            code: 'WS_TOKEN',
+            data: { token },
+            timestamp: new Date().toISOString(),
+            path: '/auth/ws-token',
+        };
+    }
+
     @Post('logout')
     @Throttle({ default: { limit: 10, ttl: 60_000 } })
     @HttpCode(HttpStatus.OK)
