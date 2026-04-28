@@ -149,6 +149,7 @@ export class ConsoleGateway
             { agentId },
             {
                 $set: {
+                    online: true,
                     lastTelemetry: telemetry as unknown as Record<
                         string,
                         unknown
@@ -157,6 +158,12 @@ export class ConsoleGateway
                 },
             },
         );
+
+        this.io.to(`agent:${agentId}`).emit('console:status', {
+            agentId,
+            online: true,
+            lastSeenTs: Date.now(),
+        });
     }
 
     @SubscribeMessage('console:ack')
