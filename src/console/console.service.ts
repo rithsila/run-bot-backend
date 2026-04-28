@@ -124,6 +124,25 @@ export class ConsoleService {
         return { commandId };
     }
 
+    async sendKillReset(
+        agentId: string,
+        userId: string,
+    ): Promise<{ commandId: string }> {
+        await this.requireOnline(agentId);
+        const commandId = uuidv4();
+        this.gateway.sendCommandToBridge(agentId, commandId, 'KILL_RESET');
+        await this.logEvent(
+            agentId,
+            AuditEvent.KillReset,
+            { commandId },
+            userId,
+        );
+        this.logger.log(
+            `kill_reset agentId=${agentId} commandId=${commandId} userId=${userId}`,
+        );
+        return { commandId };
+    }
+
     async sendMasterEnable(
         agentId: string,
         enabled: boolean,
@@ -163,6 +182,10 @@ export class ConsoleService {
             'SETTINGS',
             encoded,
         );
+        await this.instanceModel.updateOne(
+            { agentId },
+            { $set: { currentSettings: settings } },
+        );
         await this.logEvent(
             agentId,
             AuditEvent.SettingsChange,
@@ -170,6 +193,18 @@ export class ConsoleService {
             userId,
         );
         return { commandId };
+    }
+
+    async getCurrentSettings(
+        agentId: string,
+    ): Promise<Record<string, unknown> | null> {
+        const instance = await this.instanceModel
+            .findOne({ agentId })
+            .lean()
+            .exec();
+        if (!instance)
+            throw new NotFoundException(`EA instance ${agentId} not found`);
+        return instance.currentSettings ?? null;
     }
 
     // ── Presets ───────────────────────────────────────────────────────────────

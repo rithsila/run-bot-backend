@@ -25,6 +25,9 @@ export class EaInstance {
 
     @Prop({ type: Object, default: null })
     lastTelemetry!: Record<string, unknown> | null;
+
+    @Prop({ type: Object, default: null })
+    currentSettings!: Record<string, unknown> | null;
 }
 
 export const EaInstanceSchema = SchemaFactory.createForClass(EaInstance);

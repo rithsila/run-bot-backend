@@ -15,26 +15,18 @@ import { EaAuditLog, AuditEvent } from './schemas/ea-audit-log.schema';
 
 function makeModel(overrides: Record<string, jest.Mock> = {}) {
     return {
-        find: jest
-            .fn()
-            .mockReturnValue({
-                lean: () => ({ exec: () => Promise.resolve([]) }),
-            }),
-        findOne: jest
-            .fn()
-            .mockReturnValue({
-                lean: () => ({ exec: () => Promise.resolve(null) }),
-            }),
-        findOneAndUpdate: jest
-            .fn()
-            .mockReturnValue({
-                lean: () => ({ exec: () => Promise.resolve(null) }),
-            }),
-        findByIdAndDelete: jest
-            .fn()
-            .mockReturnValue({
-                lean: () => ({ exec: () => Promise.resolve(null) }),
-            }),
+        find: jest.fn().mockReturnValue({
+            lean: () => ({ exec: () => Promise.resolve([]) }),
+        }),
+        findOne: jest.fn().mockReturnValue({
+            lean: () => ({ exec: () => Promise.resolve(null) }),
+        }),
+        findOneAndUpdate: jest.fn().mockReturnValue({
+            lean: () => ({ exec: () => Promise.resolve(null) }),
+        }),
+        findByIdAndDelete: jest.fn().mockReturnValue({
+            lean: () => ({ exec: () => Promise.resolve(null) }),
+        }),
         create: jest.fn().mockResolvedValue({}),
         updateOne: jest.fn().mockResolvedValue({}),
         ...overrides,
@@ -209,6 +201,48 @@ describe('ConsoleService', () => {
         });
     });
 
+    // ── sendKillReset ─────────────────────────────────────────────────────────
+
+    describe('sendKillReset', () => {
+        beforeEach(() => {
+            instanceModel.findOne.mockReturnValue({
+                lean: () => ({
+                    exec: () =>
+                        Promise.resolve({ agentId: 'agent-1', online: true }),
+                }),
+            });
+            auditModel.create.mockResolvedValue({});
+        });
+
+        it('sends KILL_RESET verb to bridge', async () => {
+            await service.sendKillReset('agent-1', 'user-1');
+            expect(gateway.sendCommandToBridge).toHaveBeenCalledWith(
+                'agent-1',
+                expect.any(String),
+                'KILL_RESET',
+            );
+        });
+
+        it('logs KillReset audit event', async () => {
+            await service.sendKillReset('agent-1', 'user-1');
+            expect(auditModel.create).toHaveBeenCalledWith(
+                expect.objectContaining({ event: AuditEvent.KillReset }),
+            );
+        });
+
+        it('throws NotFoundException when EA is offline', async () => {
+            instanceModel.findOne.mockReturnValue({
+                lean: () => ({
+                    exec: () =>
+                        Promise.resolve({ agentId: 'agent-1', online: false }),
+                }),
+            });
+            await expect(
+                service.sendKillReset('agent-1', 'user-1'),
+            ).rejects.toThrow(NotFoundException);
+        });
+    });
+
     // ── sendMasterEnable ──────────────────────────────────────────────────────
 
     describe('sendMasterEnable', () => {
@@ -282,6 +316,57 @@ describe('ConsoleService', () => {
             );
             expect(result).toHaveProperty('commandId');
             expect(typeof result.commandId).toBe('string');
+        });
+
+        it('persists currentSettings on the instance document', async () => {
+            const settings = { StartingLots: 0.03, MaxTrades: 5 };
+            await service.pushSettings('agent-1', settings, 'user-1');
+
+            expect(instanceModel.updateOne).toHaveBeenCalledWith(
+                { agentId: 'agent-1' },
+                { $set: { currentSettings: settings } },
+            );
+        });
+    });
+
+    // ── getCurrentSettings ────────────────────────────────────────────────────
+
+    describe('getCurrentSettings', () => {
+        it('returns persisted currentSettings when present', async () => {
+            instanceModel.findOne.mockReturnValue({
+                lean: () => ({
+                    exec: () =>
+                        Promise.resolve({
+                            agentId: 'agent-1',
+                            currentSettings: { StartingLots: 0.03 },
+                        }),
+                }),
+            });
+            const result = await service.getCurrentSettings('agent-1');
+            expect(result).toEqual({ StartingLots: 0.03 });
+        });
+
+        it('returns null when instance has no currentSettings', async () => {
+            instanceModel.findOne.mockReturnValue({
+                lean: () => ({
+                    exec: () =>
+                        Promise.resolve({
+                            agentId: 'agent-1',
+                            currentSettings: null,
+                        }),
+                }),
+            });
+            const result = await service.getCurrentSettings('agent-1');
+            expect(result).toBeNull();
+        });
+
+        it('throws NotFoundException when instance does not exist', async () => {
+            instanceModel.findOne.mockReturnValue({
+                lean: () => ({ exec: () => Promise.resolve(null) }),
+            });
+            await expect(service.getCurrentSettings('missing')).rejects.toThrow(
+                NotFoundException,
+            );
         });
     });
 
@@ -363,11 +448,9 @@ describe('ConsoleService', () => {
 
     describe('getAuditLog', () => {
         it('limits results to 200 even when a higher limit is requested', async () => {
-            const limitSpy = jest
-                .fn()
-                .mockReturnValue({
-                    lean: () => ({ exec: () => Promise.resolve([]) }),
-                });
+            const limitSpy = jest.fn().mockReturnValue({
+                lean: () => ({ exec: () => Promise.resolve([]) }),
+            });
             const sortSpy = jest.fn().mockReturnValue({ limit: limitSpy });
             auditModel.find = jest.fn().mockReturnValue({ sort: sortSpy });
 
@@ -377,11 +460,9 @@ describe('ConsoleService', () => {
         });
 
         it('sorts results by createdAt descending', async () => {
-            const limitSpy = jest
-                .fn()
-                .mockReturnValue({
-                    lean: () => ({ exec: () => Promise.resolve([]) }),
-                });
+            const limitSpy = jest.fn().mockReturnValue({
+                lean: () => ({ exec: () => Promise.resolve([]) }),
+            });
             const sortSpy = jest.fn().mockReturnValue({ limit: limitSpy });
             auditModel.find = jest.fn().mockReturnValue({ sort: sortSpy });
 

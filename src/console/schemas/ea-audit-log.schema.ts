@@ -5,6 +5,7 @@ export type EaAuditLogDocument = HydratedDocument<EaAuditLog>;
 
 export enum AuditEvent {
     KillSwitch = 'kill_switch',
+    KillReset = 'kill_reset',
     MasterEnable = 'master_enable',
     SettingsChange = 'settings_change',
     BridgeConnect = 'bridge_connect',

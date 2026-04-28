@@ -70,6 +70,16 @@ export class ConsoleController {
         return this.console.sendKillSwitch(agentId, req.user.userId);
     }
 
+    @Post('instances/:agentId/kill-switch/reset')
+    @HttpCode(HttpStatus.OK)
+    @Throttle({ default: { limit: 20, ttl: 60_000 } })
+    async killReset(
+        @Param('agentId') agentId: string,
+        @Req() req: AuthRequest,
+    ) {
+        return this.console.sendKillReset(agentId, req.user.userId);
+    }
+
     @Post('instances/:agentId/master-enable')
     @HttpCode(HttpStatus.OK)
     async masterEnable(
@@ -96,6 +106,12 @@ export class ConsoleController {
             dto.settings,
             req.user.userId,
         );
+    }
+
+    @Get('instances/:agentId/settings')
+    async getCurrentSettings(@Param('agentId') agentId: string) {
+        const settings = await this.console.getCurrentSettings(agentId);
+        return { settings };
     }
 
     @Get('instances/:agentId/presets')
