@@ -1,6 +1,6 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { getModelToken } from '@nestjs/mongoose';
-import { NotFoundException, BadRequestException } from '@nestjs/common';
+import { NotFoundException, BadRequestException, ForbiddenException } from '@nestjs/common';
 
 jest.mock('./console.gateway');
 
@@ -454,7 +454,12 @@ describe('ConsoleService', () => {
             const sortSpy = jest.fn().mockReturnValue({ limit: limitSpy });
             auditModel.find = jest.fn().mockReturnValue({ sort: sortSpy });
 
-            await service.getAuditLog('agent-1', 500);
+            // ownership check: instance has no userId so passes
+            instanceModel.findOne.mockReturnValue({
+                lean: () => ({ exec: () => Promise.resolve({ agentId: 'agent-1', userId: null }) }),
+            });
+
+            await service.getAuditLog('agent-1', 'user-1', 500);
 
             expect(limitSpy).toHaveBeenCalledWith(200);
         });
@@ -466,9 +471,79 @@ describe('ConsoleService', () => {
             const sortSpy = jest.fn().mockReturnValue({ limit: limitSpy });
             auditModel.find = jest.fn().mockReturnValue({ sort: sortSpy });
 
-            await service.getAuditLog('agent-1', 10);
+            instanceModel.findOne.mockReturnValue({
+                lean: () => ({ exec: () => Promise.resolve({ agentId: 'agent-1', userId: null }) }),
+            });
+
+            await service.getAuditLog('agent-1', 'user-1', 10);
 
             expect(sortSpy).toHaveBeenCalledWith({ createdAt: -1 });
+        });
+    });
+
+    // ── Ownership enforcement ─────────────────────────────────────────────────
+
+    describe('ownership enforcement', () => {
+        const AGENT_A = 'agent-A';
+        const USER_A = 'user-A';
+        const USER_B = 'user-B';
+
+        function mockInstanceOwnedBy(userId: string, online = true) {
+            instanceModel.findOne.mockReturnValue({
+                lean: () => ({
+                    exec: () => Promise.resolve({ agentId: AGENT_A, userId, online }),
+                }),
+            });
+        }
+
+        it('getAllInstances filters by userId', async () => {
+            instanceModel.find.mockReturnValue({
+                lean: () => ({ exec: () => Promise.resolve([]) }),
+            });
+            await service.getAllInstances(USER_A);
+            expect(instanceModel.find).toHaveBeenCalledWith({ userId: USER_A });
+        });
+
+        it('sendKillSwitch throws ForbiddenException when userId does not match', async () => {
+            mockInstanceOwnedBy(USER_B);
+            await expect(service.sendKillSwitch(AGENT_A, USER_A)).rejects.toThrow(ForbiddenException);
+            expect(gateway.sendCommandToBridge).not.toHaveBeenCalled();
+        });
+
+        it('sendKillReset throws ForbiddenException when userId does not match', async () => {
+            mockInstanceOwnedBy(USER_B);
+            await expect(service.sendKillReset(AGENT_A, USER_A)).rejects.toThrow(ForbiddenException);
+        });
+
+        it('sendMasterEnable throws ForbiddenException when userId does not match', async () => {
+            mockInstanceOwnedBy(USER_B);
+            await expect(service.sendMasterEnable(AGENT_A, true, USER_A)).rejects.toThrow(ForbiddenException);
+        });
+
+        it('pushSettings throws ForbiddenException when userId does not match', async () => {
+            mockInstanceOwnedBy(USER_B);
+            await expect(
+                service.pushSettings(AGENT_A, { StartingLots: 0.01 }, USER_A),
+            ).rejects.toThrow(ForbiddenException);
+        });
+
+        it('getAuditLog throws ForbiddenException when userId does not match', async () => {
+            mockInstanceOwnedBy(USER_B);
+            await expect(service.getAuditLog(AGENT_A, USER_A, 10)).rejects.toThrow(ForbiddenException);
+        });
+
+        it('sendKillSwitch succeeds when userId matches', async () => {
+            mockInstanceOwnedBy(USER_A, true);
+            auditModel.create.mockResolvedValue({});
+            const result = await service.sendKillSwitch(AGENT_A, USER_A);
+            expect(result).toHaveProperty('commandId');
+        });
+
+        it('instance with null userId allows any caller (migration compat)', async () => {
+            mockInstanceOwnedBy(null as unknown as string, true);
+            auditModel.create.mockResolvedValue({});
+            const result = await service.sendKillSwitch(AGENT_A, USER_A);
+            expect(result).toHaveProperty('commandId');
         });
     });
 });

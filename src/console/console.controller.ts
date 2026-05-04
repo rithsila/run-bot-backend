@@ -34,8 +34,8 @@ export class ConsoleController {
     constructor(private readonly console: ConsoleService) {}
 
     @Get('instances')
-    async listInstances() {
-        return this.console.getAllInstances();
+    async listInstances(@Req() req: AuthRequest) {
+        return this.console.getAllInstances(req.user.userId);
     }
 
     @Get('instances/:agentId/state')
@@ -50,8 +50,9 @@ export class ConsoleController {
     async getAuditLog(
         @Param('agentId') agentId: string,
         @Query('limit', new DefaultValuePipe(50), ParseIntPipe) limit: number,
+        @Req() req: AuthRequest,
     ) {
-        return this.console.getAuditLog(agentId, limit);
+        return this.console.getAuditLog(agentId, req.user.userId, limit);
     }
 
     @Post('instances/:agentId/kill-switch')

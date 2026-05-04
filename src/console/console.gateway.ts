@@ -110,6 +110,22 @@ export class ConsoleGateway
         @MessageBody() data: { agentId: string; bridgeVersion?: string },
     ) {
         const { agentId } = data;
+        const callerId = client.data.userId;
+
+        // Ownership lock: if instance already exists under a different userId, reject
+        const existing = await this.instanceModel
+            .findOne({ agentId })
+            .lean()
+            .exec();
+        if (existing?.userId && callerId && existing.userId !== callerId) {
+            this.logger.warn(
+                `bridge:register REJECTED agentId=${agentId} caller=${callerId} owner=${existing.userId}`,
+            );
+            client.emit('error', { message: 'forbidden: agentId owned by another user' });
+            client.disconnect(true);
+            return;
+        }
+
         client.data.agentId = agentId;
         client.data.isBridge = true;
 
@@ -118,7 +134,7 @@ export class ConsoleGateway
 
         await this.instanceModel.findOneAndUpdate(
             { agentId },
-            { $set: { online: true, lastSeenAt: new Date() } },
+            { $set: { online: true, lastSeenAt: new Date(), ...(callerId ? { userId: callerId } : {}) } },
             { upsert: true, new: true },
         );
 
@@ -235,6 +251,19 @@ export class ConsoleGateway
         @MessageBody() data: { agentId: string },
     ) {
         const { agentId } = data;
+        const callerId = client.data.userId;
+
+        // Ownership check: only allow the owner to subscribe
+        const instance = await this.instanceModel
+            .findOne({ agentId })
+            .lean()
+            .exec();
+        if (instance?.userId && callerId && instance.userId !== callerId) {
+            client.emit('error', { message: 'forbidden' });
+            client.disconnect(true);
+            return;
+        }
+
         client.data.agentId = agentId;
         void client.join(`agent:${agentId}`);
 

@@ -116,7 +116,7 @@
             "^.+\\.(t|j)s$": "ts-jest"
         },
         "transformIgnorePatterns": [
-            "node_modules/(?!(uuid|jose|bullmq|@bullmq|p-limit|yocto-queue)/)"
+            "node_modules/(?!(\\.pnpm/[^/]+/node_modules/)?(uuid|jose|bullmq|@bullmq|p-limit|yocto-queue))"
         ],
         "moduleNameMapper": {
             "^src/(.*)$": "<rootDir>/$1"

@@ -3,6 +3,7 @@ import {
     Inject,
     NotFoundException,
     BadRequestException,
+    ForbiddenException,
     Logger,
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
@@ -87,8 +88,8 @@ export class ConsoleService {
         }
     }
 
-    async getAllInstances(): Promise<EaInstance[]> {
-        return this.instanceModel.find().lean().exec();
+    async getAllInstances(userId: string): Promise<EaInstance[]> {
+        return this.instanceModel.find({ userId }).lean().exec();
     }
 
     async getInstanceStatus(
@@ -109,6 +110,7 @@ export class ConsoleService {
         agentId: string,
         userId: string,
     ): Promise<{ commandId: string }> {
+        await this.requireOwnership(agentId, userId);
         await this.requireOnline(agentId);
         const commandId = uuidv4();
         this.gateway.sendCommandToBridge(agentId, commandId, 'KILL_SWITCH');
@@ -128,6 +130,7 @@ export class ConsoleService {
         agentId: string,
         userId: string,
     ): Promise<{ commandId: string }> {
+        await this.requireOwnership(agentId, userId);
         await this.requireOnline(agentId);
         const commandId = uuidv4();
         this.gateway.sendCommandToBridge(agentId, commandId, 'KILL_RESET');
@@ -148,6 +151,7 @@ export class ConsoleService {
         enabled: boolean,
         userId: string,
     ): Promise<{ commandId: string }> {
+        await this.requireOwnership(agentId, userId);
         await this.requireOnline(agentId);
         const commandId = uuidv4();
         this.gateway.sendCommandToBridge(
@@ -170,6 +174,7 @@ export class ConsoleService {
         settings: Record<string, unknown>,
         userId: string,
     ): Promise<{ commandId: string }> {
+        await this.requireOwnership(agentId, userId);
         await this.requireOnline(agentId);
         this.validateSettingsKeys(settings);
         const commandId = uuidv4();
@@ -267,7 +272,8 @@ export class ConsoleService {
         });
     }
 
-    async getAuditLog(agentId: string, limit: number): Promise<EaAuditLog[]> {
+    async getAuditLog(agentId: string, userId: string, limit: number): Promise<EaAuditLog[]> {
+        await this.requireOwnership(agentId, userId);
         return this.auditModel
             .find({ agentId })
             .sort({ createdAt: -1 })
@@ -277,6 +283,17 @@ export class ConsoleService {
     }
 
     // ── Private helpers ───────────────────────────────────────────────────────
+
+    private async requireOwnership(agentId: string, userId: string): Promise<void> {
+        const instance = await this.instanceModel
+            .findOne({ agentId })
+            .lean()
+            .exec();
+        if (!instance)
+            throw new NotFoundException(`EA instance ${agentId} not found`);
+        if (instance.userId && instance.userId !== userId)
+            throw new ForbiddenException(`Access denied to instance ${agentId}`);
+    }
 
     private async requireOnline(agentId: string): Promise<void> {
         const instance = await this.instanceModel

@@ -28,6 +28,9 @@ export class EaInstance {
 
     @Prop({ type: Object, default: null })
     currentSettings!: Record<string, unknown> | null;
+
+    @Prop({ type: String, index: true, default: null })
+    userId!: string | null;
 }
 
 export const EaInstanceSchema = SchemaFactory.createForClass(EaInstance);
