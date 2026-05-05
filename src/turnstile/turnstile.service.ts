@@ -17,6 +17,17 @@ export class TurnstileService {
 
     async verify(token: string, remoteip?: string, expectedAction?: string) {
         const secret = process.env.CF_TURNSTILE_SECRET!;
+
+        // Cloudflare test keys — skip network call (UAT/dev with firewalled egress).
+        // https://developers.cloudflare.com/turnstile/troubleshooting/testing/
+        const TEST_SECRETS_ALWAYS_PASS = new Set([
+            '1x0000000000000000000000000000000AA',
+            '3x0000000000000000000000000000000AA',
+        ]);
+        if (TEST_SECRETS_ALWAYS_PASS.has(secret)) {
+            return { success: true, action: expectedAction } as VerifyResp;
+        }
+
         const form = new URLSearchParams({ secret, response: token });
         if (remoteip) form.append('remoteip', remoteip);
 
