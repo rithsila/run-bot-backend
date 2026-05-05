@@ -59,6 +59,7 @@ const ALLOWED_SETTINGS_KEYS = new Set([
     'SellMagicNumber',
     'Slippage',
     'TradeComment',
+    'TargetEquityAmount',
 ]);
 
 @Injectable()
@@ -272,7 +273,11 @@ export class ConsoleService {
         });
     }
 
-    async getAuditLog(agentId: string, userId: string, limit: number): Promise<EaAuditLog[]> {
+    async getAuditLog(
+        agentId: string,
+        userId: string,
+        limit: number,
+    ): Promise<EaAuditLog[]> {
         await this.requireOwnership(agentId, userId);
         return this.auditModel
             .find({ agentId })
@@ -284,7 +289,10 @@ export class ConsoleService {
 
     // ── Private helpers ───────────────────────────────────────────────────────
 
-    private async requireOwnership(agentId: string, userId: string): Promise<void> {
+    private async requireOwnership(
+        agentId: string,
+        userId: string,
+    ): Promise<void> {
         const instance = await this.instanceModel
             .findOne({ agentId })
             .lean()
@@ -292,7 +300,9 @@ export class ConsoleService {
         if (!instance)
             throw new NotFoundException(`EA instance ${agentId} not found`);
         if (instance.userId && instance.userId !== userId)
-            throw new ForbiddenException(`Access denied to instance ${agentId}`);
+            throw new ForbiddenException(
+                `Access denied to instance ${agentId}`,
+            );
     }
 
     private async requireOnline(agentId: string): Promise<void> {
