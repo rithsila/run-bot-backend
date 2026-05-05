@@ -1,6 +1,10 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { getModelToken } from '@nestjs/mongoose';
-import { NotFoundException, BadRequestException, ForbiddenException } from '@nestjs/common';
+import {
+    NotFoundException,
+    BadRequestException,
+    ForbiddenException,
+} from '@nestjs/common';
 
 jest.mock('./console.gateway');
 
@@ -456,7 +460,10 @@ describe('ConsoleService', () => {
 
             // ownership check: instance has no userId so passes
             instanceModel.findOne.mockReturnValue({
-                lean: () => ({ exec: () => Promise.resolve({ agentId: 'agent-1', userId: null }) }),
+                lean: () => ({
+                    exec: () =>
+                        Promise.resolve({ agentId: 'agent-1', userId: null }),
+                }),
             });
 
             await service.getAuditLog('agent-1', 'user-1', 500);
@@ -472,7 +479,10 @@ describe('ConsoleService', () => {
             auditModel.find = jest.fn().mockReturnValue({ sort: sortSpy });
 
             instanceModel.findOne.mockReturnValue({
-                lean: () => ({ exec: () => Promise.resolve({ agentId: 'agent-1', userId: null }) }),
+                lean: () => ({
+                    exec: () =>
+                        Promise.resolve({ agentId: 'agent-1', userId: null }),
+                }),
             });
 
             await service.getAuditLog('agent-1', 'user-1', 10);
@@ -491,7 +501,8 @@ describe('ConsoleService', () => {
         function mockInstanceOwnedBy(userId: string, online = true) {
             instanceModel.findOne.mockReturnValue({
                 lean: () => ({
-                    exec: () => Promise.resolve({ agentId: AGENT_A, userId, online }),
+                    exec: () =>
+                        Promise.resolve({ agentId: AGENT_A, userId, online }),
                 }),
             });
         }
@@ -506,18 +517,24 @@ describe('ConsoleService', () => {
 
         it('sendKillSwitch throws ForbiddenException when userId does not match', async () => {
             mockInstanceOwnedBy(USER_B);
-            await expect(service.sendKillSwitch(AGENT_A, USER_A)).rejects.toThrow(ForbiddenException);
+            await expect(
+                service.sendKillSwitch(AGENT_A, USER_A),
+            ).rejects.toThrow(ForbiddenException);
             expect(gateway.sendCommandToBridge).not.toHaveBeenCalled();
         });
 
         it('sendKillReset throws ForbiddenException when userId does not match', async () => {
             mockInstanceOwnedBy(USER_B);
-            await expect(service.sendKillReset(AGENT_A, USER_A)).rejects.toThrow(ForbiddenException);
+            await expect(
+                service.sendKillReset(AGENT_A, USER_A),
+            ).rejects.toThrow(ForbiddenException);
         });
 
         it('sendMasterEnable throws ForbiddenException when userId does not match', async () => {
             mockInstanceOwnedBy(USER_B);
-            await expect(service.sendMasterEnable(AGENT_A, true, USER_A)).rejects.toThrow(ForbiddenException);
+            await expect(
+                service.sendMasterEnable(AGENT_A, true, USER_A),
+            ).rejects.toThrow(ForbiddenException);
         });
 
         it('pushSettings throws ForbiddenException when userId does not match', async () => {
@@ -529,7 +546,9 @@ describe('ConsoleService', () => {
 
         it('getAuditLog throws ForbiddenException when userId does not match', async () => {
             mockInstanceOwnedBy(USER_B);
-            await expect(service.getAuditLog(AGENT_A, USER_A, 10)).rejects.toThrow(ForbiddenException);
+            await expect(
+                service.getAuditLog(AGENT_A, USER_A, 10),
+            ).rejects.toThrow(ForbiddenException);
         });
 
         it('sendKillSwitch succeeds when userId matches', async () => {

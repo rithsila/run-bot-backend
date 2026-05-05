@@ -57,9 +57,13 @@ async function main() {
             skipped++;
             continue;
         }
-        const membership = await Membership.findOne({ licenseKey: inst.licenseKey }).lean();
+        const membership = await Membership.findOne({
+            licenseKey: inst.licenseKey,
+        }).lean();
         if (!membership?.user) {
-            console.warn(`  SKIP agentId=${inst.agentId} — no membership found for key`);
+            console.warn(
+                `  SKIP agentId=${inst.agentId} — no membership found for key`,
+            );
             skipped++;
             continue;
         }

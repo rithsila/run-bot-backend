@@ -40,13 +40,13 @@ On the Proxmox host shell, create an unprivileged LXC.
 
 Recommended resources for UAT:
 
-| Item | Value |
-|---|---|
-| CPU | 2 cores |
-| RAM | 4 GB |
-| Swap | 1 GB |
-| Disk | 20 GB |
-| OS | Debian 12 |
+| Item | Value     |
+| ---- | --------- |
+| CPU  | 2 cores   |
+| RAM  | 4 GB      |
+| Swap | 1 GB      |
+| Disk | 20 GB     |
+| OS   | Debian 12 |
 
 Example command (replace IDs and paths for your host):
 
@@ -155,12 +155,12 @@ Both must succeed. If not, fix the network (Proxmox bridge, firewall, or routing
 
 You need these four values:
 
-| Item | Example |
-|---|---|
-| Database name | `bhub_uat` |
-| App username | `bhub_app` |
-| App password | `CHANGE_ME_APP` |
-| Auth source | usually the database name, e.g. `bhub_uat` |
+| Item          | Example                                     |
+| ------------- | ------------------------------------------- |
+| Database name | `bhub_uat`                                |
+| App username  | `bhub_app`                                |
+| App password  | `CHANGE_ME_APP`                           |
+| Auth source   | usually the database name, e.g.`bhub_uat` |
 
 If the DBA has not created them yet, they can run this on `172.17.10.10`:
 
@@ -230,13 +230,13 @@ Must succeed. If not, fix the network or the firewall on the Redis host before c
 
 You need:
 
-| Item | Example |
-|---|---|
-| Host | `172.17.10.10` |
-| Port | `6379` |
-| Password | `CHANGE_ME_REDIS` |
+| Item           | Example                                               |
+| -------------- | ----------------------------------------------------- |
+| Host           | `172.17.10.10`                                      |
+| Port           | `6379`                                              |
+| Password       | `CHANGE_ME_REDIS`                                   |
 | Database index | `0` (default) or a dedicated DB, e.g. `2` for UAT |
-| TLS | `yes` / `no` |
+| TLS            | `yes` / `no`                                      |
 
 > **Note:** BullMQ and the Socket.IO Redis adapter both use pub/sub.
 > The Redis server must have `notify-keyspace-events` enabled (BullMQ needs it) and **must not block `SUBSCRIBE` / `PSUBSCRIBE`** in its ACL.
@@ -294,7 +294,7 @@ su - bhub
 As the `bhub` user, clone the repo:
 
 ```bash
-git clone <your-git-url> bhub-api
+git clone https://gitlab.com/rithsilanew2020/bhub-backend.git bhub-api
 cd bhub-api
 ```
 
@@ -579,20 +579,20 @@ mongodump --uri="mongodb://bhub_app:CHANGE_ME_APP@172.17.10.10:27017/bhub_uat?au
 
 ## 15. Troubleshooting
 
-| Problem | Check |
-|---|---|
-| App crashes on startup | `pm2 logs bhub-api-uat` — usually a missing env var. Joi prints the failing key. |
-| `MongoServerError: Authentication failed` | User/password wrong, or `authSource` missing in `MONGO_URI`. |
+| Problem                                                     | Check                                                                                                                   |
+| ----------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
+| App crashes on startup                                      | `pm2 logs bhub-api-uat` — usually a missing env var. Joi prints the failing key.                                     |
+| `MongoServerError: Authentication failed`                 | User/password wrong, or `authSource` missing in `MONGO_URI`.                                                        |
 | `MongoNetworkError: connect ETIMEDOUT 172.17.10.10:27017` | LXC cannot reach the Mongo host. Check Proxmox bridge, firewall on `172.17.10.10`, and `nc -zv 172.17.10.10 27017`. |
-| `MongoServerSelectionError` | Mongo is reachable but not ready, or `replicaSet` / `tls` options mismatch the server config. |
-| `NOAUTH Authentication required` (Redis) | Missing password in `REDIS_URL`. |
-| `Error: connect ECONNREFUSED 172.17.10.10:6379` | Redis host is down or firewall blocks the LXC IP. Check `nc -zv 172.17.10.10 6379`. |
-| `WRONGPASS invalid username-password` | Password wrong, or ACL user not allowed. Confirm with the DBA. |
-| `BullMQ: Error: ERR unknown command 'SUBSCRIBE'` | Redis ACL blocks pub/sub — ask the DBA to allow `+@pubsub` for this user. |
-| WebSocket disconnects every minute | Nginx `proxy_read_timeout` too low — set to `3600s`. |
-| Throttler errors in dev only | The app disables Redis throttler storage when `NODE_ENV=development`. For UAT use `staging`. |
-| `/console` bridge cannot connect | Check that the Go bridge uses the JOSE membership token, not a JWT. |
-| `413 Payload Too Large` on `/retailer` | The `/retailer` endpoint has a 1 MB limit by design. Other endpoints are 64 KB. |
+| `MongoServerSelectionError`                               | Mongo is reachable but not ready, or `replicaSet` / `tls` options mismatch the server config.                       |
+| `NOAUTH Authentication required` (Redis)                  | Missing password in `REDIS_URL`.                                                                                      |
+| `Error: connect ECONNREFUSED 172.17.10.10:6379`           | Redis host is down or firewall blocks the LXC IP. Check `nc -zv 172.17.10.10 6379`.                                   |
+| `WRONGPASS invalid username-password`                     | Password wrong, or ACL user not allowed. Confirm with the DBA.                                                          |
+| `BullMQ: Error: ERR unknown command 'SUBSCRIBE'`          | Redis ACL blocks pub/sub — ask the DBA to allow `+@pubsub` for this user.                                            |
+| WebSocket disconnects every minute                          | Nginx `proxy_read_timeout` too low — set to `3600s`.                                                               |
+| Throttler errors in dev only                                | The app disables Redis throttler storage when `NODE_ENV=development`. For UAT use `staging`.                        |
+| `/console` bridge cannot connect                          | Check that the Go bridge uses the JOSE membership token, not a JWT.                                                     |
+| `413 Payload Too Large` on `/retailer`                  | The `/retailer` endpoint has a 1 MB limit by design. Other endpoints are 64 KB.                                       |
 
 ---
 

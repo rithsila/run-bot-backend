@@ -121,7 +121,9 @@ export class ConsoleGateway
             this.logger.warn(
                 `bridge:register REJECTED agentId=${agentId} caller=${callerId} owner=${existing.userId}`,
             );
-            client.emit('error', { message: 'forbidden: agentId owned by another user' });
+            client.emit('error', {
+                message: 'forbidden: agentId owned by another user',
+            });
             client.disconnect(true);
             return;
         }
@@ -134,7 +136,13 @@ export class ConsoleGateway
 
         await this.instanceModel.findOneAndUpdate(
             { agentId },
-            { $set: { online: true, lastSeenAt: new Date(), ...(callerId ? { userId: callerId } : {}) } },
+            {
+                $set: {
+                    online: true,
+                    lastSeenAt: new Date(),
+                    ...(callerId ? { userId: callerId } : {}),
+                },
+            },
             { upsert: true, new: true },
         );
 

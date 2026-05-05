@@ -7,18 +7,14 @@ jest.mock('./console.gateway', () => ({
         .mockImplementation(() => ({ emitToRoom: jest.fn() })),
 }));
 jest.mock('./console.service', () => ({
-    ConsoleService: jest
-        .fn()
-        .mockImplementation(() => ({
-            logEvent: jest.fn().mockResolvedValue(undefined),
-        })),
+    ConsoleService: jest.fn().mockImplementation(() => ({
+        logEvent: jest.fn().mockResolvedValue(undefined),
+    })),
 }));
 jest.mock('../web-push-sub/web-push-sub.service', () => ({
-    WebPushSubService: jest
-        .fn()
-        .mockImplementation(() => ({
-            sendToUsers: jest.fn().mockResolvedValue(undefined),
-        })),
+    WebPushSubService: jest.fn().mockImplementation(() => ({
+        sendToUsers: jest.fn().mockResolvedValue(undefined),
+    })),
 }));
 
 import { HealthCheckProcessor } from './health-check.processor';
@@ -38,11 +34,9 @@ function makeJob(name: string, data: unknown = {}): Job {
 
 function makeModel(overrides: Record<string, jest.Mock> = {}) {
     return {
-        find: jest
-            .fn()
-            .mockReturnValue({
-                lean: () => ({ exec: () => Promise.resolve([]) }),
-            }),
+        find: jest.fn().mockReturnValue({
+            lean: () => ({ exec: () => Promise.resolve([]) }),
+        }),
         updateOne: jest.fn().mockResolvedValue({}),
         ...overrides,
     };
