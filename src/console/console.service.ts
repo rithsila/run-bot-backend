@@ -25,40 +25,41 @@ import { TelemetryDto } from './dto/telemetry.dto';
 // Whitelist of known EA parameter keys that may be pushed via settings command.
 // Reject payloads containing keys outside this set.
 const ALLOWED_SETTINGS_KEYS = new Set([
+    // Lot sizing
     'StartingLots',
     'LayerMultiplier',
     'MaxTrades',
-    'MaxTradesPerSide',
+    // Pip step
     'PipStep',
     'PipStepMode',
+    // ATR
     'ATRPeriod',
-    'ATRMultiplier',
-    'ATRSmoothing',
-    'SignalGateEnabled',
-    'StochPeriod',
-    'StochSmoothing',
-    'StochShift',
-    'OverboughtLevel',
-    'OversoldLevel',
-    'SpreadFilter',
-    'MaxSpread',
-    'SessionFilter',
-    'AsiaStart',
-    'AsiaEnd',
-    'LondonStart',
-    'LondonEnd',
-    'NewYorkStart',
-    'NewYorkEnd',
-    'EquityProtection',
-    'EquityStopPct',
-    'DailyLimit',
-    'DailyLimitPct',
-    'BasketTP',
-    'BasketTpPips',
-    'BuyMagicNumber',
-    'SellMagicNumber',
-    'Slippage',
-    'TradeComment',
+    'ATRSimpleMultiplier',
+    // Signal gate
+    'p_G01',
+    'p_G03',
+    'p_G04',
+    'p_G05',
+    'p_G06',
+    'p_G07',
+    // Spread filter
+    'EnableSpreadFilter',
+    'MaxSpreadPips',
+    // Session filter
+    'EnableSessionFilter',
+    // Equity protection
+    'EnableEquityProtection',
+    'StopLossDrawdownPercent',
+    // Daily profit limit
+    'UseDailyProfitLimit',
+    'DailyProfitMode',
+    'DailyGrossProfitLimit',
+    'DailyProfitMoneyTarget',
+    'TargetEquityAmount',
+    'CloseAllWhenLimitReached',
+    // Basket TP
+    'EnableBasketTakeProfit',
+    'BasketTP_FixedPips',
 ]);
 
 @Injectable()
@@ -272,7 +273,11 @@ export class ConsoleService {
         });
     }
 
-    async getAuditLog(agentId: string, userId: string, limit: number): Promise<EaAuditLog[]> {
+    async getAuditLog(
+        agentId: string,
+        userId: string,
+        limit: number,
+    ): Promise<EaAuditLog[]> {
         await this.requireOwnership(agentId, userId);
         return this.auditModel
             .find({ agentId })
@@ -284,7 +289,10 @@ export class ConsoleService {
 
     // ── Private helpers ───────────────────────────────────────────────────────
 
-    private async requireOwnership(agentId: string, userId: string): Promise<void> {
+    private async requireOwnership(
+        agentId: string,
+        userId: string,
+    ): Promise<void> {
         const instance = await this.instanceModel
             .findOne({ agentId })
             .lean()
@@ -292,7 +300,9 @@ export class ConsoleService {
         if (!instance)
             throw new NotFoundException(`EA instance ${agentId} not found`);
         if (instance.userId && instance.userId !== userId)
-            throw new ForbiddenException(`Access denied to instance ${agentId}`);
+            throw new ForbiddenException(
+                `Access denied to instance ${agentId}`,
+            );
     }
 
     private async requireOnline(agentId: string): Promise<void> {
