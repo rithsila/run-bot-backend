@@ -47,15 +47,10 @@ const ALLOWED_SETTINGS_KEYS = new Set([
     'NewYorkEnd',
     'EnableEquityProtection',
     'StopLossDrawdownPercent',
-    'DailyLimit',
-    'DailyLimitPct',
-    'BasketTP',
-    'BasketTpPips',
     'BuyMagicNumber',
     'SellMagicNumber',
     'Slippage',
     'TradeComment',
-    'TargetEquityAmount',
 ]);
 
 @Injectable()
