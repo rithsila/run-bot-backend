@@ -47,12 +47,12 @@ export class TelemetrySignalDto {
 }
 
 export class TelemetryClosedTradeDto {
-    closeTime!: number;     // unix seconds (broker server time)
+    closeTime!: number; // unix seconds (broker server time)
     side!: 'buy' | 'sell';
     lots!: number;
-    pnl!: number;           // profit + swap + commission, account currency
+    pnl!: number; // profit + swap + commission, account currency
     durationSec!: number;
-    reason!: string;        // EA close comment: BasketTP, EquityProtection, OutsideSession, KillSwitch, ...
+    reason!: string; // EA close comment: BasketTP, EquityProtection, OutsideSession, KillSwitch, ...
 }
 
 export class TelemetryDto {
@@ -67,5 +67,6 @@ export class TelemetryDto {
     signal!: TelemetrySignalDto;
     features!: number;
     statusCode!: number;
+    openPositions?: TelemetryClosedTradeDto[];
     history?: TelemetryClosedTradeDto[];
 }
