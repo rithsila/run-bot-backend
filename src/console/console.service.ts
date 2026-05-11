@@ -13,7 +13,6 @@ import { v4 as uuidv4 } from 'uuid';
 
 import { REDIS } from '../redis/redis.constants';
 import { EaInstance, EaInstanceDocument } from './schemas/ea-instance.schema';
-import { EaSettings, EaSettingsDocument } from './schemas/ea-settings.schema';
 import {
     EaAuditLog,
     EaAuditLogDocument,
@@ -61,8 +60,6 @@ export class ConsoleService {
         @Inject(REDIS) private readonly redis: Redis,
         @InjectModel(EaInstance.name)
         private readonly instanceModel: Model<EaInstanceDocument>,
-        @InjectModel(EaSettings.name)
-        private readonly settingsModel: Model<EaSettingsDocument>,
         @InjectModel(EaAuditLog.name)
         private readonly auditModel: Model<EaAuditLogDocument>,
         private readonly gateway: ConsoleGateway,
@@ -202,50 +199,6 @@ export class ConsoleService {
         if (!instance)
             throw new NotFoundException(`EA instance ${agentId} not found`);
         return instance.currentSettings ?? null;
-    }
-
-    // ── Presets ───────────────────────────────────────────────────────────────
-
-    async savePreset(
-        agentId: string,
-        name: string,
-        settings: Record<string, unknown>,
-        userId: string,
-    ): Promise<EaSettings> {
-        this.validateSettingsKeys(settings);
-        const doc = await this.settingsModel
-            .findOneAndUpdate(
-                { agentId, presetName: name },
-                { $set: { settings } },
-                { upsert: true, new: true },
-            )
-            .lean()
-            .exec();
-        await this.logEvent(
-            agentId,
-            AuditEvent.SettingsChange,
-            { preset: name },
-            userId,
-        );
-        return doc;
-    }
-
-    async listPresets(agentId: string): Promise<EaSettings[]> {
-        return this.settingsModel.find({ agentId }).lean().exec();
-    }
-
-    async deletePreset(presetId: string, userId: string): Promise<void> {
-        const doc = await this.settingsModel
-            .findByIdAndDelete(presetId)
-            .lean()
-            .exec();
-        if (!doc) throw new NotFoundException(`Preset ${presetId} not found`);
-        await this.logEvent(
-            doc.agentId,
-            AuditEvent.SettingsChange,
-            { deleted: presetId },
-            userId,
-        );
     }
 
     // ── Audit ─────────────────────────────────────────────────────────────────

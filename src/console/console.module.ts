@@ -6,7 +6,6 @@ import { MembershipsModule } from '../memberships/memberships.module';
 import { WebPushSubModule } from '../web-push-sub/web-push-sub.module';
 
 import { EaInstance, EaInstanceSchema } from './schemas/ea-instance.schema';
-import { EaSettings, EaSettingsSchema } from './schemas/ea-settings.schema';
 import { EaAuditLog, EaAuditLogSchema } from './schemas/ea-audit-log.schema';
 import { ConsoleController } from './console.controller';
 import { ConsoleGateway } from './console.gateway';
@@ -23,7 +22,6 @@ const enableQueue = process.env.NODE_ENV !== 'development';
         WebPushSubModule,
         MongooseModule.forFeature([
             { name: EaInstance.name, schema: EaInstanceSchema },
-            { name: EaSettings.name, schema: EaSettingsSchema },
             { name: EaAuditLog.name, schema: EaAuditLogSchema },
         ]),
         ...(enableQueue

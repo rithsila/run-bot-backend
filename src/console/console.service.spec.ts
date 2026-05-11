@@ -12,7 +12,6 @@ import { ConsoleService } from './console.service';
 import { ConsoleGateway } from './console.gateway';
 import { REDIS } from '../redis/redis.constants';
 import { EaInstance } from './schemas/ea-instance.schema';
-import { EaSettings } from './schemas/ea-settings.schema';
 import { EaAuditLog, AuditEvent } from './schemas/ea-audit-log.schema';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -59,14 +58,12 @@ describe('ConsoleService', () => {
     let service: ConsoleService;
     let redis: ReturnType<typeof makeRedis>;
     let instanceModel: ReturnType<typeof makeModel>;
-    let settingsModel: ReturnType<typeof makeModel>;
     let auditModel: ReturnType<typeof makeModel>;
     let gateway: ReturnType<typeof makeGateway>;
 
     beforeEach(async () => {
         redis = makeRedis();
         instanceModel = makeModel();
-        settingsModel = makeModel();
         auditModel = makeModel();
         gateway = makeGateway();
 
@@ -77,10 +74,6 @@ describe('ConsoleService', () => {
                 {
                     provide: getModelToken(EaInstance.name),
                     useValue: instanceModel,
-                },
-                {
-                    provide: getModelToken(EaSettings.name),
-                    useValue: settingsModel,
                 },
                 {
                     provide: getModelToken(EaAuditLog.name),
@@ -370,80 +363,6 @@ describe('ConsoleService', () => {
             });
             await expect(service.getCurrentSettings('missing')).rejects.toThrow(
                 NotFoundException,
-            );
-        });
-    });
-
-    // ── savePreset ────────────────────────────────────────────────────────────
-
-    describe('savePreset', () => {
-        it('throws BadRequestException for unknown keys in preset settings', async () => {
-            await expect(
-                service.savePreset(
-                    'agent-1',
-                    'my-preset',
-                    { BadKey: 1 },
-                    'user-1',
-                ),
-            ).rejects.toThrow(BadRequestException);
-        });
-
-        it('upserts the preset document and logs audit event', async () => {
-            const preset = { StartingLots: 0.01 };
-            const savedDoc = {
-                agentId: 'agent-1',
-                presetName: 'my-preset',
-                settings: preset,
-            };
-            settingsModel.findOneAndUpdate.mockReturnValue({
-                lean: () => ({ exec: () => Promise.resolve(savedDoc) }),
-            });
-            auditModel.create.mockResolvedValue({});
-
-            const result = await service.savePreset(
-                'agent-1',
-                'my-preset',
-                preset,
-                'user-1',
-            );
-
-            expect(settingsModel.findOneAndUpdate).toHaveBeenCalledWith(
-                { agentId: 'agent-1', presetName: 'my-preset' },
-                { $set: { settings: preset } },
-                { upsert: true, new: true },
-            );
-            expect(result).toEqual(savedDoc);
-        });
-    });
-
-    // ── deletePreset ──────────────────────────────────────────────────────────
-
-    describe('deletePreset', () => {
-        it('throws NotFoundException when preset does not exist', async () => {
-            settingsModel.findByIdAndDelete.mockReturnValue({
-                lean: () => ({ exec: () => Promise.resolve(null) }),
-            });
-            await expect(
-                service.deletePreset('non-existent-id', 'user-1'),
-            ).rejects.toThrow(NotFoundException);
-        });
-
-        it('logs audit event after successful deletion', async () => {
-            settingsModel.findByIdAndDelete.mockReturnValue({
-                lean: () => ({
-                    exec: () =>
-                        Promise.resolve({
-                            agentId: 'agent-1',
-                            _id: 'preset-id',
-                        }),
-                }),
-            });
-            auditModel.create.mockResolvedValue({});
-
-            await service.deletePreset('preset-id', 'user-1');
-
-            expect(auditModel.create).toHaveBeenCalledWith(
-                expect.objectContaining({ event: AuditEvent.SettingsChange }),
             );
         });
     });

@@ -21,7 +21,6 @@ import { KillSwitchDto } from './dto/kill-switch.dto';
 import {
     MasterEnableDto,
     PushSettingsDto,
-    SavePresetDto,
 } from './dto/settings.dto';
 import type { AuthUser } from '../auth/strategies/jwt.strategy';
 
@@ -115,33 +114,4 @@ export class ConsoleController {
         return { settings };
     }
 
-    @Get('instances/:agentId/presets')
-    async listPresets(@Param('agentId') agentId: string) {
-        return this.console.listPresets(agentId);
-    }
-
-    @Post('instances/:agentId/presets')
-    @HttpCode(HttpStatus.CREATED)
-    async savePreset(
-        @Param('agentId') agentId: string,
-        @Body() dto: SavePresetDto,
-        @Req() req: AuthRequest,
-    ) {
-        return this.console.savePreset(
-            agentId,
-            dto.name,
-            dto.settings,
-            req.user.userId,
-        );
-    }
-
-    @Delete('presets/:presetId')
-    @HttpCode(HttpStatus.OK)
-    async deletePreset(
-        @Param('presetId') presetId: string,
-        @Req() req: AuthRequest,
-    ) {
-        await this.console.deletePreset(presetId, req.user.userId);
-        return { success: true };
-    }
 }
