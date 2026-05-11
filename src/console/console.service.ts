@@ -27,6 +27,8 @@ import { TelemetryDto } from './dto/telemetry.dto';
 const ALLOWED_SETTINGS_KEYS = new Set([
     'EnableBuy',
     'EnableSell',
+    'EnableBasketTakeProfit',
+    'BasketTakeProfitMode',
     'StartingLots',
     'LayerMultiplier',
     'MaximumLotSizeCap',
