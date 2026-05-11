@@ -18,10 +18,7 @@ import type { Request } from 'express';
 
 import { ConsoleService } from './console.service';
 import { KillSwitchDto } from './dto/kill-switch.dto';
-import {
-    MasterEnableDto,
-    PushSettingsDto,
-} from './dto/settings.dto';
+import { MasterEnableDto, PushSettingsDto } from './dto/settings.dto';
 import type { AuthUser } from '../auth/strategies/jwt.strategy';
 
 interface AuthRequest extends Request {
@@ -113,5 +110,4 @@ export class ConsoleController {
         const settings = await this.console.getCurrentSettings(agentId);
         return { settings };
     }
-
 }
