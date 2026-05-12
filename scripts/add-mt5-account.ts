@@ -44,11 +44,21 @@ const MembershipSchema = new Schema(
         licenseKey: String,
         accounts: [{ account: String, isVerified: Boolean }],
         status: String,
+        user: Schema.Types.ObjectId,
     },
     { collection: 'memberships', strict: false },
 );
 
+const EaInstanceSchema = new Schema(
+    {
+        agentId: String,
+        userId: String,
+    },
+    { collection: 'ea-instances', strict: false },
+);
+
 const Membership = mongoose.model('Membership', MembershipSchema);
+const EaInstance = mongoose.model('EaInstance', EaInstanceSchema);
 
 async function main() {
     await mongoose.connect(MONGO_URI!);
@@ -60,9 +70,7 @@ async function main() {
 
     const m: any = await Membership.findOne(query);
     if (!m) {
-        throw new Error(
-            `Membership not found for ${JSON.stringify(query)}`,
-        );
+        throw new Error(`Membership not found for ${JSON.stringify(query)}`);
     }
 
     console.log(
@@ -91,6 +99,46 @@ async function main() {
         await m.save();
         console.log(
             `[mt5] Added account ${MT5_ACCOUNT} (isVerified=true) to membership ${m._id}.`,
+        );
+    }
+
+    // Reassign any pre-existing ea-instance whose agentId starts with this
+    // MT5 account number to the membership owner. Console gateway rejects
+    // bridge:register when ea-instances.userId differs from the JWT userId,
+    // which manifests as 'io server disconnect' loops on the VPS bridge.
+    const ownerId = m.user ? String(m.user) : null;
+    if (ownerId) {
+        const prefix = new RegExp('^' + MT5_ACCOUNT + '-');
+        const stale = await EaInstance.find({
+            agentId: prefix,
+            $or: [
+                { userId: { $exists: false } },
+                { userId: null },
+                { userId: { $ne: ownerId } },
+            ],
+        }).lean();
+
+        if (stale.length === 0) {
+            console.log(
+                `[mt5] No stale ea-instances to reassign for account ${MT5_ACCOUNT}.`,
+            );
+        } else {
+            const res = await EaInstance.updateMany(
+                { agentId: prefix },
+                { $set: { userId: ownerId } },
+            );
+            for (const s of stale) {
+                console.log(
+                    `[mt5] Reassigned ea-instance ${s.agentId} userId → ${ownerId}`,
+                );
+            }
+            console.log(
+                `[mt5] Updated ${res.modifiedCount} ea-instance(s) for account ${MT5_ACCOUNT}.`,
+            );
+        }
+    } else {
+        console.warn(
+            `[mt5] Membership has no user ObjectId — skipping ea-instance reassignment.`,
         );
     }
 
