@@ -26,6 +26,8 @@ interface BridgeSocketData {
     userId: string | null;
     isBridge: boolean;
     agentId?: string;
+    licenseKey: string | null;
+    accountLogin: string | null;
 }
 
 type BridgeSocket = Omit<Socket, 'data'> & { data: BridgeSocketData };
@@ -72,6 +74,9 @@ export class ConsoleGateway
             d.userId =
                 (payload.userId as string) ?? (payload.sub as string) ?? null;
             d.isBridge = isBridge;
+            d.licenseKey = (payload.licenseKey as string | undefined) ?? null;
+            d.accountLogin =
+                (payload.accountLogin as string | undefined) ?? null;
         } catch {
             this.logger.warn(
                 `WS /console rejected: invalid token id=${client.id}`,
@@ -131,6 +136,23 @@ export class ConsoleGateway
         client.data.agentId = agentId;
         client.data.isBridge = true;
 
+        // Derive required ea-instance fields. agentId format is
+        // `{account}-{symbol}-{buyMagic}-{sellMagic}`; licenseKey is only
+        // available when the bridge authenticated via /memberships/activate.
+        const parts = agentId.split('-');
+        const parsedAccount = parts[0] || null;
+        const parsedSymbol = parts[1] || null;
+        const accountLogin = client.data.accountLogin ?? parsedAccount;
+        const licenseKey = client.data.licenseKey ?? null;
+        const symbol = parsedSymbol;
+
+        if (!accountLogin || !licenseKey || !symbol) {
+            this.logger.warn(
+                `bridge:register missing fields (agentId=${agentId}, accountLogin=${accountLogin}, hasLicenseKey=${!!licenseKey}, symbol=${symbol}) -- skipping upsert`,
+            );
+            return;
+        }
+
         const room = `agent:${agentId}`;
         void client.join(room);
 
@@ -138,6 +160,9 @@ export class ConsoleGateway
             { agentId },
             {
                 $set: {
+                    accountLogin,
+                    licenseKey,
+                    symbol,
                     online: true,
                     lastSeenAt: new Date(),
                     ...(callerId ? { userId: callerId } : {}),
