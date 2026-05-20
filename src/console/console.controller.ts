@@ -35,8 +35,11 @@ export class ConsoleController {
     }
 
     @Get('instances/:agentId/state')
-    async getState(@Param('agentId') agentId: string) {
-        const state = await this.console.getLatestState(agentId);
+    async getState(@Param('agentId') agentId: string, @Req() req: AuthRequest) {
+        const state = await this.console.getLatestState(
+            agentId,
+            req.user.userId,
+        );
         if (!state)
             throw new BadRequestException(`No telemetry cached for ${agentId}`);
         return state;
@@ -106,8 +109,14 @@ export class ConsoleController {
     }
 
     @Get('instances/:agentId/settings')
-    async getCurrentSettings(@Param('agentId') agentId: string) {
-        const settings = await this.console.getCurrentSettings(agentId);
+    async getCurrentSettings(
+        @Param('agentId') agentId: string,
+        @Req() req: AuthRequest,
+    ) {
+        const settings = await this.console.getCurrentSettings(
+            agentId,
+            req.user.userId,
+        );
         return { settings };
     }
 }

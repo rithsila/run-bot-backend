@@ -114,6 +114,7 @@ export class ConsoleGateway
         @ConnectedSocket() client: BridgeSocket,
         @MessageBody() data: { agentId: string; bridgeVersion?: string },
     ) {
+        if (!client.data.isBridge) return;
         const { agentId } = data;
         const callerId = client.data.userId;
 
@@ -182,6 +183,7 @@ export class ConsoleGateway
         @ConnectedSocket() client: BridgeSocket,
         @MessageBody() telemetry: TelemetryDto,
     ) {
+        if (!client.data.isBridge) return;
         const agentId = telemetry.agentId ?? client.data.agentId;
         if (!agentId) return;
 
@@ -220,6 +222,7 @@ export class ConsoleGateway
         @ConnectedSocket() client: BridgeSocket,
         @MessageBody() data: { uuid: string },
     ) {
+        if (!client.data.isBridge) return;
         const agentId = client.data.agentId;
 
         // Broadcast to agent room so all subscribed browser clients receive the ACK.
@@ -239,9 +242,10 @@ export class ConsoleGateway
     async onBridgeStatus(
         @ConnectedSocket() client: BridgeSocket,
         @MessageBody()
-        data: { agentId: string; online: boolean; lastSeenTs?: number },
+        data: { online: boolean; lastSeenTs?: number },
     ) {
-        const agentId = data.agentId ?? client.data.agentId;
+        if (!client.data.isBridge) return;
+        const agentId = client.data.agentId;
         if (!agentId) return;
 
         await this.instanceModel.updateOne(
@@ -257,11 +261,9 @@ export class ConsoleGateway
     }
 
     @SubscribeMessage('console:offline')
-    async onBridgeOffline(
-        @ConnectedSocket() client: BridgeSocket,
-        @MessageBody() data: { agentId?: string },
-    ) {
-        const agentId = data?.agentId ?? client.data.agentId;
+    async onBridgeOffline(@ConnectedSocket() client: BridgeSocket) {
+        if (!client.data.isBridge) return;
+        const agentId = client.data.agentId;
         if (!agentId) return;
 
         await this.instanceModel.updateOne(
@@ -286,12 +288,13 @@ export class ConsoleGateway
         const { agentId } = data;
         const callerId = client.data.userId;
 
-        // Ownership check: only allow the owner to subscribe
+        // Ownership check: only allow the owner to subscribe.
+        // Reject when instance is missing, unclaimed, or owned by a different user.
         const instance = await this.instanceModel
             .findOne({ agentId })
             .lean()
             .exec();
-        if (instance?.userId && callerId && instance.userId !== callerId) {
+        if (!instance || instance.userId !== callerId) {
             client.emit('error', { message: 'forbidden' });
             client.disconnect(true);
             return;

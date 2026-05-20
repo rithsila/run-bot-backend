@@ -89,27 +89,53 @@ describe('ConsoleService', () => {
     // ── getLatestState ────────────────────────────────────────────────────────
 
     describe('getLatestState', () => {
+        function mockOwned(userId: string | null) {
+            instanceModel.findOne.mockReturnValue({
+                lean: () => ({
+                    exec: () => Promise.resolve({ agentId: 'agent-1', userId }),
+                }),
+            });
+        }
+
         it('returns null when Redis has no key', async () => {
+            mockOwned('user-1');
             redis.get.mockResolvedValue(null);
-            const result = await service.getLatestState('agent-1');
+            const result = await service.getLatestState('agent-1', 'user-1');
             expect(result).toBeNull();
         });
 
         it('returns parsed telemetry when Redis has valid JSON', async () => {
+            mockOwned('user-1');
             const telemetry = {
                 agentId: 'agent-1',
                 ts: 1234567890,
                 balance: 1000,
             };
             redis.get.mockResolvedValue(JSON.stringify(telemetry));
-            const result = await service.getLatestState('agent-1');
+            const result = await service.getLatestState('agent-1', 'user-1');
             expect(result).toEqual(telemetry);
         });
 
         it('returns null when Redis has invalid JSON', async () => {
+            mockOwned('user-1');
             redis.get.mockResolvedValue('{invalid json');
-            const result = await service.getLatestState('agent-1');
+            const result = await service.getLatestState('agent-1', 'user-1');
             expect(result).toBeNull();
+        });
+
+        it('throws ForbiddenException when userId does not match (CR-1)', async () => {
+            mockOwned('user-OWNER');
+            await expect(
+                service.getLatestState('agent-1', 'user-OTHER'),
+            ).rejects.toThrow(ForbiddenException);
+            expect(redis.get).not.toHaveBeenCalled();
+        });
+
+        it('throws ForbiddenException when instance is unclaimed (CR-2)', async () => {
+            mockOwned(null);
+            await expect(
+                service.getLatestState('agent-1', 'user-1'),
+            ).rejects.toThrow(ForbiddenException);
         });
     });
 
@@ -153,7 +179,11 @@ describe('ConsoleService', () => {
             instanceModel.findOne.mockReturnValue({
                 lean: () => ({
                     exec: () =>
-                        Promise.resolve({ agentId: 'agent-1', online: false }),
+                        Promise.resolve({
+                            agentId: 'agent-1',
+                            userId: 'user-1',
+                            online: false,
+                        }),
                 }),
             });
             await expect(
@@ -165,7 +195,11 @@ describe('ConsoleService', () => {
             instanceModel.findOne.mockReturnValue({
                 lean: () => ({
                     exec: () =>
-                        Promise.resolve({ agentId: 'agent-1', online: true }),
+                        Promise.resolve({
+                            agentId: 'agent-1',
+                            userId: 'user-1',
+                            online: true,
+                        }),
                 }),
             });
             auditModel.create.mockResolvedValue({});
@@ -185,7 +219,11 @@ describe('ConsoleService', () => {
             instanceModel.findOne.mockReturnValue({
                 lean: () => ({
                     exec: () =>
-                        Promise.resolve({ agentId: 'agent-1', online: true }),
+                        Promise.resolve({
+                            agentId: 'agent-1',
+                            userId: 'user-1',
+                            online: true,
+                        }),
                 }),
             });
             auditModel.create.mockResolvedValue({});
@@ -205,7 +243,11 @@ describe('ConsoleService', () => {
             instanceModel.findOne.mockReturnValue({
                 lean: () => ({
                     exec: () =>
-                        Promise.resolve({ agentId: 'agent-1', online: true }),
+                        Promise.resolve({
+                            agentId: 'agent-1',
+                            userId: 'user-1',
+                            online: true,
+                        }),
                 }),
             });
             auditModel.create.mockResolvedValue({});
@@ -231,7 +273,11 @@ describe('ConsoleService', () => {
             instanceModel.findOne.mockReturnValue({
                 lean: () => ({
                     exec: () =>
-                        Promise.resolve({ agentId: 'agent-1', online: false }),
+                        Promise.resolve({
+                            agentId: 'agent-1',
+                            userId: 'user-1',
+                            online: false,
+                        }),
                 }),
             });
             await expect(
@@ -247,7 +293,11 @@ describe('ConsoleService', () => {
             instanceModel.findOne.mockReturnValue({
                 lean: () => ({
                     exec: () =>
-                        Promise.resolve({ agentId: 'agent-1', online: true }),
+                        Promise.resolve({
+                            agentId: 'agent-1',
+                            userId: 'user-1',
+                            online: true,
+                        }),
                 }),
             });
             auditModel.create.mockResolvedValue({});
@@ -281,7 +331,11 @@ describe('ConsoleService', () => {
             instanceModel.findOne.mockReturnValue({
                 lean: () => ({
                     exec: () =>
-                        Promise.resolve({ agentId: 'agent-1', online: true }),
+                        Promise.resolve({
+                            agentId: 'agent-1',
+                            userId: 'user-1',
+                            online: true,
+                        }),
                 }),
             });
             auditModel.create.mockResolvedValue({});
@@ -335,11 +389,15 @@ describe('ConsoleService', () => {
                     exec: () =>
                         Promise.resolve({
                             agentId: 'agent-1',
+                            userId: 'user-1',
                             currentSettings: { StartingLots: 0.03 },
                         }),
                 }),
             });
-            const result = await service.getCurrentSettings('agent-1');
+            const result = await service.getCurrentSettings(
+                'agent-1',
+                'user-1',
+            );
             expect(result).toEqual({ StartingLots: 0.03 });
         });
 
@@ -349,11 +407,15 @@ describe('ConsoleService', () => {
                     exec: () =>
                         Promise.resolve({
                             agentId: 'agent-1',
+                            userId: 'user-1',
                             currentSettings: null,
                         }),
                 }),
             });
-            const result = await service.getCurrentSettings('agent-1');
+            const result = await service.getCurrentSettings(
+                'agent-1',
+                'user-1',
+            );
             expect(result).toBeNull();
         });
 
@@ -361,9 +423,25 @@ describe('ConsoleService', () => {
             instanceModel.findOne.mockReturnValue({
                 lean: () => ({ exec: () => Promise.resolve(null) }),
             });
-            await expect(service.getCurrentSettings('missing')).rejects.toThrow(
-                NotFoundException,
-            );
+            await expect(
+                service.getCurrentSettings('missing', 'user-1'),
+            ).rejects.toThrow(NotFoundException);
+        });
+
+        it('throws ForbiddenException when userId does not match (CR-1)', async () => {
+            instanceModel.findOne.mockReturnValue({
+                lean: () => ({
+                    exec: () =>
+                        Promise.resolve({
+                            agentId: 'agent-1',
+                            userId: 'user-OWNER',
+                            currentSettings: { secret: 'data' },
+                        }),
+                }),
+            });
+            await expect(
+                service.getCurrentSettings('agent-1', 'user-OTHER'),
+            ).rejects.toThrow(ForbiddenException);
         });
     });
 
@@ -377,11 +455,14 @@ describe('ConsoleService', () => {
             const sortSpy = jest.fn().mockReturnValue({ limit: limitSpy });
             auditModel.find = jest.fn().mockReturnValue({ sort: sortSpy });
 
-            // ownership check: instance has no userId so passes
+            // ownership check: instance owned by user-1, caller is user-1
             instanceModel.findOne.mockReturnValue({
                 lean: () => ({
                     exec: () =>
-                        Promise.resolve({ agentId: 'agent-1', userId: null }),
+                        Promise.resolve({
+                            agentId: 'agent-1',
+                            userId: 'user-1',
+                        }),
                 }),
             });
 
@@ -400,7 +481,10 @@ describe('ConsoleService', () => {
             instanceModel.findOne.mockReturnValue({
                 lean: () => ({
                     exec: () =>
-                        Promise.resolve({ agentId: 'agent-1', userId: null }),
+                        Promise.resolve({
+                            agentId: 'agent-1',
+                            userId: 'user-1',
+                        }),
                 }),
             });
 
@@ -477,11 +561,12 @@ describe('ConsoleService', () => {
             expect(result).toHaveProperty('commandId');
         });
 
-        it('instance with null userId allows any caller (migration compat)', async () => {
+        it('rejects unclaimed instances (CR-2: no null-userId bypass)', async () => {
             mockInstanceOwnedBy(null as unknown as string, true);
-            auditModel.create.mockResolvedValue({});
-            const result = await service.sendKillSwitch(AGENT_A, USER_A);
-            expect(result).toHaveProperty('commandId');
+            await expect(
+                service.sendKillSwitch(AGENT_A, USER_A),
+            ).rejects.toThrow(ForbiddenException);
+            expect(gateway.sendCommandToBridge).not.toHaveBeenCalled();
         });
     });
 });

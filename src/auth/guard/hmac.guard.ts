@@ -22,7 +22,17 @@ const stable = (v: any): string => {
 
 @Injectable()
 export class InternalHmacGuard implements CanActivate {
-    private readonly secret = process.env.INTERNAL_HMAC_SECRET!;
+    private readonly secret: string;
+
+    constructor() {
+        const secret = process.env.INTERNAL_HMAC_SECRET;
+        if (!secret) {
+            throw new Error(
+                'INTERNAL_HMAC_SECRET is not set; refusing to start InternalHmacGuard with an empty key',
+            );
+        }
+        this.secret = secret;
+    }
 
     canActivate(ctx: ExecutionContext): boolean {
         const req = ctx.switchToHttp().getRequest<any>();

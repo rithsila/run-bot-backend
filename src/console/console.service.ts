@@ -67,7 +67,11 @@ export class ConsoleService {
 
     // ── State ─────────────────────────────────────────────────────────────────
 
-    async getLatestState(agentId: string): Promise<TelemetryDto | null> {
+    async getLatestState(
+        agentId: string,
+        userId: string,
+    ): Promise<TelemetryDto | null> {
+        await this.requireOwnership(agentId, userId);
         const raw = await this.redis.get(`ea:state:${agentId}`);
         if (!raw) return null;
         try {
@@ -191,7 +195,9 @@ export class ConsoleService {
 
     async getCurrentSettings(
         agentId: string,
+        userId: string,
     ): Promise<Record<string, unknown> | null> {
+        await this.requireOwnership(agentId, userId);
         const instance = await this.instanceModel
             .findOne({ agentId })
             .lean()
@@ -243,7 +249,7 @@ export class ConsoleService {
             .exec();
         if (!instance)
             throw new NotFoundException(`EA instance ${agentId} not found`);
-        if (instance.userId && instance.userId !== userId)
+        if (instance.userId !== userId)
             throw new ForbiddenException(
                 `Access denied to instance ${agentId}`,
             );
