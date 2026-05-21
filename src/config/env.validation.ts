@@ -123,7 +123,21 @@ export const envValidationSchema = Joi.object({
     PUSH_VAPID_SUBJECT: Joi.string().required(),
 
     // ─── Turnstile ───────────────────────────────────────────────
-    CF_TURNSTILE_SECRET: Joi.string().required(),
+    // Cloudflare publishes test secrets matching /^[13]x0+AA$/ that
+    // always pass siteverify. They are fine for local/UAT but MUST NOT
+    // ship to production — refuse to boot if NODE_ENV=production while
+    // CF_TURNSTILE_SECRET still looks like a test key.
+    CF_TURNSTILE_SECRET: Joi.string()
+        .required()
+        .when('NODE_ENV', {
+            is: 'production',
+            then: Joi.string()
+                .pattern(/^[13]x0+AA$/, { invert: true })
+                .messages({
+                    'string.pattern.invert.base':
+                        'CF_TURNSTILE_SECRET looks like a Cloudflare test key. Configure a real secret before running NODE_ENV=production.',
+                }),
+        }),
 
     // ─── External issuer signing (EA) ────────────────────────────
     ISSUER: Joi.string().uri().required(),
