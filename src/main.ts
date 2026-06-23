@@ -6,15 +6,13 @@ import { Logger, ValidationPipe } from '@nestjs/common';
 import cookieParser from 'cookie-parser';
 import { ConfigService } from '@nestjs/config';
 import { NestExpressApplication } from '@nestjs/platform-express';
-import type Redis from 'ioredis';
-import { REDIS } from './redis/redis.constants';
-import { HttpErrorFilter } from './common/http/http-error.filter'; // make sure path matches your file
+import { HttpErrorFilter } from './common/http/http-error.filter';
 import * as bodyParser from 'body-parser';
 import helmet from 'helmet';
 import hpp from 'hpp';
 import compression from 'compression';
 import { buildAllowedOrigins } from './common/security/origin';
-import { SocketIoAdapter } from './real-time/socketio.adapter';
+import { SocketIoAdapter } from './common/ws/socketio.adapter';
 import { RequiredHeadersMiddleware } from './middleware/required-headers.middleware';
 
 async function bootstrap() {
@@ -46,38 +44,20 @@ async function bootstrap() {
             'accept',
             'authorization',
             'x-csrf-token',
-            'x-client-device-id',
             'x-device-id',
-            'x-device-hash',
-            'x-internal-signature',
-            'x-internal-timestamp',
-            'x-idempotency-key',
-            'idempotency-key',
-            'x-api-key',
             'x-request-id',
         ],
         optionsSuccessStatus: 204,
         maxAge: 86400,
     });
 
-    // WebSocket adapter (after CORS config)
+    // WebSocket adapter (single instance, no Redis adapter)
     const wsAdapter = new SocketIoAdapter(app, allowedOrigins);
-    await wsAdapter.connectToRedisIfNeeded();
     app.useWebSocketAdapter(wsAdapter);
 
     app.useGlobalFilters(new HttpErrorFilter());
 
-    // ---- Body parsers (must come before any middleware that inspects body/cookies) ----
-    const express = app.getHttpAdapter().getInstance();
-    express.use(
-        '/retailer',
-        bodyParser.json({
-            limit: '1mb',
-            verify: (req: any, _r, buf) => {
-                req.rawBody = buf;
-            },
-        }),
-    );
+    // ---- Body parsers ----
     app.use(
         bodyParser.json({
             limit: '64kb',
@@ -96,15 +76,9 @@ async function bootstrap() {
         }),
     );
 
-    const allowNonJsonPrefixes = ['/trading/upload', '/analyze-news'];
-
     app.use((req, res, next) => {
         const m = req.method;
         const hasBody = Number(req.headers['content-length'] || 0) > 0;
-        const isNonJsonAllowed =
-            allowNonJsonPrefixes.some((prefix) =>
-                req.path?.startsWith(prefix),
-            ) && req.is?.('multipart/form-data');
 
         if (
             m === 'POST' ||
@@ -112,10 +86,7 @@ async function bootstrap() {
             m === 'PATCH' ||
             (m === 'DELETE' && hasBody)
         ) {
-            if (
-                hasBody &&
-                (!req.is || (!req.is('application/json') && !isNonJsonAllowed))
-            ) {
+            if (hasBody && (!req.is || !req.is('application/json'))) {
                 return res
                     .status(415)
                     .json({ message: 'Unsupported Media Type' });
@@ -132,7 +103,6 @@ async function bootstrap() {
             transform: true,
             transformOptions: { enableImplicitConversion: true },
             validationError: { target: false, value: false },
-            // 👇 this is the new part
             disableErrorMessages: isProd,
         }),
     );
@@ -140,7 +110,6 @@ async function bootstrap() {
     // Security / hardening
     app.use(
         helmet({
-            // you can later replace this with a real CSP in prod if you want
             contentSecurityPolicy: false,
             crossOriginEmbedderPolicy: false,
         }),
@@ -157,23 +126,6 @@ async function bootstrap() {
     app.set('etag', 'strong');
 
     app.enableShutdownHooks();
-
-    // ---- Redis health ping (non-fatal) ----
-    try {
-        const redis = app.get<Redis>(REDIS);
-        if (redis.status === 'ready') {
-            const pong = await redis.ping();
-            logger.log(
-                `✅ Redis connected: ${pong} (URL=${process.env.REDIS_URL || 'redis://localhost:6379'})`,
-            );
-        } else {
-            logger.warn(
-                `Redis not ready at startup (status=${redis.status}). Continuing without Redis health ping.`,
-            );
-        }
-    } catch (e: any) {
-        logger.error(`❌ Redis connection failed: ${e?.message || e}`);
-    }
 
     const port = Number(process.env.PORT) || config.get<number>('PORT', 4000);
     await app.listen(port);

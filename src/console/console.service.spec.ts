@@ -10,7 +10,6 @@ jest.mock('./console.gateway');
 
 import { ConsoleService } from './console.service';
 import { ConsoleGateway } from './console.gateway';
-import { REDIS } from '../redis/redis.constants';
 import { EaInstance } from './schemas/ea-instance.schema';
 import { EaAuditLog, AuditEvent } from './schemas/ea-audit-log.schema';
 
@@ -36,19 +35,12 @@ function makeModel(overrides: Record<string, jest.Mock> = {}) {
     };
 }
 
-function makeRedis(overrides: Record<string, jest.Mock> = {}) {
-    return {
-        get: jest.fn().mockResolvedValue(null),
-        setex: jest.fn().mockResolvedValue('OK'),
-        ...overrides,
-    };
-}
-
 function makeGateway() {
     return {
         sendCommandToBridge: jest.fn(),
         sendCommandToBridgeWithAck: jest.fn(),
         emitToRoom: jest.fn(),
+        getCachedState: jest.fn().mockReturnValue(null),
     };
 }
 
@@ -56,13 +48,11 @@ function makeGateway() {
 
 describe('ConsoleService', () => {
     let service: ConsoleService;
-    let redis: ReturnType<typeof makeRedis>;
     let instanceModel: ReturnType<typeof makeModel>;
     let auditModel: ReturnType<typeof makeModel>;
     let gateway: ReturnType<typeof makeGateway>;
 
     beforeEach(async () => {
-        redis = makeRedis();
         instanceModel = makeModel();
         auditModel = makeModel();
         gateway = makeGateway();
@@ -70,7 +60,6 @@ describe('ConsoleService', () => {
         const module: TestingModule = await Test.createTestingModule({
             providers: [
                 ConsoleService,
-                { provide: REDIS, useValue: redis },
                 {
                     provide: getModelToken(EaInstance.name),
                     useValue: instanceModel,
@@ -97,28 +86,28 @@ describe('ConsoleService', () => {
             });
         }
 
-        it('returns null when Redis has no key', async () => {
+        it('returns null when cache has no key', async () => {
             mockOwned('user-1');
-            redis.get.mockResolvedValue(null);
+            gateway.getCachedState.mockReturnValue(null);
             const result = await service.getLatestState('agent-1', 'user-1');
             expect(result).toBeNull();
         });
 
-        it('returns parsed telemetry when Redis has valid JSON', async () => {
+        it('returns parsed telemetry when cache has valid JSON', async () => {
             mockOwned('user-1');
             const telemetry = {
                 agentId: 'agent-1',
                 ts: 1234567890,
                 balance: 1000,
             };
-            redis.get.mockResolvedValue(JSON.stringify(telemetry));
+            gateway.getCachedState.mockReturnValue(JSON.stringify(telemetry));
             const result = await service.getLatestState('agent-1', 'user-1');
             expect(result).toEqual(telemetry);
         });
 
-        it('returns null when Redis has invalid JSON', async () => {
+        it('returns null when cache has invalid JSON', async () => {
             mockOwned('user-1');
-            redis.get.mockResolvedValue('{invalid json');
+            gateway.getCachedState.mockReturnValue('{invalid json');
             const result = await service.getLatestState('agent-1', 'user-1');
             expect(result).toBeNull();
         });
@@ -128,7 +117,7 @@ describe('ConsoleService', () => {
             await expect(
                 service.getLatestState('agent-1', 'user-OTHER'),
             ).rejects.toThrow(ForbiddenException);
-            expect(redis.get).not.toHaveBeenCalled();
+            expect(gateway.getCachedState).not.toHaveBeenCalled();
         });
 
         it('throws ForbiddenException when instance is unclaimed (CR-2)', async () => {

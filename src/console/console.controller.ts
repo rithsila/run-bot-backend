@@ -2,7 +2,6 @@ import {
     Controller,
     Get,
     Post,
-    Delete,
     Param,
     Body,
     Query,
@@ -12,19 +11,19 @@ import {
     ParseIntPipe,
     DefaultValuePipe,
     BadRequestException,
+    UseGuards,
 } from '@nestjs/common';
 import { Throttle } from '@nestjs/throttler';
-import type { Request } from 'express';
 
 import { ConsoleService } from './console.service';
 import { KillSwitchDto } from './dto/kill-switch.dto';
 import { MasterEnableDto, PushSettingsDto } from './dto/settings.dto';
-import type { AuthUser } from '../auth/strategies/jwt.strategy';
+import { SafetyScoreTokenGuard } from '../common/guards/safetyscore-token.guard';
+import type { SafetyScoreRequest } from '../common/guards/safetyscore-token.guard';
 
-interface AuthRequest extends Request {
-    user: AuthUser;
-}
+type AuthRequest = SafetyScoreRequest;
 
+@UseGuards(SafetyScoreTokenGuard)
 @Controller('console')
 export class ConsoleController {
     constructor(private readonly console: ConsoleService) {}

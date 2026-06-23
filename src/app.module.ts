@@ -8,54 +8,25 @@ import type { Request } from 'express';
 
 // ─── Validation & Environment ──────────────────────────────────────────────────
 import { envValidationSchema } from './config/env.validation';
-import { resolveExistingEnvFiles } from './config/env-files';
 
-// ─── Database & Redis ─────────────────────────────────────────────────────────
+// ─── Database ──────────────────────────────────────────────────────────────────
 import { MongooseModule } from '@nestjs/mongoose';
-import type Redis from 'ioredis';
-import { REDIS } from './redis/redis.constants';
-import { RedisModule } from './redis/redis.module';
 
 // ─── Security & Throttling ─────────────────────────────────────────────────────
 import { ThrottlerModule, ThrottlerGuard, seconds } from '@nestjs/throttler';
-import { ThrottlerStorageRedisService } from '@nest-lab/throttler-storage-redis';
 import { sha256Hex } from './common/crypto/hash.util';
 
 // ─── Logger ───────────────────────────────────────────────────────────────────
 import { LoggerModule } from 'nestjs-pino';
 
-// ─── Controllers & Services ───────────────────────────────────────────────────
+// ─── Scheduling ────────────────────────────────────────────────────────────────
+import { ScheduleModule } from '@nestjs/schedule';
+
+// ─── Controllers ──────────────────────────────────────────────────────────────
 import { AppController } from './app.controller';
 
 // ─── Feature Modules ──────────────────────────────────────────────────────────
-import { UserModule } from './user/user.module';
-import { MailModule } from './mail/mail.module';
-import { AuthModule } from './auth/auth.module';
-
-// ─── Middleware ───────────────────────────────────────────────────────────────
-import { JwtAuthGuard } from './auth/guard/jwt-auth.guard';
-import { CsrfGuard } from './auth/guard/csrf.guard';
-import { PlanModule } from './plan/plan.module';
-import { TradingPlanModule } from './trading-plan/trading-plan.module';
-import { WebPushSubModule } from './web-push-sub/web-push-sub.module';
-import { TurnstileModule } from './turnstile/turnstile.module';
-import { AnalyzeNewsModule } from './analyze-news/analyze-news.module';
-import { RealtimeModule } from './real-time/real-time.module';
-import { MembershipsModule } from './memberships/memberships.module';
-import { CouponsModule } from './coupons/coupons.module';
-import { QueueModule } from './queue/queue.module';
-import { RolesGuard } from './auth/guard/roles.guard';
-import { RetailerModule } from './retailer/retailer.module';
-import { ScheduleModule } from '@nestjs/schedule';
-import { OrderModule } from './order/order.module';
-import { SubscriptionsModule } from './subscriptions/subscriptions.module';
-import { StorageModule } from './storage/storage.module';
-import { ProductsModule } from './products/products.module';
-import { TradingModule } from './robots/trading/trading.module';
-import { IndicatorModule } from './indicator/indicator.module';
 import { ConsoleModule } from './console/console.module';
-
-const useRedisThrottle = process.env.NODE_ENV !== 'development';
 
 @Module({
     imports: [
@@ -105,7 +76,7 @@ const useRedisThrottle = process.env.NODE_ENV !== 'development';
 
                         customProps: (req) => ({
                             reqId: (req as any).id,
-                            userId: (req as any)?.user?.id,
+                            userId: (req as any)?.user?.userId,
                         }),
 
                         autoLogging: {
@@ -119,8 +90,6 @@ const useRedisThrottle = process.env.NODE_ENV !== 'development';
                             paths: [
                                 'req.headers.authorization',
                                 'req.headers.cookie',
-                                'req.body.password',
-                                'req.body.*.password',
                             ],
                             censor: '[REDACTED]',
                         },
@@ -138,82 +107,45 @@ const useRedisThrottle = process.env.NODE_ENV !== 'development';
             }),
         }),
 
-        // ─── Redis & Throttling ───────────────────────────────────────────────────
-        RedisModule,
-        ThrottlerModule.forRootAsync({
-            imports: useRedisThrottle ? [RedisModule] : [],
-            inject: useRedisThrottle ? [REDIS] : [],
-            useFactory: (redis?: Redis) => ({
-                throttlers: [{ limit: 60, ttl: seconds(60) }], // 60 req/min
-                ...(useRedisThrottle && redis
-                    ? { storage: new ThrottlerStorageRedisService(redis) }
-                    : {}),
+        // ─── Throttling (in-memory; no Redis) ─────────────────────────────────────
+        ThrottlerModule.forRoot({
+            throttlers: [{ limit: 60, ttl: seconds(60) }], // 60 req/min
+            getTracker: async (req: Request) => {
+                const xff = (
+                    req.headers['x-forwarded-for'] as string | undefined
+                )
+                    ?.split(',')[0]
+                    ?.trim();
 
-                common: {
-                    getTracker: async (req: Request) => {
-                        const xff = (
-                            req.headers['x-forwarded-for'] as string | undefined
-                        )
-                            ?.split(',')[0]
-                            ?.trim();
+                const ip =
+                    xff ||
+                    (req.headers['cf-connecting-ip'] as string | undefined) ||
+                    req.ip ||
+                    req.socket.remoteAddress ||
+                    'unknown';
 
-                        const ip =
-                            xff ||
-                            (req.headers['cf-connecting-ip'] as
-                                | string
-                                | undefined) || // if Cloudflare
-                            req.ip ||
-                            req.socket.remoteAddress ||
-                            'unknown';
+                const rawDev =
+                    (req.headers['x-device-id'] as string | undefined) ??
+                    (req as any).cookies?.device_id ??
+                    '';
 
-                        const rawDev =
-                            (req.headers['x-device-id'] as
-                                | string
-                                | undefined) ??
-                            (req as any).cookies?.device_id ??
-                            '';
+                const devHash =
+                    rawDev && rawDev.length >= 8 && rawDev.length <= 128
+                        ? sha256Hex(rawDev)
+                        : 'no-dev';
 
-                        const devHash =
-                            rawDev && rawDev.length >= 8 && rawDev.length <= 128
-                                ? sha256Hex(rawDev)
-                                : 'no-dev';
-
-                        return `${ip}|${devHash}`;
-                    },
-                },
-            }),
+                return `${ip}|${devHash}`;
+            },
         }),
+
         ScheduleModule.forRoot(),
+
         // ─── Feature Modules ──────────────────────────────────────────────────────
-        UserModule,
-        MailModule,
-        AuthModule,
-        PlanModule,
-        TradingPlanModule,
-        WebPushSubModule,
-        TurnstileModule,
-        AnalyzeNewsModule,
-        RealtimeModule,
-        MembershipsModule,
-        CouponsModule,
-        QueueModule,
-        RetailerModule,
-        OrderModule,
-        SubscriptionsModule,
-        StorageModule,
-        ProductsModule,
-        TradingModule,
-        IndicatorModule,
         ConsoleModule,
     ],
 
     controllers: [AppController],
 
-    providers: [
-        { provide: APP_GUARD, useClass: ThrottlerGuard },
-        { provide: APP_GUARD, useClass: JwtAuthGuard },
-        { provide: APP_GUARD, useClass: RolesGuard },
-        { provide: APP_GUARD, useClass: CsrfGuard },
-    ],
+    providers: [{ provide: APP_GUARD, useClass: ThrottlerGuard }],
 })
 export class AppModule {}

@@ -1,10 +1,7 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { getModelToken } from '@nestjs/mongoose';
-import { JwtService } from '@nestjs/jwt';
 
 import { ConsoleGateway } from './console.gateway';
-import { JoseService } from '../memberships/jose.service';
-import { REDIS } from '../redis/redis.constants';
 import { EaInstance } from './schemas/ea-instance.schema';
 
 interface FakeSocketData {
@@ -13,6 +10,7 @@ interface FakeSocketData {
     agentId?: string;
     licenseKey: string | null;
     accountLogin: string | null;
+    symbol: string | null;
 }
 
 function makeInstanceModel() {
@@ -40,12 +38,30 @@ function makeClient(data: Partial<FakeSocketData>) {
             isBridge: true,
             licenseKey: null,
             accountLogin: null,
+            symbol: null,
             ...data,
         } as FakeSocketData,
         join: jest.fn(),
         emit: jest.fn(),
         disconnect: jest.fn(),
     };
+}
+
+async function buildGateway(
+    instanceModel: ReturnType<typeof makeInstanceModel>,
+) {
+    const module: TestingModule = await Test.createTestingModule({
+        providers: [
+            ConsoleGateway,
+            {
+                provide: getModelToken(EaInstance.name),
+                useValue: instanceModel,
+            },
+        ],
+    }).compile();
+    const gateway = module.get(ConsoleGateway);
+    gateway.io = makeIoMock() as never;
+    return gateway;
 }
 
 describe('ConsoleGateway.onBridgeRegister', () => {
@@ -55,24 +71,7 @@ describe('ConsoleGateway.onBridgeRegister', () => {
 
     beforeEach(async () => {
         instanceModel = makeInstanceModel();
-        const module: TestingModule = await Test.createTestingModule({
-            providers: [
-                ConsoleGateway,
-                { provide: JwtService, useValue: { verifyAsync: jest.fn() } },
-                { provide: JoseService, useValue: { verifyToken: jest.fn() } },
-                {
-                    provide: REDIS,
-                    useValue: { get: jest.fn(), setex: jest.fn() },
-                },
-                {
-                    provide: getModelToken(EaInstance.name),
-                    useValue: instanceModel,
-                },
-            ],
-        }).compile();
-
-        gateway = module.get(ConsoleGateway);
-        gateway.io = makeIoMock() as never;
+        gateway = await buildGateway(instanceModel);
         warnSpy = jest
             .spyOn(
                 (gateway as unknown as { logger: { warn: jest.Mock } }).logger,
@@ -85,11 +84,12 @@ describe('ConsoleGateway.onBridgeRegister', () => {
         jest.restoreAllMocks();
     });
 
-    it('creates ea-instance with all required fields when JWT carries credentials', async () => {
+    it('creates ea-instance with all required fields when token carries credentials', async () => {
         const client = makeClient({
             userId: 'user-1',
             licenseKey: 'EA-XYZ',
             accountLogin: '184006910',
+            symbol: 'XAUUSDc',
         });
 
         await gateway.onBridgeRegister(client as never, {
@@ -112,11 +112,12 @@ describe('ConsoleGateway.onBridgeRegister', () => {
         expect(call[1].$set.lastSeenAt).toBeInstanceOf(Date);
     });
 
-    it('skips upsert and warns when licenseKey is missing from JWT', async () => {
+    it('skips upsert and warns when licenseKey is missing from token', async () => {
         const client = makeClient({
             userId: 'user-1',
             licenseKey: null,
             accountLogin: '184006910',
+            symbol: 'XAUUSDc',
         });
 
         await gateway.onBridgeRegister(client as never, {
@@ -129,29 +130,13 @@ describe('ConsoleGateway.onBridgeRegister', () => {
         expect(firstCall[0] as string).toMatch(/missing fields/);
     });
 
-    it('skips upsert and warns when agentId is malformed (no symbol segment)', async () => {
-        const client = makeClient({
-            userId: 'user-1',
-            licenseKey: 'EA-XYZ',
-            accountLogin: '184006910',
-        });
-
-        await gateway.onBridgeRegister(client as never, {
-            agentId: 'badagentidnodash',
-        });
-
-        expect(instanceModel.findOneAndUpdate).not.toHaveBeenCalled();
-        expect(warnSpy).toHaveBeenCalledTimes(1);
-        const firstCall = warnSpy.mock.calls[0] as unknown[];
-        expect(firstCall[0] as string).toMatch(/missing fields/);
-    });
-
-    it('rejects browser sockets (H-1: isBridge guard on bridge:register)', async () => {
+    it('rejects browser sockets (isBridge guard on bridge:register)', async () => {
         const client = makeClient({
             userId: 'user-1',
             isBridge: false,
             licenseKey: 'EA-XYZ',
             accountLogin: '184006910',
+            symbol: 'XAUUSDc',
         });
 
         await gateway.onBridgeRegister(client as never, {
@@ -163,31 +148,16 @@ describe('ConsoleGateway.onBridgeRegister', () => {
     });
 });
 
-describe('ConsoleGateway bridge-only event guards (H-1)', () => {
+describe('ConsoleGateway bridge-only event guards', () => {
     let gateway: ConsoleGateway;
     let instanceModel: ReturnType<typeof makeInstanceModel>;
-    let redis: { get: jest.Mock; setex: jest.Mock };
 
     beforeEach(async () => {
         instanceModel = makeInstanceModel();
-        redis = { get: jest.fn(), setex: jest.fn() };
-        const module: TestingModule = await Test.createTestingModule({
-            providers: [
-                ConsoleGateway,
-                { provide: JwtService, useValue: { verifyAsync: jest.fn() } },
-                { provide: JoseService, useValue: { verifyToken: jest.fn() } },
-                { provide: REDIS, useValue: redis },
-                {
-                    provide: getModelToken(EaInstance.name),
-                    useValue: instanceModel,
-                },
-            ],
-        }).compile();
-        gateway = module.get(ConsoleGateway);
-        gateway.io = makeIoMock() as never;
+        gateway = await buildGateway(instanceModel);
     });
 
-    it('onBridgeTelemetry ignores browser sockets (no Redis write, no DB write)', async () => {
+    it('onBridgeTelemetry ignores browser sockets (no cache write, no DB write)', async () => {
         const client = makeClient({
             userId: 'user-1',
             isBridge: false,
@@ -200,8 +170,22 @@ describe('ConsoleGateway bridge-only event guards (H-1)', () => {
                 balance: 99999,
             } as never,
         );
-        expect(redis.setex).not.toHaveBeenCalled();
+        expect(gateway.getCachedState('agent-1')).toBeNull();
         expect(instanceModel.updateOne).not.toHaveBeenCalled();
+    });
+
+    it('onBridgeTelemetry caches telemetry for bridge sockets', async () => {
+        const client = makeClient({
+            userId: 'user-1',
+            isBridge: true,
+            agentId: 'agent-1',
+        });
+        const telemetry = { agentId: 'agent-1', ts: 123, balance: 1000 };
+        await gateway.onBridgeTelemetry(client as never, telemetry as never);
+        expect(gateway.getCachedState('agent-1')).toBe(
+            JSON.stringify(telemetry),
+        );
+        expect(instanceModel.updateOne).toHaveBeenCalled();
     });
 
     it('onBridgeAck ignores browser sockets', () => {
@@ -224,9 +208,7 @@ describe('ConsoleGateway bridge-only event guards (H-1)', () => {
         });
         await gateway.onBridgeStatus(
             client as never,
-            {
-                online: false,
-            } as never,
+            { online: false } as never,
         );
         expect(instanceModel.updateOne).not.toHaveBeenCalled();
     });
@@ -242,32 +224,16 @@ describe('ConsoleGateway bridge-only event guards (H-1)', () => {
     });
 });
 
-describe('ConsoleGateway onBridgeStatus/Offline use client.data.agentId only (H-12)', () => {
+describe('ConsoleGateway onBridgeStatus uses client.data.agentId only', () => {
     let gateway: ConsoleGateway;
     let instanceModel: ReturnType<typeof makeInstanceModel>;
 
     beforeEach(async () => {
         instanceModel = makeInstanceModel();
-        const module: TestingModule = await Test.createTestingModule({
-            providers: [
-                ConsoleGateway,
-                { provide: JwtService, useValue: { verifyAsync: jest.fn() } },
-                { provide: JoseService, useValue: { verifyToken: jest.fn() } },
-                {
-                    provide: REDIS,
-                    useValue: { get: jest.fn(), setex: jest.fn() },
-                },
-                {
-                    provide: getModelToken(EaInstance.name),
-                    useValue: instanceModel,
-                },
-            ],
-        }).compile();
-        gateway = module.get(ConsoleGateway);
-        gateway.io = makeIoMock() as never;
+        gateway = await buildGateway(instanceModel);
     });
 
-    it('onBridgeStatus updates only the bridge-bound agentId, ignoring payload', async () => {
+    it('updates only the bridge-bound agentId', async () => {
         const client = makeClient({
             userId: 'user-1',
             isBridge: true,
@@ -275,9 +241,7 @@ describe('ConsoleGateway onBridgeStatus/Offline use client.data.agentId only (H-
         });
         await gateway.onBridgeStatus(
             client as never,
-            {
-                online: true,
-            } as never,
+            { online: true } as never,
         );
         expect(instanceModel.updateOne).toHaveBeenCalledWith(
             { agentId: 'real-agent' },
@@ -287,7 +251,7 @@ describe('ConsoleGateway onBridgeStatus/Offline use client.data.agentId only (H-
         );
     });
 
-    it('onBridgeStatus does nothing when bridge has no agentId yet', async () => {
+    it('does nothing when bridge has no agentId yet', async () => {
         const client = makeClient({
             userId: 'user-1',
             isBridge: true,
@@ -295,36 +259,19 @@ describe('ConsoleGateway onBridgeStatus/Offline use client.data.agentId only (H-
         });
         await gateway.onBridgeStatus(
             client as never,
-            {
-                online: true,
-            } as never,
+            { online: true } as never,
         );
         expect(instanceModel.updateOne).not.toHaveBeenCalled();
     });
 });
 
-describe('ConsoleGateway.onClientSubscribe (CR-2: tight ownership)', () => {
+describe('ConsoleGateway.onClientSubscribe (tight ownership)', () => {
     let gateway: ConsoleGateway;
     let instanceModel: ReturnType<typeof makeInstanceModel>;
-    let redis: { get: jest.Mock; setex: jest.Mock };
 
     beforeEach(async () => {
         instanceModel = makeInstanceModel();
-        redis = { get: jest.fn().mockResolvedValue(null), setex: jest.fn() };
-        const module: TestingModule = await Test.createTestingModule({
-            providers: [
-                ConsoleGateway,
-                { provide: JwtService, useValue: { verifyAsync: jest.fn() } },
-                { provide: JoseService, useValue: { verifyToken: jest.fn() } },
-                { provide: REDIS, useValue: redis },
-                {
-                    provide: getModelToken(EaInstance.name),
-                    useValue: instanceModel,
-                },
-            ],
-        }).compile();
-        gateway = module.get(ConsoleGateway);
-        gateway.io = makeIoMock() as never;
+        gateway = await buildGateway(instanceModel);
     });
 
     function mockInstance(userId: string | null) {
@@ -337,10 +284,7 @@ describe('ConsoleGateway.onClientSubscribe (CR-2: tight ownership)', () => {
 
     it('allows owner to subscribe', async () => {
         mockInstance('user-1');
-        const client = makeClient({
-            userId: 'user-1',
-            isBridge: false,
-        });
+        const client = makeClient({ userId: 'user-1', isBridge: false });
         await gateway.onClientSubscribe(client as never, {
             agentId: 'agent-1',
         });
@@ -350,10 +294,7 @@ describe('ConsoleGateway.onClientSubscribe (CR-2: tight ownership)', () => {
 
     it('rejects different user', async () => {
         mockInstance('user-OWNER');
-        const client = makeClient({
-            userId: 'user-OTHER',
-            isBridge: false,
-        });
+        const client = makeClient({ userId: 'user-OTHER', isBridge: false });
         await gateway.onClientSubscribe(client as never, {
             agentId: 'agent-1',
         });
@@ -363,12 +304,9 @@ describe('ConsoleGateway.onClientSubscribe (CR-2: tight ownership)', () => {
         expect(client.disconnect).toHaveBeenCalled();
     });
 
-    it('rejects unclaimed instance (CR-2: no null bypass)', async () => {
+    it('rejects unclaimed instance (no null bypass)', async () => {
         mockInstance(null);
-        const client = makeClient({
-            userId: 'user-1',
-            isBridge: false,
-        });
+        const client = makeClient({ userId: 'user-1', isBridge: false });
         await gateway.onClientSubscribe(client as never, {
             agentId: 'agent-1',
         });
@@ -382,10 +320,7 @@ describe('ConsoleGateway.onClientSubscribe (CR-2: tight ownership)', () => {
         instanceModel.findOne.mockReturnValue({
             lean: () => ({ exec: () => Promise.resolve(null) }),
         });
-        const client = makeClient({
-            userId: 'user-1',
-            isBridge: false,
-        });
+        const client = makeClient({ userId: 'user-1', isBridge: false });
         await gateway.onClientSubscribe(client as never, {
             agentId: 'agent-1',
         });

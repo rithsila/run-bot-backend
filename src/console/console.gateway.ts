@@ -7,16 +7,13 @@ import {
     OnGatewayConnection,
     OnGatewayDisconnect,
 } from '@nestjs/websockets';
-import { Logger, Inject } from '@nestjs/common';
+import { Logger } from '@nestjs/common';
 import { Server, Socket } from 'socket.io';
-import { JwtService } from '@nestjs/jwt';
 import { InjectModel } from '@nestjs/mongoose';
-import { fromB64Env } from 'src/common/utils/env.util';
 import { Model } from 'mongoose';
-import type { Redis } from 'ioredis';
 
-import { REDIS } from '../redis/redis.constants';
-import { JoseService } from '../memberships/jose.service';
+import { TtlCache } from '../common/cache/ttl-cache';
+import { verifySafetyScoreToken } from '../common/auth/safetyscore-token';
 import { EaInstance, EaInstanceDocument } from './schemas/ea-instance.schema';
 import { TelemetryDto } from './dto/telemetry.dto';
 
@@ -28,6 +25,7 @@ interface BridgeSocketData {
     agentId?: string;
     licenseKey: string | null;
     accountLogin: string | null;
+    symbol: string | null;
 }
 
 type BridgeSocket = Omit<Socket, 'data'> & { data: BridgeSocketData };
@@ -39,16 +37,21 @@ export class ConsoleGateway
     @WebSocketServer() io!: Server;
     private readonly logger = new Logger(ConsoleGateway.name);
 
+    // In-process telemetry cache (replaces the Redis `ea:state:{agentId}` cache).
+    private readonly telemetryCache = new TtlCache();
+
     // commandId → socketId of the browser client waiting for ACK
     private readonly pendingAck = new Map<string, string>();
 
     constructor(
-        private readonly jwt: JwtService,
-        private readonly jose: JoseService,
-        @Inject(REDIS) private readonly redis: Redis,
         @InjectModel(EaInstance.name)
         private readonly instanceModel: Model<EaInstanceDocument>,
     ) {}
+
+    /** Read the latest cached telemetry for an agent (used by ConsoleService). */
+    getCachedState(agentId: string): string | null {
+        return this.telemetryCache.get(`ea:state:${agentId}`);
+    }
 
     async handleConnection(client: Socket) {
         const token = client.handshake.auth?.token as string | undefined;
@@ -58,25 +61,16 @@ export class ConsoleGateway
             return;
         }
         try {
-            // Try RS256 (browser user JWT) first, fall back to ES256 (bridge membership JWT)
-            let payload: Record<string, unknown>;
-            let isBridge = false;
-            try {
-                payload = await this.jwt.verifyAsync(token, {
-                    publicKey: fromB64Env('JWT_ACCESS_PUBLIC_KEY_BASE64'),
-                    algorithms: ['RS256'],
-                });
-            } catch {
-                payload = await this.jose.verifyToken(token);
-                isBridge = true;
-            }
+            // Single ES256 verify against the SafetyScore public key.
+            const verified = await verifySafetyScoreToken(token);
             const d = client.data as BridgeSocketData;
-            d.userId =
-                (payload.userId as string) ?? (payload.sub as string) ?? null;
-            d.isBridge = isBridge;
-            d.licenseKey = (payload.licenseKey as string | undefined) ?? null;
-            d.accountLogin =
-                (payload.accountLogin as string | undefined) ?? null;
+            d.userId = verified.userId;
+            // A connection is a bridge if it carries agent-binding claims.
+            d.isBridge = !!verified.agentId;
+            d.agentId = verified.agentId ?? undefined;
+            d.licenseKey = verified.licenseKey;
+            d.accountLogin = verified.accountLogin;
+            d.symbol = verified.symbol;
         } catch {
             this.logger.warn(
                 `WS /console rejected: invalid token id=${client.id}`,
@@ -112,11 +106,16 @@ export class ConsoleGateway
     @SubscribeMessage('bridge:register')
     async onBridgeRegister(
         @ConnectedSocket() client: BridgeSocket,
-        @MessageBody() data: { agentId: string; bridgeVersion?: string },
+        @MessageBody() data: { agentId?: string; bridgeVersion?: string },
     ) {
         if (!client.data.isBridge) return;
-        const { agentId } = data;
+        // agentId comes from the token; allow the payload to confirm it.
+        const agentId = data.agentId ?? client.data.agentId;
         const callerId = client.data.userId;
+        if (!agentId) {
+            this.logger.warn('bridge:register missing agentId -- skipping');
+            return;
+        }
 
         // Ownership lock: if instance already exists under a different userId, reject
         const existing = await this.instanceModel
@@ -137,19 +136,17 @@ export class ConsoleGateway
         client.data.agentId = agentId;
         client.data.isBridge = true;
 
-        // Derive required ea-instance fields. agentId format is
-        // `{account}-{symbol}-{buyMagic}-{sellMagic}`; licenseKey is only
-        // available when the bridge authenticated via /memberships/activate.
+        // Required ea-instance fields come from the verified token claims.
+        // agentId format is `{account}-{symbol}-{buyMagic}-{sellMagic}`; fall
+        // back to parsing it only when a claim is absent.
         const parts = agentId.split('-');
-        const parsedAccount = parts[0] || null;
-        const parsedSymbol = parts[1] || null;
-        const accountLogin = client.data.accountLogin ?? parsedAccount;
+        const accountLogin = client.data.accountLogin ?? parts[0] ?? null;
+        const symbol = client.data.symbol ?? parts[1] ?? null;
         const licenseKey = client.data.licenseKey ?? null;
-        const symbol = parsedSymbol;
 
-        if (!accountLogin || !licenseKey || !symbol) {
+        if (!accountLogin || !licenseKey || !symbol || !callerId) {
             this.logger.warn(
-                `bridge:register missing fields (agentId=${agentId}, accountLogin=${accountLogin}, hasLicenseKey=${!!licenseKey}, symbol=${symbol}) -- skipping upsert`,
+                `bridge:register missing fields (agentId=${agentId}, accountLogin=${accountLogin}, hasLicenseKey=${!!licenseKey}, symbol=${symbol}, hasUser=${!!callerId}) -- skipping upsert`,
             );
             return;
         }
@@ -157,6 +154,8 @@ export class ConsoleGateway
         const room = `agent:${agentId}`;
         void client.join(room);
 
+        // Persist the instance so the browser can subscribe afterwards. This
+        // MUST land before any client:subscribe for the same agentId succeeds.
         await this.instanceModel.findOneAndUpdate(
             { agentId },
             {
@@ -164,9 +163,9 @@ export class ConsoleGateway
                     accountLogin,
                     licenseKey,
                     symbol,
+                    userId: callerId,
                     online: true,
                     lastSeenAt: new Date(),
-                    ...(callerId ? { userId: callerId } : {}),
                 },
             },
             { upsert: true, new: true },
@@ -187,9 +186,8 @@ export class ConsoleGateway
         const agentId = telemetry.agentId ?? client.data.agentId;
         if (!agentId) return;
 
-        const redisKey = `ea:state:${agentId}`;
-        await this.redis.setex(
-            redisKey,
+        this.telemetryCache.setex(
+            `ea:state:${agentId}`,
             TELEMETRY_TTL_SECONDS,
             JSON.stringify(telemetry),
         );
@@ -303,7 +301,7 @@ export class ConsoleGateway
         client.data.agentId = agentId;
         void client.join(`agent:${agentId}`);
 
-        const cached = await this.redis.get(`ea:state:${agentId}`);
+        const cached = this.telemetryCache.get(`ea:state:${agentId}`);
         if (cached) {
             try {
                 client.emit('console:hydrate', JSON.parse(cached));

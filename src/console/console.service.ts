@@ -1,6 +1,5 @@
 import {
     Injectable,
-    Inject,
     NotFoundException,
     BadRequestException,
     ForbiddenException,
@@ -8,10 +7,8 @@ import {
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
-import type { Redis } from 'ioredis';
 import { v4 as uuidv4 } from 'uuid';
 
-import { REDIS } from '../redis/redis.constants';
 import { EaInstance, EaInstanceDocument } from './schemas/ea-instance.schema';
 import {
     EaAuditLog,
@@ -57,7 +54,6 @@ export class ConsoleService {
     private readonly logger = new Logger(ConsoleService.name);
 
     constructor(
-        @Inject(REDIS) private readonly redis: Redis,
         @InjectModel(EaInstance.name)
         private readonly instanceModel: Model<EaInstanceDocument>,
         @InjectModel(EaAuditLog.name)
@@ -72,7 +68,7 @@ export class ConsoleService {
         userId: string,
     ): Promise<TelemetryDto | null> {
         await this.requireOwnership(agentId, userId);
-        const raw = await this.redis.get(`ea:state:${agentId}`);
+        const raw = this.gateway.getCachedState(agentId);
         if (!raw) return null;
         try {
             return JSON.parse(raw) as TelemetryDto;
