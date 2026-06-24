@@ -1,0 +1,35 @@
+# Build artifacts & deps (re-created inside the image)
+node_modules
+dist
+build
+coverage
+.nyc_output
+
+# Local env / secrets — env is injected via docker-compose, never baked in
+.env
+.env.*
+!.env.docker.example
+*.pem
+*.pem.b64
+
+# VCS & tooling
+.git
+.gitignore
+.vscode
+.idea
+.claude
+.agents
+
+# Logs & OS cruft
+*.log
+logs
+.DS_Store
+
+# Docs / reports / ad-hoc scripts not needed at runtime
+docs
+*.md
+.eslint-report.json
+report.*.json
+test
+test-socket-client.js
+pnpm-lock.yaml
