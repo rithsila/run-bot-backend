@@ -35,16 +35,15 @@ Here is how the parts talk to each other:
    │     │                                               + bot-token)     │
    │     │ ZMQ (127.0.0.1 only)                                          │
    │     ▼                                                                │
-   │   Go bridge ──Socket.IO (HTTPS)──►  Cloudflare Tunnel               │
-   └──────────────────────────────────────────│─────────────────────────┘
-                                               ▼
-                              ┌────────────────────────────┐
-                              │   Proxmox VM (your server) │
-                              │   run-bot-api + MongoDB        │
-                              │   (Docker Compose)          │
-                              └──────────────│──────────────┘
-                                             │ Socket.IO + REST (HTTPS)
-                                             ▼
+   │                                 ┌────────────────────────────┐
+                               │   Proxmox VM (your server) │
+                               │   run-bot-api (Docker)     │
+                               └──────────────│──────────────┘
+                                              │
+                                              ▼
+                                       MongoDB Atlas
+                                              │
+                                              ▼
                               SafetyScore website
                               /dashboard/run-bot  (the user's browser)
 ```
@@ -56,7 +55,7 @@ Here is how the parts talk to each other:
 | A | **Signing keypair** | You generate it once | Ready (script exists) |
 | B | **Supabase `bot-token` function** | Supabase cloud | Built ✅ |
 | C | **SafetyScore web app** | Vercel (or your host) | Built ✅ |
-| D | **run-bot-api + MongoDB** | Your Proxmox VM (Docker) | Built ✅ (live tunnel pending) |
+| D | **run-bot-api (Docker)** | Your Proxmox VM + Atlas DB | Built ✅ (live tunnel pending) |
 | E | **Go bridge + MT5 EA/DLL** | Windows MT5 VPS | Needs Windows build |
 
 > **Terms used in this guide**
@@ -224,10 +223,11 @@ Open `.env` and set:
 |---|---|
 | `PORT` | Port the app listens on. Default `4000`. |
 | `FRONTEND_URL` | The SafetyScore web origin (for CORS). |
+| `MONGO_URI` | Your MongoDB Atlas cloud database connection URI. |
 | `SAFETYSCORE_TOKEN_PUBLIC_KEY` | The ES256 **public** key (PEM or base64 PEM, one line). |
 
 > Only the **public** key goes here. The private key must never be on this server.
-> The stack refuses to start if `FRONTEND_URL` or the public key is missing.
+> The stack refuses to start if `FRONTEND_URL`, `MONGO_URI`, or the public key is missing.
 
 ### 6.3 Start the stack
 
@@ -235,10 +235,9 @@ Open `.env` and set:
 docker compose up -d --build
 ```
 
-This builds the image, starts MongoDB, waits until it is healthy, then starts
-run-bot-api. Both restart by themselves if the VM reboots.
+This builds and starts the `run-bot-api` backend container. It connects directly to your cloud MongoDB instance. The container restarts automatically if the VM reboots.
 
-Check both are healthy:
+Check that the container is healthy:
 
 ```bash
 docker compose ps
@@ -294,12 +293,10 @@ cloudflared tunnel run <YOUR_TUNNEL_ID>
 
 ### 6.6 Backups
 
-Only settings, audit logs, instances, and PnL points are durable data. Back
-them up on a schedule:
+Since MongoDB is hosted in the cloud on MongoDB Atlas, you can configure automatic backups directly in the MongoDB Atlas dashboard. Alternatively, you can run a manual backup from any machine with `mongodump` installed:
 
 ```bash
-docker compose exec mongo mongodump --archive=/tmp/backup.gz --gzip
-docker compose cp mongo:/tmp/backup.gz ./backup-$(date +%F).gz
+mongodump --uri="mongodb+srv://<username>:<password>@cluster0.eqyh7oq.mongodb.net/run-bot" --archive=backup-$(date +%F).gz --gzip
 ```
 
 ---
@@ -392,7 +389,7 @@ Do these in order. Each one proves the link before it works.
 - [ ] You generated a **fresh** keypair for production (not the exposed dev one).
 - [ ] `FRONTEND_URL` in run-bot-api matches the real web origin (CORS).
 - [ ] ZMQ is bound to `127.0.0.1` only on the MT5 VPS (not the public internet).
-- [ ] MongoDB is internal-only (never published to the host).
+- [ ] MongoDB Atlas uses strong password authentication and restricted access.
 - [ ] The Cloudflare Tunnel has up/down alerting.
 - [ ] A user cannot see or control another user's bot (owner check). Test with
       two accounts.
@@ -408,6 +405,7 @@ Do these in order. Each one proves the link before it works.
 | `SAFETYSCORE_TOKEN_PUBLIC_KEY` | run-bot-api `.env` | ES256 public PEM | No |
 | `NEXT_PUBLIC_BHUB_API_URL` | Web app | `https://bhub.your-domain.com` | No |
 | `FRONTEND_URL` | run-bot-api `.env` | The web origin (CORS) | No |
+| `MONGO_URI` | run-bot-api `.env` | `mongodb+srv://...` | **Yes** |
 | `PORT` | run-bot-api `.env` | `4000` | No |
 | `BHUB_API_URL` | Go bridge config | `https://bhub.your-domain.com` | No |
 
