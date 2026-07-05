@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1
 
-# bhub-api (slimmed: console telemetry/commands only).
+# run-bot-api (slimmed: console telemetry/commands only).
 # Two-stage build: compile with full deps, then ship a pruned production image.
 
 # ---- Stage 1: build ----

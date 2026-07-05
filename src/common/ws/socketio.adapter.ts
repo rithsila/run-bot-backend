@@ -6,7 +6,7 @@ import type { ServerOptions } from 'socket.io';
 /**
  * Single-instance Socket.IO adapter (no Redis adapter).
  *
- * The slimmed bhub-api runs one process, so the previous `@socket.io/redis-adapter`
+ * The slimmed run-bot-api runs one process, so the previous `@socket.io/redis-adapter`
  * fan-out is gone. This adapter only applies the CORS allowlist for the `/console`
  * namespace.
  */

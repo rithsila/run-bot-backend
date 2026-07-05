@@ -3,7 +3,7 @@ import { importSPKI, jwtVerify, type JWTPayload } from 'jose';
 type VerifyKey = Awaited<ReturnType<typeof importSPKI>>;
 
 /**
- * Claims minted by SafetyScore (the external signing authority). bhub-api only
+ * Claims minted by SafetyScore (the external signing authority). run-bot-api only
  * VERIFIES these tokens; it never signs them and keeps no user accounts.
  */
 export interface SafetyScoreClaims extends JWTPayload {

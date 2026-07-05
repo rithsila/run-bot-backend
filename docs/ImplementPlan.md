@@ -8,7 +8,7 @@ user remote-control their MT5 trading EA (start/stop, clear positions, kill swit
 settings, watch live data, record PnL) — without RDP into the VPS.
 
 **Complexity:** Large. Spans an MT5 client change (EA + DLL), a small Go bridge change,
-a backend cleanup (bhub-api), a self-hosting step (Proxmox), and a React frontend port.
+a backend cleanup (run-bot-api), a self-hosting step (Proxmox), and a React frontend port.
 
 ---
 
@@ -17,7 +17,7 @@ a backend cleanup (bhub-api), a self-hosting step (Proxmox), and a React fronten
 The design splits into two backends on purpose:
 
 - **License** is low volume → stays on the existing **SafetyScore Supabase** (free tier is fine).
-- **Telemetry/commands** are high volume → go to a **self-hosted bhub-api** on your own
+- **Telemetry/commands** are high volume → go to a **self-hosted run-bot-api** on your own
   Proxmox hardware. This never touches Supabase, so there is no per-message cost and no
   free-tier limit.
 
@@ -31,7 +31,7 @@ Sn1P3r EA   (console_panel.mq5 folded in — one program, no GlobalVariable IPC)
   │                                                      └──────────────────────────────┘
   │
   └─ TELEMETRY / COMMANDS
-       EA binds ZMQ 5555/5556  ──►  Go bridge  ──(Socket.IO)──►  bhub-api (slimmed)
+       EA binds ZMQ 5555/5556  ──►  Go bridge  ──(Socket.IO)──►  run-bot-api (slimmed)
        (in-process state)            (on MT5 VPS)                 self-hosted on Proxmox VM
                                                                   NestJS + MongoDB + Redis
                                                                        │  Socket.IO /console
@@ -40,9 +40,9 @@ Sn1P3r EA   (console_panel.mq5 folded in — one program, no GlobalVariable IPC)
                                                    (bhub-new-ui components, restyled Liquid Glass)
 ```
 
-**Reachability:** the Go bridge runs on the Windows MT5 VPS and must reach bhub-api over the
+**Reachability:** the Go bridge runs on the Windows MT5 VPS and must reach run-bot-api over the
 internet. The browser must reach it too. Both go through a **Cloudflare Tunnel** that fronts
-bhub-api with HTTPS — no public IP or port-forwarding on the Proxmox VM.
+run-bot-api with HTTPS — no public IP or port-forwarding on the Proxmox VM.
 
 ---
 
@@ -52,24 +52,24 @@ bhub-api with HTTPS — no public IP or port-forwarding on the Proxmox VM.
 |---|---|
 | License backend | Existing SafetyScore Supabase. DLL Ed25519 → `license-verify`. Revenue path stays. |
 | License via bridge | **Removed.** The bridge no longer validates licenses. The DLL does it. |
-| Run-bot backend | **Reuse bhub-api**, slimmed to the `console` module, self-hosted on Proxmox. |
+| Run-bot backend | **Reuse run-bot-api**, slimmed to the `console` module, self-hosted on Proxmox. |
 | Backend infra | **Slim it.** Keep `console/` + Mongo (durable data). **Drop Redis + BullMQ** — single instance, in-memory telemetry cache. |
-| Identity authority | **SafetyScore only.** bhub-api deletes its memberships/auth/user modules. |
-| Bot-session token | **ES256 JWT** signed by SafetyScore, verified by bhub-api's existing `JoseService` (no new crypto). |
+| Identity authority | **SafetyScore only.** run-bot-api deletes its memberships/auth/user modules. |
+| Bot-session token | **ES256 JWT** signed by SafetyScore, verified by run-bot-api's existing `JoseService` (no new crypto). |
 | Command auth | Commands (REST + socket) verified by **one minimal SafetyScore-token guard** + owner check. Replaces `JwtAuthGuard`, so deleting `auth/` is safe. |
-| Bridge transport | **Keep ZMQ + Go bridge.** Bridge ↔ bhub-api stays **Socket.IO** (small change). ZMQ binds **127.0.0.1 only**. |
-| Browser realtime | **socket.io-client** in the SafetyScore web app, pointed at Proxmox bhub-api. |
+| Bridge transport | **Keep ZMQ + Go bridge.** Bridge ↔ run-bot-api stays **Socket.IO** (small change). ZMQ binds **127.0.0.1 only**. |
+| Browser realtime | **socket.io-client** in the SafetyScore web app, pointed at Proxmox run-bot-api. |
 | console_panel.mq5 | **Folded into the EA** as `.mqh` includes. No separate program, no GVs. |
-| Hosting | Docker Compose (**bhub-api + MongoDB**, no Redis) + Cloudflare Tunnel on Proxmox. |
-| Settings presets | In scope (bhub-api already implements them). |
+| Hosting | Docker Compose (**run-bot-api + MongoDB**, no Redis) + Cloudflare Tunnel on Proxmox. |
+| Settings presets | In scope (run-bot-api already implements them). |
 
 ---
 
 ## 3. Identity & auth flow (the critical new part)
 
-bhub-api keeps **zero** license logic and **zero** user accounts. It trusts tokens that
-SafetyScore signs. One signing keypair: SafetyScore holds the private key; bhub-api holds the
-public key. Tokens are short-lived (~60 min) **ES256 JWTs** — bhub-api's existing `JoseService`
+run-bot-api keeps **zero** license logic and **zero** user accounts. It trusts tokens that
+SafetyScore signs. One signing keypair: SafetyScore holds the private key; run-bot-api holds the
+public key. Tokens are short-lived (~60 min) **ES256 JWTs** — run-bot-api's existing `JoseService`
 already verifies ES256, so this is a key swap, not new crypto.
 
 ```
@@ -81,24 +81,24 @@ BRIDGE PATH (bot token)
   EA → SafetyScore.dll → bot-token (Supabase)  ──►  signed token
   EA → ZMQ handshake { agentId, token } → Go bridge   (ZMQ bound to 127.0.0.1)
   Go bridge → Socket.IO /console  (auth.token = bot token)
-  bhub-api verifies signature → bridge:register persists ea-instances.userId = token.user_id
+  run-bot-api verifies signature → bridge:register persists ea-instances.userId = token.user_id
   ORDERING: bridge:register MUST land before any browser client:subscribe succeeds.
 
   TOKEN REFRESH (token TTL ~60 min, so this fires in normal use):
-    bhub-api emits auth:expired → bridge requests a fresh token from the EA over a ZMQ
+    run-bot-api emits auth:expired → bridge requests a fresh token from the EA over a ZMQ
     control frame → EA returns the DLL's latest token → bridge re-auths. No /memberships call.
 
 BROWSER PATH (browser token)
   Browser (logged in via Supabase) → SafetyScore server action → signed browser token
   Browser → Socket.IO /console (auth.token) + client:subscribe { agentId }
-  bhub-api verifies signature → allows only if ea-instances.userId == token.user_id
+  run-bot-api verifies signature → allows only if ea-instances.userId == token.user_id
 
 COMMANDS (REST + socket)
-  bhub-api's console.controller + gateway use ONE minimal token guard (verify ES256 +
+  run-bot-api's console.controller + gateway use ONE minimal token guard (verify ES256 +
   owner check), replacing the deleted JwtAuthGuard. Ported UI hooks keep their HTTP calls.
 ```
 
-Why this is safe: no valid SafetyScore license → the DLL returns no bot token → bhub-api
+Why this is safe: no valid SafetyScore license → the DLL returns no bot token → run-bot-api
 rejects the socket. The bot is still gated by the license, just not by the bridge.
 
 **Decided (2026-06-23):** mint the bot token from a **new `bot-token` Edge Function** that
@@ -123,10 +123,10 @@ the `sdd-license-flow-audit` skill and a `license-verify` regression test before
 | Action | Item |
 |---|---|
 | KEEP | `zmq.go`, `socketio.go`, `commands.go`, `heartbeat.go`, `handshake.go`, installer. |
-| CHANGE | `handshake.go`: accept `{ agentId, token }`. `socketio.go`: auth with the EA-supplied token; on `auth:expired`, request a fresh token from the EA over ZMQ (do **not** call `/memberships/activate`). `config.go`: point at the Proxmox bhub-api URL. |
+| CHANGE | `handshake.go`: accept `{ agentId, token }`. `socketio.go`: auth with the EA-supplied token; on `auth:expired`, request a fresh token from the EA over ZMQ (do **not** call `/memberships/activate`). `config.go`: point at the Proxmox run-bot-api URL. |
 | DELETE | `license.go`, `license_dispatch.go`, and the ZMQ `license_check` path. |
 
-### bhub-api (`bhub-api/`)
+### run-bot-api (`run-bot-api/`)
 | Action | Modules |
 |---|---|
 | KEEP | `console/`, `common/`, `config/`, `middleware/`. |
@@ -141,7 +141,7 @@ the `sdd-license-flow-audit` skill and a `license-verify` regression test before
 | ADD | `socket.io-client` (and `@tanstack/react-query` if the ported hooks need it). |
 | ADD | Server action / route handler that mints a browser bot-session token from the Supabase session. |
 | PORT | `bhub-new-ui/components/console/*` (11 components + 6 panels) → `web/src/components/run-bot/`, restyled to Liquid Glass tokens. |
-| PORT | `useConsoleSocket`, `useConsoleSettings`, `settings-schema.ts` → `web/src/lib/run-bot/`, pointed at the Proxmox bhub-api URL. |
+| PORT | `useConsoleSocket`, `useConsoleSettings`, `settings-schema.ts` → `web/src/lib/run-bot/`, pointed at the Proxmox run-bot-api URL. |
 | ADD | `web/src/app/dashboard/run-bot/page.tsx` + enable the sidebar nav item. |
 
 ### Supabase (`supabase/`)
@@ -149,18 +149,18 @@ the `sdd-license-flow-audit` skill and a `license-verify` regression test before
 |---|---|
 | ADD | `bot-token` Edge Function (reuses extracted `license-core.ts`). |
 | EXTRACT | `_shared/license-core.ts` from `license-verify` (+ regression test proving no behavior change). |
-| ADD | One signing keypair for bot-session tokens (private in Supabase + web app; public in bhub-api). |
+| ADD | One signing keypair for bot-session tokens (private in Supabase + web app; public in run-bot-api). |
 
 ---
 
 ## 5. Hosting (Proxmox)
 
-- `docker-compose.yml`: services `bhub-api`, `mongo` (**no Redis, no BullMQ**). Volume for Mongo data.
+- `docker-compose.yml`: services `run-bot-api`, `mongo` (**no Redis, no BullMQ**). Volume for Mongo data.
 - Restart policy `unless-stopped`; the VM auto-starts the stack on boot.
-- **Cloudflare Tunnel** exposes bhub-api at a stable HTTPS hostname. The bridge and the
+- **Cloudflare Tunnel** exposes run-bot-api at a stable HTTPS hostname. The bridge and the
   browser both use that hostname. No port-forwarding. (Note: the tunnel is a single point of
   failure for both lanes — add basic up/down alerting.)
-- bhub-api env: `MONGO_URI`, `SAFETYSCORE_TOKEN_PUBLIC_KEY` (ES256), CORS allowlist =
+- run-bot-api env: `MONGO_URI`, `SAFETYSCORE_TOKEN_PUBLIC_KEY` (ES256), CORS allowlist =
   the SafetyScore web domain.
 - Backups: periodic `mongodump` (settings + audit + instances are the only durable data).
 
@@ -169,20 +169,20 @@ the `sdd-license-flow-audit` skill and a `license-verify` regression test before
 ## 6. Phases & tasks
 
 Three lanes run in parallel after the contracts/keys land. They touch disjoint roots
-(`supabase/` + `web/`, `bhub-api/`, `console panel/`).
+(`supabase/` + `web/`, `run-bot-api/`, `console panel/`).
 
 > **BUILD PROGRESS (2026-06-23) — verified green, all UNCOMMITTED on each repo's working tree:**
 > - RB-00 ✓ `docs/run-bot/contracts.md`.
 > - RB-10 ✓ `_shared/license-core.ts` + tests (Deno suite 102/102; fixed a latent `database.ts` log-shadowing bug).
-> - RB-20/21 ✓ bhub-api slimmed to `console` + ES256 token guard; `npm run build` clean; 55 tests pass. (~20 modules deleted, incl. `storage/`.)
+> - RB-20/21 ✓ run-bot-api slimmed to `console` + ES256 token guard; `npm run build` clean; 55 tests pass. (~20 modules deleted, incl. `storage/`.)
 > - RB-01/11 ✓ ES256 keypair + `bot-token` Edge Function reusing license-core; 7 tests pass.
-> - RB-30 ✓ Go bridge re-pointed to bhub-api, license path deleted, token-refresh-over-ZMQ; `go vet`/`build`/`test -race` all green.
+> - RB-30 ✓ Go bridge re-pointed to run-bot-api, license path deleted, token-refresh-over-ZMQ; `go vet`/`build`/`test -race` all green.
 > - RB-50/51 ✓ web run-bot route + nav + server-only token mint + ported socket hooks; `pnpm types:check` passes, new files lint-clean.
 > - RB-52/53/54/55 ✓ telemetry UI (TelemetryGrid + 6 panels), KillSwitchPanel (2-step + ACK timeout) + ActionsPanel,
 >   SettingsPanel (schema from real EA params, 55 fields/10 groups, restart-required reject),
 >   InstanceSelector (?agentId=) + ConnectionStatusBar, wired in run-bot-shell. `types:check`/`lint`/`test` green
->   (web 226 pass + bhub-api 58 pass). ~~**GAP:** bhub-api needs `close-buy`/`close-sell` REST routes.~~
->   **GAP CLOSED 2026-06-25** — routes added (bhub-api 74 pass); see RB-53 note below.
+>   (web 226 pass + run-bot-api 58 pass). ~~**GAP:** run-bot-api needs `close-buy`/`close-sell` REST routes.~~
+>   **GAP CLOSED 2026-06-25** — routes added (run-bot-api 74 pass); see RB-53 note below.
 >
 > **SECURITY:** the keypair generated in RB-01 was printed to the build transcript → treat it
 > as EXPOSED/dev-only. Regenerate for production via `_shared/__scripts__/gen-bot-token-key.ts`
@@ -191,11 +191,11 @@ Three lanes run in parallel after the contracts/keys land. They touch disjoint r
 > **Before merge:** run `sdd-license-flow-audit` (RB-10/RB-11 touch the license/token path).
 >
 > **RB-22 (2026-06-24):** Docker code part DONE on `feat/run-bot-slim` (0c4e737) — `Dockerfile`,
-> `docker-compose.yml` (bhub-api + mongo, no Redis), `.dockerignore`, `.env.docker.example`, `DEPLOY.md`.
+> `docker-compose.yml` (run-bot-api + mongo, no Redis), `.dockerignore`, `.env.docker.example`, `DEPLOY.md`.
 > Verified locally: image builds, stack boots Mongo-only, `/health` ok. Live Cloudflare Tunnel still pending your CF account.
 >
-> **RB-53 GAP CLOSED + RB-60 DONE (2026-06-25):** added `close-buy`/`close-sell` REST routes (bhub-api,
-> feat/run-bot-slim) and built PnL history end-to-end (bhub-api snapshots + web recharts chart). bhub-api
+> **RB-53 GAP CLOSED + RB-60 DONE (2026-06-25):** added `close-buy`/`close-sell` REST routes (run-bot-api,
+> feat/run-bot-slim) and built PnL history end-to-end (run-bot-api snapshots + web recharts chart). run-bot-api
 > 74 tests pass; web 232 tests pass. See RB-53 GAP note + RB-60 below.
 >
 > **NOT yet built (need Windows/MetaEditor or your infra):** RB-12 DLL token surface,
@@ -208,9 +208,9 @@ Three lanes run in parallel after the contracts/keys land. They touch disjoint r
   `client:subscribe`), HTTP endpoints, telemetry JSON shape, command verbs, settings shape.
   *Validate: doc review.*
 - ✅ **RB-01 Signing keypair** `[DONE — feat/run-bot; ⚠️ dev key exposed in logs, REGENERATE for prod]` — generate the **ES256** bot-token keypair. Private → Supabase +
-  web app env; public → bhub-api env. Document in `.env.production.rotated`. *Validate: sign/verify round-trip script (Supabase signer ↔ bhub-api JoseService).*
-- ⬜ **RB-02 Gate: token end-to-end spike** `[PARTIAL — unit-level verify/reject covered by RB-11 + RB-20/21 tests; full bridge↔bhub-api↔browser e2e NOT run yet]` — prove a SafetyScore ES256 token is accepted by a
-  slimmed bhub-api `/console` socket **and** the token guard on the REST controller, and
+  web app env; public → run-bot-api env. Document in `.env.production.rotated`. *Validate: sign/verify round-trip script (Supabase signer ↔ run-bot-api JoseService).*
+- ⬜ **RB-02 Gate: token end-to-end spike** `[PARTIAL — unit-level verify/reject covered by RB-11 + RB-20/21 tests; full bridge↔run-bot-api↔browser e2e NOT run yet]` — prove a SafetyScore ES256 token is accepted by a
+  slimmed run-bot-api `/console` socket **and** the token guard on the REST controller, and
   rejected when the signature/owner is wrong. *Depends on RB-20's token guard existing.*
   *Validate: valid token connects + can POST a command; tampered token → reject; wrong owner → subscribe + command denied.*
 
@@ -224,7 +224,7 @@ Three lanes run in parallel after the contracts/keys land. They touch disjoint r
   the license response. Bump `GetDLLVersion`. *Validate: EA reads a non-empty token after license OK.*
 - ⬜ Run `sdd-license-flow-audit` before merging RB-10/11/12. `[TODO before merge]`
 
-### Phase 2 — bhub-api cleanup + self-host (Lane B, parallel)
+### Phase 2 — run-bot-api cleanup + self-host (Lane B, parallel)
 - ✅ **RB-20 Strip modules + token guard** `[DONE — feat/run-bot-slim; npm build clean, 55 tests]` — delete the modules in §4 (incl. `redis/`, `queue/`,
   `real-time/`, `auth/`). Add the minimal **ES256 token guard** used by the gateway AND the
   REST controller (replaces `JwtAuthGuard`). Telemetry cache → in-memory Map+TTL.
@@ -233,10 +233,10 @@ Three lanes run in parallel after the contracts/keys land. They touch disjoint r
   ES256 tokens; ownership by `token.user_id`; `bridge:register` requires `license_key`/`account`/
   `symbol` and must precede `client:subscribe`. *Validate: unit test verify+reject; owner check on subscribe AND command; register-before-subscribe.*
 - ✅ **RB-22 Dockerize + tunnel** `[CODE DONE — feat/run-bot-slim 0c4e737; live tunnel wiring pending your Cloudflare account]` — `docker-compose.yml`
-  (**bhub-api + mongo**, no Redis), `Dockerfile`, `.dockerignore`, `.env.docker.example`, CORS allowlist
+  (**run-bot-api + mongo**, no Redis), `Dockerfile`, `.dockerignore`, `.env.docker.example`, CORS allowlist
   via `FRONTEND_URL` (fail-fast), `/health` container+compose healthchecks, Mongo internal-only on a named
   volume, `restart: unless-stopped`. `DEPLOY.md` documents the Cloudflare Tunnel step (host + container
-  `cloudflared` pointing at the bhub-api container). *Verified locally: image builds; stack boots with Mongo
+  `cloudflared` pointing at the run-bot-api container). *Verified locally: image builds; stack boots with Mongo
   only; `/health` → ok.* **REMAINING (your infra):** live Cloudflare Tunnel + up/down alerting; bridge +
   browser reaching `/console` over HTTPS (RB-31/RB-62).
 
@@ -246,7 +246,7 @@ Three lanes run in parallel after the contracts/keys land. They touch disjoint r
   ZMQ control frame; delete `license.go`/`license_dispatch.go` + the `license_check` ZMQ path;
   `config.go` → Proxmox URL; ZMQ bind `127.0.0.1`. *Validate: `go vet`; `go test -race` with a mock /console incl. an expiry→refresh cycle.*
 - ⬜ **RB-31 Rebuild + release** `[TODO — needs Windows build + test VPS]` — `make build-windows`, same embedded `.ex5`/DLLs. New
-  `bridge.env` keys. *Validate: `--status` on a test VPS connects to bhub-api.*
+  `bridge.env` keys. *Validate: `--status` on a test VPS connects to run-bot-api.*
 
 ### Phase 4 — MT5 EA (Lane C, parallel)
 - ⬜ **RB-40 Fold panel into EA** `[TODO — needs MetaEditor/MQL5]` — port `console_panel.mq5` to `.mqh` modules: telemetry from
@@ -261,7 +261,7 @@ Three lanes run in parallel after the contracts/keys land. They touch disjoint r
 - ✅ **RB-50 Route + nav** `[DONE — feat/run-bot; types:check passes]` — `dashboard/run-bot/page.tsx` (Server Component: `getCachedUser`,
   mint browser token, list the user's instances); enable the sidebar item. *Validate: tab + empty state.*
 - ✅ **RB-51 Port hooks** `[DONE — feat/run-bot; spine, pending live telemetry verify]` — `useConsoleSocket`/`useConsoleSettings` → `web/src/lib/run-bot/`,
-  pointed at bhub-api, token from the server action. *Validate: live telemetry updates.*
+  pointed at run-bot-api, token from the server action. *Validate: live telemetry updates.*
 - ✅ **RB-52 Port telemetry UI** `[DONE — feat/run-bot; types/lint/test green]` — `TelemetryGrid` + 6 panels in
   `web/src/components/run-bot/`, restyled to Liquid Glass (local `Card`/`.glass-panel`). Adapted from the
   source flat shape to the nested contract §6 shape. Stale-overlay (>10s) + feature bitmask preserved; pure
@@ -274,7 +274,7 @@ Three lanes run in parallel after the contracts/keys land. They touch disjoint r
   > `POST /console/instances/:agentId/close-buy` and `/close-sell`, guarded by `SafetyScoreTokenGuard`
   > + owner check + online check, throttled 20/min, dispatching the existing `CLOSE_BUY`/`CLOSE_SELL`
   > verbs with new `AuditEvent.CloseBuy`/`CloseSell` audit logging. Documented in contracts §5.
-  > *Validated: 9 new bhub-api service tests; `npm run build`/`test` (74 pass).*
+  > *Validated: 9 new run-bot-api service tests; `npm run build`/`test` (74 pass).*
 - ✅ **RB-54 Settings + presets** `[DONE — feat/run-bot; types/lint/test green]` — canonical schema
   `web/src/lib/run-bot/settings-schema.ts` derived from the EA's real `input` params
   (`Sn1P3r Grid Hunter.mq5`) as the single source of truth. 55 fields in 10 groups; each carries a
@@ -282,28 +282,28 @@ Three lanes run in parallel after the contracts/keys land. They touch disjoint r
   ATRPeriod/BBPeriod/BBDeviation/p_G02–p_G05/BasketTP_ATRSmoothPeriod — plus magic-number identity).
   **THREE-WAY MISMATCH resolved:** dropped non-EA keys (`MaxTradesPerSide`, `Slippage`, `TradeComment`,
   and the old UI's `MagicNumber`/`MaxBuyTrades`/`SignalGateEnabled`/`Stoch*`/hour-split session fields);
-  aligned bhub-api `ALLOWED_SETTINGS_KEYS` to the live subset (`LIVE_SETTINGS_KEYS`) and added an
+  aligned run-bot-api `ALLOWED_SETTINGS_KEYS` to the live subset (`LIVE_SETTINGS_KEYS`) and added an
   explicit server-side reject for restart-required keys (defense in depth). `SettingsPanel` ported to
   Liquid Glass with diff dialog + local presets; restart-required fields are read-only and never pushed
-  (`pushableSettings` = changed ∩ live keys). *Validated: 18 web schema unit tests + 3 new bhub-api
+  (`pushableSettings` = changed ∩ live keys). *Validated: 18 web schema unit tests + 3 new run-bot-api
   service tests (removed-keys rejected, restart-required rejected live, reconciled live keys accepted);
-  `pnpm types:check`/`lint`/`test` (226 pass) + bhub-api `npm run build`/`test` (58 pass) green.*
-  > **NOTE:** presets are localStorage-only — the slimmed bhub-api dropped the server-side preset
+  `pnpm types:check`/`lint`/`test` (226 pass) + run-bot-api `npm run build`/`test` (58 pass) green.*
+  > **NOTE:** presets are localStorage-only — the slimmed run-bot-api dropped the server-side preset
   > endpoints. Server-synced presets can be added later if needed.
 - ✅ **RB-55 Instance selector + status bar** `[DONE — feat/run-bot; types/lint/test green]` — `InstanceSelector`
   (`?agentId=` param, server-read + `router.replace`) over `lib/run-bot/use-bot-instances.ts` (GET
   `/console/instances`), + `ConnectionStatusBar` (bridge/MT5 online dots, last-seen counter, >5min offline banner).
 
 ### Phase 6 — PnL + hardening
-- ✅ **RB-60 PnL history** `[DONE — feat/run-bot-slim (bhub-api) + feat/run-bot (web); build/test green]` — store periodic PnL points (Mongo) + a `recharts` chart. *Validate: chart renders; survives refresh.*
-  Completed 2026-06-25. bhub-api: `EaPnlPoint` schema + `ea-pnl-points` collection (compound index agentId+ts),
+- ✅ **RB-60 PnL history** `[DONE — feat/run-bot-slim (run-bot-api) + feat/run-bot (web); build/test green]` — store periodic PnL points (Mongo) + a `recharts` chart. *Validate: chart renders; survives refresh.*
+  Completed 2026-06-25. run-bot-api: `EaPnlPoint` schema + `ea-pnl-points` collection (compound index agentId+ts),
   `ConsoleService.recordPnlPoint`/`getPnlHistory` (owner check, capped at 2000), scheduler cron `recordPnlSnapshots`
   (1/min over online instances), server-guarded `GET /console/instances/:agentId/pnl?limit=N`. web: `usePnlHistory`
   hook (react-query, 60s refetch, pure `sanitizePnlPoints`/`formatChartTime`) + `PnlChart` recharts area chart wired
   into `run-bot-shell`. Survives refresh by design (history persisted server-side, fetched on mount). *Validated:
-  bhub-api `npm run build`/`test` (74 pass, +7) + web `types:check`/`lint`(new files clean)/`test` (232 pass, +6).*
-- ⬜ **RB-61 Mock E2E** `[TODO]` — `mock-mt5` → bridge → bhub-api → browser, locally. *Validate: telemetry ≤3s; kill ACK.*
-- ⬜ **RB-62 Live VPS** `[TODO — needs your VPS + Proxmox + Windows build]` — real MT5 demo + new `.exe`/`.ex5`/DLL, bhub-api on Proxmox. *Validate: all actions confirmed.*
+  run-bot-api `npm run build`/`test` (74 pass, +7) + web `types:check`/`lint`(new files clean)/`test` (232 pass, +6).*
+- ⬜ **RB-61 Mock E2E** `[TODO]` — `mock-mt5` → bridge → run-bot-api → browser, locally. *Validate: telemetry ≤3s; kill ACK.*
+- ⬜ **RB-62 Live VPS** `[TODO — needs your VPS + Proxmox + Windows build]` — real MT5 demo + new `.exe`/`.ex5`/DLL, run-bot-api on Proxmox. *Validate: all actions confirmed.*
 - ⬜ **RB-63 Security pass** `[TODO]` — token tamper/owner cross-user test, CORS, rate limits, no key
   leakage to the browser bundle. Use `security-reviewer`. *Validate: cross-user denied; clean scan.*
 
@@ -312,9 +312,9 @@ Three lanes run in parallel after the contracts/keys land. They touch disjoint r
 ## 7. Tests (must ship with the code)
 
 - **CRITICAL:** `license-verify` regression test after RB-10 extract (revenue path unchanged).
-- Token sign/verify round-trip + expiry + tamper (ES256; Supabase signer ↔ bhub-api `JoseService`).
-- bhub-api owner check: user B cannot subscribe to OR command user A's `agentId` (REST + socket).
-- bhub-api: `bridge:register` must persist before `client:subscribe` succeeds (lockout regression).
+- Token sign/verify round-trip + expiry + tamper (ES256; Supabase signer ↔ run-bot-api `JoseService`).
+- run-bot-api owner check: user B cannot subscribe to OR command user A's `agentId` (REST + socket).
+- run-bot-api: `bridge:register` must persist before `client:subscribe` succeeds (lockout regression).
 - Bridge: token-refresh cycle — `auth:expired` → ZMQ request → EA returns token → re-auth.
 - EA: trading continues when the cloud/bridge is down (transport is non-blocking).
 - Settings schema: reject unknown/out-of-range/restart-required values (vitest + EA-side).
@@ -328,8 +328,8 @@ Three lanes run in parallel after the contracts/keys land. They touch disjoint r
 | Risk | Likelihood | Mitigation |
 |---|---|---|
 | Editing `license-verify` breaks the revenue path | Medium | Mint token from a separate `bot-token` fn reusing `license-core`; regression test; `sdd-license-flow-audit`. |
-| Self-hosted bhub-api down → no dashboard | Medium | Trading is unaffected (license is separate). Restart policy + tunnel health. |
-| Browser token signing key leaks into the client bundle | High if careless | Sign **server-side only** (server action). Public key only in bhub-api. Add a build check. |
+| Self-hosted run-bot-api down → no dashboard | Medium | Trading is unaffected (license is separate). Restart policy + tunnel health. |
+| Browser token signing key leaks into the client bundle | High if careless | Sign **server-side only** (server action). Public key only in run-bot-api. Add a build check. |
 | Two-system clock skew on token expiry | Low | Allow small leeway on verify; re-auth on 401. |
 | DLL must be rebuilt + re-released to every user | Certain | Versioned rollout; EA gates on min `GetDLLVersion`. |
 | Bridge `.exe` re-release | Certain | Small change; keep installer; document upgrade. |
@@ -344,8 +344,8 @@ Three lanes run in parallel after the contracts/keys land. They touch disjoint r
 ## 9. NOT in scope (v1)
 
 - Moving license off Supabase — it stays; only `bot-token` is added.
-- bhub-api's billing/membership/auth features — deleted, not ported.
-- Web-push offline alerts — bhub-api had these; revisit later via SafetyScore email/notify.
+- run-bot-api's billing/membership/auth features — deleted, not ported.
+- Web-push offline alerts — run-bot-api had these; revisit later via SafetyScore email/notify.
 - Additional EAs (FlexGridPro) — add a settings schema + an `eaType` later; no rearchitecture.
 - "Copy Bot" tab — separate effort.
 - Supabase Realtime, Edge-Function telemetry, migration 042, product-catalog prerequisite —
@@ -357,13 +357,13 @@ Three lanes run in parallel after the contracts/keys land. They touch disjoint r
 
 - [x] License unchanged: DLL Ed25519 → `license-verify`; regression test green. *(RB-10, Deno 102/102)*
 - [x] `bot-token` issues a valid token only for an active, account-bound license. *(RB-11, 7 tests)*
-- [x] bhub-api slimmed to `console`; builds with **Mongo only** (no Redis/BullMQ); no membership/auth modules. *(RB-20, build clean + 55 tests)*
-- [x] bhub-api accepts SafetyScore tokens, rejects tampered/foreign ones; owner check enforced. *(RB-21, unit-tested; live e2e pending RB-02)*
-- [ ] Bridge connects to Proxmox bhub-api with the EA-supplied token; no `/memberships/activate`. *(code done RB-30; live connect pending RB-22/RB-31)*
+- [x] run-bot-api slimmed to `console`; builds with **Mongo only** (no Redis/BullMQ); no membership/auth modules. *(RB-20, build clean + 55 tests)*
+- [x] run-bot-api accepts SafetyScore tokens, rejects tampered/foreign ones; owner check enforced. *(RB-21, unit-tested; live e2e pending RB-02)*
+- [ ] Bridge connects to Proxmox run-bot-api with the EA-supplied token; no `/memberships/activate`. *(code done RB-30; live connect pending RB-22/RB-31)*
 - [ ] EA has the panel folded in; trading continues if the cloud is down.
 - [ ] `/dashboard/run-bot` shows live data, start/stop, clear, kill switch, settings, presets.
-- [x] PnL recorded and charted. *(RB-60: bhub-api snapshots + web recharts chart; build/test green; live capture pending RB-62)*
-- [ ] Cloudflare Tunnel reaches bhub-api for both bridge and browser.
+- [x] PnL recorded and charted. *(RB-60: run-bot-api snapshots + web recharts chart; build/test green; live capture pending RB-62)*
+- [ ] Cloudflare Tunnel reaches run-bot-api for both bridge and browser.
 - [ ] `pnpm types:check`, `pnpm lint`, `pnpm test`, `deno test`, `go test -race` all pass.
 - [ ] Live VPS E2E on a demo account confirmed.
 - [ ] Security pass clean (RB-63): cross-user denied, no signing key in the client bundle.
@@ -376,8 +376,8 @@ Three lanes run in parallel after the contracts/keys land. They touch disjoint r
   reused via `activation-policy`. Dropped because high-frequency telemetry does not fit the
   Supabase free tier (one always-on bot at 3s exceeds 500K calls/month).
 - **v2 (superseded):** dropped the Go bridge and ZMQ; EA talked to Supabase directly via the
-  DLL. Dropped because the user chose to reuse the proven bhub-api console stack and keep ZMQ.
-- **v3 (this doc):** license on Supabase (DLL), telemetry on self-hosted bhub-api (Proxmox),
+  DLL. Dropped because the user chose to reuse the proven run-bot-api console stack and keep ZMQ.
+- **v3 (this doc):** license on Supabase (DLL), telemetry on self-hosted run-bot-api (Proxmox),
   ZMQ + Go bridge kept, UI ported into SafetyScore, SafetyScore as the single identity authority.
 
 ## GSTACK REVIEW REPORT
@@ -391,8 +391,8 @@ Three lanes run in parallel after the contracts/keys land. They touch disjoint r
 | DX Review | `/plan-devex-review` | Developer experience gaps | 0 | — | not run |
 
 **Decisions locked (2026-06-23):**
-1. Backend split — license on Supabase (DLL), telemetry on self-hosted bhub-api (Proxmox).
-2. Identity — SafetyScore is the sole authority; bhub-api is a trusted relay (memberships/auth/user deleted).
+1. Backend split — license on Supabase (DLL), telemetry on self-hosted run-bot-api (Proxmox).
+2. Identity — SafetyScore is the sole authority; run-bot-api is a trusted relay (memberships/auth/user deleted).
 3. Browser realtime — reuse bhub-new-ui socket.io hooks; Hosting — Docker Compose + Cloudflare Tunnel.
 4. Bot-token — new `bot-token` Edge Function reusing extracted `license-core` (isolates revenue path).
 5. Slim infra — drop Redis + BullMQ; keep Mongo only; in-memory telemetry cache.
@@ -400,7 +400,7 @@ Three lanes run in parallel after the contracts/keys land. They touch disjoint r
 
 **OUTSIDE VOICE (Claude subagent — Codex was unavailable):** found 5 concrete gaps, all now
 applied — (1) command path broke on deleting `auth/` → one ES256 token guard for REST + socket;
-(2) ES256 not EdDSA (matches bhub-api's existing crypto); (3) token refresh designed over a ZMQ
+(2) ES256 not EdDSA (matches run-bot-api's existing crypto); (3) token refresh designed over a ZMQ
 control frame; (4) ZMQ binds `127.0.0.1`; (5) token claims + register-before-subscribe ordering locked.
 
 **CROSS-MODEL TENSION (resolved by user):** reviewer pushed for telemetry-first scope and lighter

@@ -4,7 +4,7 @@ This file provides essential information for AI coding agents working on this co
 
 ## Project Overview
 
-**bhub-backend-v2** is a NestJS-based REST API and WebSocket server for a trading-focused SaaS platform. The platform provides membership management, trading tools, authentication, and real-time market data features.
+**run-bot** is a NestJS-based REST API and WebSocket server for a trading-focused SaaS platform. The platform provides membership management, trading tools, authentication, and real-time market data features.
 
 ### Key Characteristics
 
@@ -316,12 +316,12 @@ See `.env.example` for all variables. Key ones include:
 NODE_ENV=development|production
 PORT=4000
 FRONTEND_URL=http://localhost:3000
-MONGO_URI=mongodb://127.0.0.1:27017/bhub
+MONGO_URI=mongodb://127.0.0.1:27017/run-bot
 REDIS_URL=redis://127.0.0.1:6379
 
 # JWT (RS256 requires keys, HS256 requires secret)
 JWT_ISSUER=http://localhost:4000
-JWT_AUDIENCE=bhub-api
+JWT_AUDIENCE=run-bot-api
 JWT_ACCESS_ALG=RS256
 JWT_ACCESS_TTL=900
 JWT_ACCESS_PRIVATE_KEY_BASE64=<base64-encoded-PEM>
@@ -340,7 +340,7 @@ GOOGLE_CALLBACK_URL=http://localhost:4000/auth/google/callback
 AWS_ACCESS_KEY_ID=<access-key>
 AWS_SECRET_ACCESS_KEY=<secret-key>
 AWS_REGION=ap-southeast-2
-S3_BUCKET_NAME=bhub-dev-bucket
+S3_BUCKET_NAME=run-bot-dev-bucket
 
 # Security
 INTERNAL_HMAC_SECRET=<min-16-chars>

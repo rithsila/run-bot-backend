@@ -1,7 +1,7 @@
 import * as Joi from 'joi';
 
 /**
- * Env schema for the slimmed bhub-api (console telemetry/command feature only).
+ * Env schema for the slimmed run-bot-api (console telemetry/command feature only).
  *
  * The app keeps no user accounts and no license logic. It trusts ES256 tokens
  * signed by SafetyScore and verifies them with `SAFETYSCORE_TOKEN_PUBLIC_KEY`.

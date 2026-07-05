@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-NestJS backend API for "bhub" — a trading-focused SaaS platform covering membership management, trading tools, authentication, and real-time features.
+NestJS backend API for "run-bot" — the slimmed remote-control telemetry and commands backend for MT5 Expert Advisors.
 
 - **Database:** MongoDB with Mongoose ODM (`mongoose-paginate-v2` for pagination)
 - **Cache/Queue:** Redis with BullMQ
@@ -80,7 +80,7 @@ Applied in order via `APP_GUARD`:
 
 Remote control panel for MT5 Expert Advisors connected via a Go bridge process.
 
-**Architecture:** Browser ↔ bhub-api (Socket.IO `/console`) ↔ Go bridge (ZMQ PUB/SUB)
+**Architecture:** Browser ↔ run-bot-api (Socket.IO `/console`) ↔ Go bridge (ZMQ PUB/SUB)
 
 **Key pieces:**
 - `ConsoleGateway` — Socket.IO gateway at `/console` namespace; handles both browser clients and bridge connections. Dual-token auth: RS256 JWT (browsers) or JOSE membership token (bridge).

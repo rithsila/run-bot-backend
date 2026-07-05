@@ -21,7 +21,7 @@ chart — without logging into the Windows server by remote desktop.
 There are **two backends on purpose**:
 
 - **License** stays on **Supabase** (low traffic, cheap).
-- **Telemetry and commands** go to a **self-hosted server** called **bhub-api**
+- **Telemetry and commands** go to a **self-hosted server** called **run-bot-api**
   (high traffic, so we keep it off Supabase to avoid cost limits).
 
 Here is how the parts talk to each other:
@@ -40,7 +40,7 @@ Here is how the parts talk to each other:
                                                ▼
                               ┌────────────────────────────┐
                               │   Proxmox VM (your server) │
-                              │   bhub-api + MongoDB        │
+                              │   run-bot-api + MongoDB        │
                               │   (Docker Compose)          │
                               └──────────────│──────────────┘
                                              │ Socket.IO + REST (HTTPS)
@@ -56,14 +56,14 @@ Here is how the parts talk to each other:
 | A | **Signing keypair** | You generate it once | Ready (script exists) |
 | B | **Supabase `bot-token` function** | Supabase cloud | Built ✅ |
 | C | **SafetyScore web app** | Vercel (or your host) | Built ✅ |
-| D | **bhub-api + MongoDB** | Your Proxmox VM (Docker) | Built ✅ (live tunnel pending) |
+| D | **run-bot-api + MongoDB** | Your Proxmox VM (Docker) | Built ✅ (live tunnel pending) |
 | E | **Go bridge + MT5 EA/DLL** | Windows MT5 VPS | Needs Windows build |
 
 > **Terms used in this guide**
 > - **EA** = Expert Advisor = the trading robot program inside MT5.
 > - **DLL** = a small Windows library the EA uses to talk to the license server.
 > - **ZMQ** = a fast local messaging system the EA uses to talk to the Go bridge.
-> - **Socket.IO** = a real-time web connection used between the bridge, bhub-api,
+> - **Socket.IO** = a real-time web connection used between the bridge, run-bot-api,
 >   and the browser.
 > - **Token** = a short signed text (a JWT) that proves who you are. It expires
 >   after about 60 minutes.
@@ -78,13 +78,13 @@ Deploy in **this order**. Each part needs the one before it.
 
 1. **Part A — Generate the signing keypair.** Everything else uses these keys.
 2. **Part B — Deploy the Supabase `bot-token` function.** It needs the private key.
-3. **Part C — Deploy the web app.** It also needs the private key and the bhub-api URL.
-4. **Part D — Deploy bhub-api on Proxmox + the Cloudflare Tunnel.** It needs the
+3. **Part C — Deploy the web app.** It also needs the private key and the run-bot-api URL.
+4. **Part D — Deploy run-bot-api on Proxmox + the Cloudflare Tunnel.** It needs the
    public key and gives you the public HTTPS URL.
 5. **Part E — Build and install the Go bridge + EA/DLL on the MT5 VPS.** They need
-   the bhub-api URL.
+   the run-bot-api URL.
 
-> Note: Parts C and D both need the same things from each other. Deploy bhub-api
+> Note: Parts C and D both need the same things from each other. Deploy run-bot-api
 > (Part D) far enough to get its **public URL**, then put that URL into the web
 > app (Part C). The order above already handles this.
 
@@ -93,14 +93,14 @@ Deploy in **this order**. Each part needs the one before it.
 ## 3. Part A — Generate the signing keypair (one time)
 
 ### Why
-SafetyScore signs every token with a **private key**. bhub-api checks every
+SafetyScore signs every token with a **private key**. run-bot-api checks every
 token with the matching **public key**. This is one keypair. The private key
 must stay secret. The public key is safe to share.
 
 There is one private key and one public key:
 
 - **Private key** → goes into the **web app** and the **Supabase function**.
-- **Public key** → goes into **bhub-api** only.
+- **Public key** → goes into **run-bot-api** only.
 
 ### Steps
 
@@ -127,7 +127,7 @@ There is one private key and one public key:
 
 ### Why
 The EA asks for a license. If the license is valid, this function gives back a
-signed **bot token**. The bridge uses that token to connect to bhub-api.
+signed **bot token**. The bridge uses that token to connect to run-bot-api.
 
 This function reuses the same license logic as `license-verify`. The revenue
 path does not change.
@@ -161,7 +161,7 @@ path does not change.
 ### Why
 The website shows the `/dashboard/run-bot` page. When a logged-in user opens it,
 the **server** mints a short browser token (using the private key) so the
-browser can connect to bhub-api. The private key never reaches the browser.
+browser can connect to run-bot-api. The private key never reaches the browser.
 
 ### Environment variables to set
 
@@ -170,7 +170,7 @@ Set these in your hosting provider (for example, Vercel project settings):
 | Variable | Value | Notes |
 |---|---|---|
 | `SAFETYSCORE_TOKEN_PRIVATE_KEY` | The ES256 **private** key (PEM) | **Server-only.** Never expose to the browser. |
-| `NEXT_PUBLIC_BHUB_API_URL` | The bhub-api public HTTPS URL | From Part D, e.g. `https://bhub.your-domain.com` |
+| `NEXT_PUBLIC_BHUB_API_URL` | The run-bot-api public HTTPS URL | From Part D, e.g. `https://bhub.your-domain.com` |
 
 > `NEXT_PUBLIC_` means the value is visible in the browser. That is fine — it is
 > only a URL, not a secret. The private key has **no** `NEXT_PUBLIC_` prefix, so
@@ -195,12 +195,12 @@ Set these in your hosting provider (for example, Vercel project settings):
 
 ---
 
-## 6. Part D — Deploy bhub-api on your Proxmox VM
+## 6. Part D — Deploy run-bot-api on your Proxmox VM
 
 This is the self-hosted backend. It runs with Docker. It stores telemetry,
 audit logs, instances, and PnL history in MongoDB.
 
-> bhub-api already ships a full deploy guide at `bhub-api/DEPLOY.md`. This
+> run-bot-api already ships a full deploy guide at `run-bot-api/DEPLOY.md`. This
 > section is a short version. Read `DEPLOY.md` for the complete detail.
 
 ### 6.1 What you need first
@@ -208,11 +208,11 @@ audit logs, instances, and PnL history in MongoDB.
 - A Proxmox VM (Linux) with **Docker** and **Docker Compose** installed.
 - The **ES256 public key** from Part A.
 - The SafetyScore web origin (for CORS), e.g. `https://app.safetyscore.com`.
-  "CORS" is a browser rule that only lets the listed website talk to bhub-api.
+  "CORS" is a browser rule that only lets the listed website talk to run-bot-api.
 
 ### 6.2 Set the environment file
 
-In the `bhub-api/` folder on the VM:
+In the `run-bot-api/` folder on the VM:
 
 ```bash
 cp .env.docker.example .env
@@ -236,7 +236,7 @@ docker compose up -d --build
 ```
 
 This builds the image, starts MongoDB, waits until it is healthy, then starts
-bhub-api. Both restart by themselves if the VM reboots.
+run-bot-api. Both restart by themselves if the VM reboots.
 
 Check both are healthy:
 
@@ -254,7 +254,7 @@ curl http://127.0.0.1:4000/health
 ### 6.4 Put it on the internet with a Cloudflare Tunnel
 
 The VM has no public IP and no open ports. A **Cloudflare Tunnel** makes a safe
-outbound link and serves bhub-api at a stable HTTPS address. Both the Go bridge
+outbound link and serves run-bot-api at a stable HTTPS address. Both the Go bridge
 and the browser use that address.
 
 You need a Cloudflare account and a domain on Cloudflare.
@@ -279,14 +279,14 @@ Run it:
 cloudflared tunnel run <YOUR_TUNNEL_ID>
 ```
 
-(There is also a container option in `bhub-api/DEPLOY.md` if you prefer.)
+(There is also a container option in `run-bot-api/DEPLOY.md` if you prefer.)
 
 ### 6.5 After the tunnel is up
 
-- Your bhub-api public URL is now `https://bhub.your-domain.com`.
+- Your run-bot-api public URL is now `https://bhub.your-domain.com`.
 - **Go back to Part C** and set `NEXT_PUBLIC_BHUB_API_URL` to this URL, then
   redeploy the web app.
-- Make sure `FRONTEND_URL` in bhub-api matches the web origin exactly, or the
+- Make sure `FRONTEND_URL` in run-bot-api matches the web origin exactly, or the
   browser calls fail with a CORS error.
 - The tunnel is a **single point of failure** for telemetry and commands. Add
   simple up/down alerting on the hostname. (Trading itself is not affected — the
@@ -314,7 +314,7 @@ docker compose cp mongo:/tmp/backup.gz ./backup-$(date +%F).gz
 ### 7.1 The Go bridge
 
 The bridge runs on the same Windows VPS as MT5. It carries messages between the
-EA (over ZMQ on `127.0.0.1`) and bhub-api (over Socket.IO/HTTPS).
+EA (over ZMQ on `127.0.0.1`) and run-bot-api (over Socket.IO/HTTPS).
 
 1. Build the bridge for Windows (on a build machine):
 
@@ -325,7 +325,7 @@ EA (over ZMQ on `127.0.0.1`) and bhub-api (over Socket.IO/HTTPS).
 2. Copy the bridge `.exe` to the MT5 VPS.
 
 3. Set the bridge config (its `bridge.env` / `config.go` values) so it points at
-   your bhub-api URL:
+   your run-bot-api URL:
 
    ```
    BHUB_API_URL=https://bhub.your-domain.com
@@ -340,7 +340,7 @@ EA (over ZMQ on `127.0.0.1`) and bhub-api (over Socket.IO/HTTPS).
    bridge.exe --status
    ```
 
-   It should report a connection to bhub-api.
+   It should report a connection to run-bot-api.
 
 ### 7.2 The MT5 EA and DLL
 
@@ -359,7 +359,7 @@ EA (over ZMQ on `127.0.0.1`) and bhub-api (over Socket.IO/HTTPS).
    - Send it to the bridge over ZMQ.
    - Start sending telemetry.
 
-> **Safety rule:** if bhub-api or the bridge is down, **trading must continue**.
+> **Safety rule:** if run-bot-api or the bridge is down, **trading must continue**.
 > The transport is non-blocking by design. A cloud outage never stops trades.
 
 ---
@@ -369,8 +369,8 @@ EA (over ZMQ on `127.0.0.1`) and bhub-api (over Socket.IO/HTTPS).
 Do these in order. Each one proves the link before it works.
 
 1. **Supabase:** the EA gets a license **and** a non-empty bot token.
-2. **Bridge:** `bridge.exe --status` shows a live connection to bhub-api.
-3. **bhub-api:** `docker compose ps` shows both containers healthy; `/health`
+2. **Bridge:** `bridge.exe --status` shows a live connection to run-bot-api.
+3. **run-bot-api:** `docker compose ps` shows both containers healthy; `/health`
    returns ok.
 4. **Browser:** open `/dashboard/run-bot`, pick the instance. You should see:
    - Live telemetry updating within a few seconds.
@@ -387,10 +387,10 @@ Do these in order. Each one proves the link before it works.
 ## 9. Security checklist (do not skip)
 
 - [ ] The **private key** is only in the web app server env and the Supabase
-      secret. It is **never** in bhub-api, the browser bundle, logs, or chat.
-- [ ] The **public key** is only in bhub-api.
+      secret. It is **never** in run-bot-api, the browser bundle, logs, or chat.
+- [ ] The **public key** is only in run-bot-api.
 - [ ] You generated a **fresh** keypair for production (not the exposed dev one).
-- [ ] `FRONTEND_URL` in bhub-api matches the real web origin (CORS).
+- [ ] `FRONTEND_URL` in run-bot-api matches the real web origin (CORS).
 - [ ] ZMQ is bound to `127.0.0.1` only on the MT5 VPS (not the public internet).
 - [ ] MongoDB is internal-only (never published to the host).
 - [ ] The Cloudflare Tunnel has up/down alerting.
@@ -405,10 +405,10 @@ Do these in order. Each one proves the link before it works.
 | Variable | Lives in | Value | Secret? |
 |---|---|---|---|
 | `SAFETYSCORE_TOKEN_PRIVATE_KEY` | Web app (server) + Supabase secret | ES256 private PEM | **Yes** |
-| `SAFETYSCORE_TOKEN_PUBLIC_KEY` | bhub-api `.env` | ES256 public PEM | No |
+| `SAFETYSCORE_TOKEN_PUBLIC_KEY` | run-bot-api `.env` | ES256 public PEM | No |
 | `NEXT_PUBLIC_BHUB_API_URL` | Web app | `https://bhub.your-domain.com` | No |
-| `FRONTEND_URL` | bhub-api `.env` | The web origin (CORS) | No |
-| `PORT` | bhub-api `.env` | `4000` | No |
+| `FRONTEND_URL` | run-bot-api `.env` | The web origin (CORS) | No |
+| `PORT` | run-bot-api `.env` | `4000` | No |
 | `BHUB_API_URL` | Go bridge config | `https://bhub.your-domain.com` | No |
 
 ---
@@ -417,10 +417,10 @@ Do these in order. Each one proves the link before it works.
 
 | Problem | Likely cause | Fix |
 |---|---|---|
-| Browser shows CORS error | `FRONTEND_URL` does not match the web origin | Set it to the exact origin, restart bhub-api. |
+| Browser shows CORS error | `FRONTEND_URL` does not match the web origin | Set it to the exact origin, restart run-bot-api. |
 | Browser cannot connect at all | `NEXT_PUBLIC_BHUB_API_URL` wrong, or tunnel down | Check the URL and `cloudflared` status. |
-| bhub-api will not start | Missing public key or `FRONTEND_URL` | Fill both in `.env`. The app fails fast on purpose. |
-| Token rejected by bhub-api | Public/private keys do not match | They must be one pair. Regenerate and redeploy both halves. |
+| run-bot-api will not start | Missing public key or `FRONTEND_URL` | Fill both in `.env`. The app fails fast on purpose. |
+| Token rejected by run-bot-api | Public/private keys do not match | They must be one pair. Regenerate and redeploy both halves. |
 | Telemetry never appears | Bridge or EA not running, or token not sent | Start MT5 + EA first, then the bridge. Check `--status`. |
 | EA gets no token | License invalid, or `bot-token` not deployed | Check the license and that the function is live. |
 | Page empty but bot is trading | Cloud path down — this is safe | Trading continues. Fix the tunnel/bridge; trades are fine. |
@@ -435,7 +435,7 @@ Do these in order. Each one proves the link before it works.
 | A — Keypair script | ✅ Yes | Generate a production pair |
 | B — `bot-token` function | ✅ Yes | Deploy + set the secret |
 | C — Web app (run-bot UI, token mint, PnL chart) | ✅ Yes | Set env vars + deploy |
-| D — bhub-api Docker stack | ✅ Builds + boots locally | Run on Proxmox + live Cloudflare Tunnel |
+| D — run-bot-api Docker stack | ✅ Builds + boots locally | Run on Proxmox + live Cloudflare Tunnel |
 | E — Go bridge code | ✅ Code done | Build `.exe`, install on VPS |
 | E — MT5 EA + DLL | ⏳ Code planned | Build in MetaEditor / C++ on Windows |
 
@@ -450,4 +450,4 @@ built and tested in this repo is done and green.
 - `docs/run-bot/ImplementPlan.md` — the full plan, every task, and status.
 - `docs/run-bot/contracts.md` — the exact token claims, Socket.IO events, HTTP
   endpoints, and telemetry shape.
-- `bhub-api/DEPLOY.md` — the long version of Part D (Docker + tunnel).
+- `run-bot-api/DEPLOY.md` — the long version of Part D (Docker + tunnel).

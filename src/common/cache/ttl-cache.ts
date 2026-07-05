@@ -2,7 +2,7 @@
  * Minimal in-process key/value cache with per-entry TTL.
  *
  * Replaces the Redis telemetry cache (`ea:state:{agentId}`) for the slimmed,
- * single-instance bhub-api. Values are stored as strings (JSON) to mirror the
+ * single-instance run-bot-api. Values are stored as strings (JSON) to mirror the
  * previous Redis `setex`/`get` semantics. Expired entries are evicted lazily on
  * read and proactively by a periodic sweep.
  */
