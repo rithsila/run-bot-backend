@@ -7,15 +7,18 @@
 FROM node:20-bookworm-slim AS builder
 WORKDIR /app
 
+# Install pnpm
+RUN npm install -g pnpm
+
 # Install dependencies against the lockfile for reproducible builds.
-COPY package.json package-lock.json ./
-RUN npm ci
+COPY package.json pnpm-lock.yaml ./
+RUN pnpm install --frozen-lockfile
 
 # Compile TypeScript -> dist, then drop devDependencies so we copy a lean
 # node_modules into the runtime stage.
 COPY tsconfig.json tsconfig.build.json nest-cli.json ./
 COPY src ./src
-RUN npm run build && npm prune --omit=dev
+RUN pnpm run build && pnpm prune --prod
 
 # ---- Stage 2: runtime ----
 FROM node:20-bookworm-slim AS runner
