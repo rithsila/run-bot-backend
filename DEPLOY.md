@@ -1,15 +1,17 @@
 # Deploying run-bot-api (Run Bot backend)
 
-This guide explains how to host the **run-bot-api** NestJS backend and its **MongoDB database** on your own **Proxmox VE Virtual Machine or LXC Container running Ubuntu 24.04 Minimal**, exposing it securely using a **Cloudflare Tunnel**.
+This guide explains how to host the **run-bot-api** NestJS backend on your own **Proxmox VE Virtual Machine or LXC Container running Ubuntu 24.04 Minimal**, connecting to your free **Cloud MongoDB (MongoDB Atlas)** and exposing it securely using a **Cloudflare Tunnel**.
 
-Using your own Proxmox server ensures:
+Using your own Proxmox server with Cloud MongoDB ensures:
+- **Zero Local DB Overhead:** The VM runs only the light NestJS container, keeping the RAM footprint extremely small.
+- **Durable cloud storage:** Your database is safely managed in the cloud on MongoDB Atlas's free tier.
 - **Low Latency:** Physical proximity to your home setup (sub-1ms if your MT5 bridge is on the same local network, or minimal latency if hosted regionally).
 - **100% Free & Always On:** Hosted on your own hardware with no cloud provider limits or capacity issues.
 - **Security:** Using a Cloudflare Tunnel means you **do not need to open any ports** on your home internet router or configure DDNS.
 
-The stack has two services:
+The stack has only one service:
 - **run-bot-api** — the Node.js (NestJS) application.
-- **mongo** — the database. There is **no Redis** and **no BullMQ** required.
+- (MongoDB runs in the cloud on MongoDB Atlas free tier. No Redis and no BullMQ required).
 
 ---
 
@@ -18,9 +20,9 @@ The stack has two services:
 In your Proxmox VE web interface:
 1. Download the **Ubuntu 24.04 LTS Minimal** ISO (or use the Ubuntu 24.04 LXC template).
 2. Create a new VM or LXC Container with the following recommended specs:
-   - **Cores:** 1 or 2 vCPUs
-   - **Memory:** 1 GB or 2 GB RAM (NestJS and MongoDB run very leanly together)
-   - **Disk:** 10 GB to 20 GB storage (SSD recommended)
+   - **Cores:** 1 vCPU
+   - **Memory:** 512 MB or 1 GB RAM (NestJS runs extremely light when the database is in the cloud)
+   - **Disk:** 8 GB to 10 GB storage
    - **Network:** Connected to your default bridge (`vmbr0`) with DHCP or static local IP.
 3. Install Ubuntu 24.04 Minimal, set up your username, and enable the **OpenSSH Server** during installation.
 
@@ -69,23 +71,24 @@ sudo apt-get install -y docker-compose-v2
 3. Edit `.env` (`nano .env`) and set your variables:
    - `PORT`: The port the app runs on (default `4000`).
    - `FRONTEND_URL`: The URL of your SafetyScore web app (e.g., `https://easafetyscore.com`).
+   - `MONGO_URI`: Your MongoDB Atlas cloud database connection URI (e.g., `mongodb+srv://<username>:<password>@cluster0.eqyh7oq.mongodb.net/run-bot?retryWrites=true&w=majority`).
    - `SAFETYSCORE_TOKEN_PUBLIC_KEY`: The ES256 public key (raw PEM or base64-encoded PEM) signed by SafetyScore.
 
 ---
 
 ## 4. Run the Stack
 
-Start the database and backend services using Docker Compose:
+Start the backend service using Docker Compose:
 ```bash
 docker compose up -d --build
 ```
 
-Verify that both services are healthy:
+Verify that the service is running and healthy:
 ```bash
 docker compose ps
 ```
 
-The database volume `mongo-data` is mounted inside MongoDB automatically to persist your settings, audit logs, and instances. Only `run-bot-api` can access MongoDB over the private Compose network.
+Only the `run-bot-api` container runs on the VM. It connects directly to your cloud MongoDB instance.
 
 ---
 
