@@ -7,6 +7,8 @@ export enum AuditEvent {
     KillSwitch = 'kill_switch',
     KillReset = 'kill_reset',
     MasterEnable = 'master_enable',
+    CloseBuy = 'close_buy',
+    CloseSell = 'close_sell',
     SettingsChange = 'settings_change',
     BridgeConnect = 'bridge_connect',
     BridgeDisconnect = 'bridge_disconnect',

@@ -12,6 +12,7 @@ import { ConsoleService } from './console.service';
 import { ConsoleGateway } from './console.gateway';
 import { EaInstance } from './schemas/ea-instance.schema';
 import { EaAuditLog, AuditEvent } from './schemas/ea-audit-log.schema';
+import { EaPnlPoint } from './schemas/ea-pnl-point.schema';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -50,11 +51,13 @@ describe('ConsoleService', () => {
     let service: ConsoleService;
     let instanceModel: ReturnType<typeof makeModel>;
     let auditModel: ReturnType<typeof makeModel>;
+    let pnlModel: ReturnType<typeof makeModel>;
     let gateway: ReturnType<typeof makeGateway>;
 
     beforeEach(async () => {
         instanceModel = makeModel();
         auditModel = makeModel();
+        pnlModel = makeModel();
         gateway = makeGateway();
 
         const module: TestingModule = await Test.createTestingModule({
@@ -67,6 +70,10 @@ describe('ConsoleService', () => {
                 {
                     provide: getModelToken(EaAuditLog.name),
                     useValue: auditModel,
+                },
+                {
+                    provide: getModelToken(EaPnlPoint.name),
+                    useValue: pnlModel,
                 },
                 { provide: ConsoleGateway, useValue: gateway },
             ],
@@ -313,6 +320,144 @@ describe('ConsoleService', () => {
         });
     });
 
+    // ── sendCloseBuy / sendCloseSell ──────────────────────────────────────────
+
+    describe('sendCloseBuy', () => {
+        beforeEach(() => {
+            instanceModel.findOne.mockReturnValue({
+                lean: () => ({
+                    exec: () =>
+                        Promise.resolve({
+                            agentId: 'agent-1',
+                            userId: 'user-1',
+                            online: true,
+                        }),
+                }),
+            });
+            auditModel.create.mockResolvedValue({});
+        });
+
+        it('sends CLOSE_BUY verb to bridge', async () => {
+            await service.sendCloseBuy('agent-1', 'user-1');
+            expect(gateway.sendCommandToBridge).toHaveBeenCalledWith(
+                'agent-1',
+                expect.any(String),
+                'CLOSE_BUY',
+            );
+        });
+
+        it('logs CloseBuy audit event', async () => {
+            await service.sendCloseBuy('agent-1', 'user-1');
+            expect(auditModel.create).toHaveBeenCalledWith(
+                expect.objectContaining({ event: AuditEvent.CloseBuy }),
+            );
+        });
+
+        it('returns a commandId', async () => {
+            const result = await service.sendCloseBuy('agent-1', 'user-1');
+            expect(result).toHaveProperty('commandId');
+            expect(typeof result.commandId).toBe('string');
+        });
+
+        it('throws NotFoundException when EA is offline', async () => {
+            instanceModel.findOne.mockReturnValue({
+                lean: () => ({
+                    exec: () =>
+                        Promise.resolve({
+                            agentId: 'agent-1',
+                            userId: 'user-1',
+                            online: false,
+                        }),
+                }),
+            });
+            await expect(
+                service.sendCloseBuy('agent-1', 'user-1'),
+            ).rejects.toThrow(NotFoundException);
+        });
+
+        it('throws ForbiddenException when userId does not match', async () => {
+            instanceModel.findOne.mockReturnValue({
+                lean: () => ({
+                    exec: () =>
+                        Promise.resolve({
+                            agentId: 'agent-1',
+                            userId: 'user-OWNER',
+                            online: true,
+                        }),
+                }),
+            });
+            await expect(
+                service.sendCloseBuy('agent-1', 'user-OTHER'),
+            ).rejects.toThrow(ForbiddenException);
+            expect(gateway.sendCommandToBridge).not.toHaveBeenCalled();
+        });
+    });
+
+    describe('sendCloseSell', () => {
+        beforeEach(() => {
+            instanceModel.findOne.mockReturnValue({
+                lean: () => ({
+                    exec: () =>
+                        Promise.resolve({
+                            agentId: 'agent-1',
+                            userId: 'user-1',
+                            online: true,
+                        }),
+                }),
+            });
+            auditModel.create.mockResolvedValue({});
+        });
+
+        it('sends CLOSE_SELL verb to bridge', async () => {
+            await service.sendCloseSell('agent-1', 'user-1');
+            expect(gateway.sendCommandToBridge).toHaveBeenCalledWith(
+                'agent-1',
+                expect.any(String),
+                'CLOSE_SELL',
+            );
+        });
+
+        it('logs CloseSell audit event', async () => {
+            await service.sendCloseSell('agent-1', 'user-1');
+            expect(auditModel.create).toHaveBeenCalledWith(
+                expect.objectContaining({ event: AuditEvent.CloseSell }),
+            );
+        });
+
+        it('throws NotFoundException when EA is offline', async () => {
+            instanceModel.findOne.mockReturnValue({
+                lean: () => ({
+                    exec: () =>
+                        Promise.resolve({
+                            agentId: 'agent-1',
+                            userId: 'user-1',
+                            online: false,
+                        }),
+                }),
+            });
+            await expect(
+                service.sendCloseSell('agent-1', 'user-1'),
+            ).rejects.toThrow(NotFoundException);
+        });
+
+        it('throws ForbiddenException when userId does not match', async () => {
+            instanceModel.findOne.mockReturnValue({
+                lean: () => ({
+                    exec: () =>
+                        Promise.resolve({
+                            agentId: 'agent-1',
+                            userId: 'user-OWNER',
+                            online: true,
+                        }),
+                }),
+            });
+            await expect(
+                service.sendCloseSell('agent-1', 'user-OTHER'),
+            ).rejects.toThrow(ForbiddenException);
+            expect(gateway.sendCommandToBridge).not.toHaveBeenCalled();
+        });
+    });
+
     // ── pushSettings ──────────────────────────────────────────────────────────
 
     describe('pushSettings', () => {
@@ -334,6 +479,46 @@ describe('ConsoleService', () => {
             await expect(
                 service.pushSettings('agent-1', { UnknownKey: 99 }, 'user-1'),
             ).rejects.toThrow(BadRequestException);
+        });
+
+        it('rejects keys that were removed during RB-54 reconciliation', async () => {
+            // These were in the old whitelist but are NOT real EA params.
+            for (const key of [
+                'MaxTradesPerSide',
+                'Slippage',
+                'TradeComment',
+            ]) {
+                await expect(
+                    service.pushSettings('agent-1', { [key]: 1 }, 'user-1'),
+                ).rejects.toThrow(BadRequestException);
+            }
+        });
+
+        it('rejects restart-required keys live (indicator handles / identity)', async () => {
+            for (const key of [
+                'ATRPeriod',
+                'BBPeriod',
+                'p_G03',
+                'BasketTP_ATRSmoothPeriod',
+                'BuyMagicNumber',
+            ]) {
+                await expect(
+                    service.pushSettings('agent-1', { [key]: 5 }, 'user-1'),
+                ).rejects.toThrow(/Restart-required/);
+            }
+        });
+
+        it('accepts reconciled live keys (real EA params)', async () => {
+            const settings = {
+                EnableBuy: false,
+                p_G06: 75,
+                BasketTP_FixedPips: 25,
+                AsiaSessionLocal: '06:30-04:00',
+                DailyProfitMode: 1,
+            };
+            await expect(
+                service.pushSettings('agent-1', settings, 'user-1'),
+            ).resolves.toHaveProperty('commandId');
         });
 
         it('sends SETTINGS command with base64-encoded JSON payload', async () => {
@@ -480,6 +665,105 @@ describe('ConsoleService', () => {
             await service.getAuditLog('agent-1', 'user-1', 10);
 
             expect(sortSpy).toHaveBeenCalledWith({ createdAt: -1 });
+        });
+    });
+
+    // ── PnL history (RB-60) ────────────────────────────────────────────────────
+
+    describe('recordPnlPoint', () => {
+        const telemetry = {
+            agentId: 'agent-1',
+            ts: 1_700_000,
+            account: { equity: 1050, balance: 1000, dailyPnl: 12 },
+            positions: { totalPnl: 50 },
+        };
+
+        it('inserts a point from cached telemetry', async () => {
+            gateway.getCachedState.mockReturnValue(JSON.stringify(telemetry));
+            const ok = await service.recordPnlPoint('agent-1');
+            expect(ok).toBe(true);
+            expect(pnlModel.create).toHaveBeenCalledWith({
+                agentId: 'agent-1',
+                ts: 1_700_000 * 1000,
+                equity: 1050,
+                balance: 1000,
+                totalPnl: 50,
+                dailyPnl: 12,
+            });
+        });
+
+        it('does nothing when there is no cached telemetry', async () => {
+            gateway.getCachedState.mockReturnValue(null);
+            const ok = await service.recordPnlPoint('agent-1');
+            expect(ok).toBe(false);
+            expect(pnlModel.create).not.toHaveBeenCalled();
+        });
+
+        it('does nothing when cached telemetry is invalid JSON', async () => {
+            gateway.getCachedState.mockReturnValue('{not json');
+            const ok = await service.recordPnlPoint('agent-1');
+            expect(ok).toBe(false);
+            expect(pnlModel.create).not.toHaveBeenCalled();
+        });
+
+        it('does nothing when account telemetry is missing', async () => {
+            gateway.getCachedState.mockReturnValue(
+                JSON.stringify({ agentId: 'agent-1', ts: 1 }),
+            );
+            const ok = await service.recordPnlPoint('agent-1');
+            expect(ok).toBe(false);
+            expect(pnlModel.create).not.toHaveBeenCalled();
+        });
+    });
+
+    describe('getPnlHistory', () => {
+        function mockOwnedBy(userId: string | null) {
+            instanceModel.findOne.mockReturnValue({
+                lean: () => ({
+                    exec: () => Promise.resolve({ agentId: 'agent-1', userId }),
+                }),
+            });
+        }
+
+        it('returns points sorted by ts ascending, capped at the limit', async () => {
+            mockOwnedBy('user-1');
+            const points = [{ ts: 1 }, { ts: 2 }];
+            const limitSpy = jest.fn().mockReturnValue({
+                lean: () => ({ exec: () => Promise.resolve(points) }),
+            });
+            const sortSpy = jest.fn().mockReturnValue({ limit: limitSpy });
+            pnlModel.find = jest.fn().mockReturnValue({ sort: sortSpy });
+
+            const result = await service.getPnlHistory(
+                'agent-1',
+                'user-1',
+                500,
+            );
+
+            expect(pnlModel.find).toHaveBeenCalledWith({ agentId: 'agent-1' });
+            expect(sortSpy).toHaveBeenCalledWith({ ts: 1 });
+            expect(limitSpy).toHaveBeenCalledWith(500);
+            expect(result).toEqual(points);
+        });
+
+        it('caps the limit at 2000 even when a higher limit is requested', async () => {
+            mockOwnedBy('user-1');
+            const limitSpy = jest.fn().mockReturnValue({
+                lean: () => ({ exec: () => Promise.resolve([]) }),
+            });
+            const sortSpy = jest.fn().mockReturnValue({ limit: limitSpy });
+            pnlModel.find = jest.fn().mockReturnValue({ sort: sortSpy });
+
+            await service.getPnlHistory('agent-1', 'user-1', 99999);
+
+            expect(limitSpy).toHaveBeenCalledWith(2000);
+        });
+
+        it('throws ForbiddenException when userId does not match', async () => {
+            mockOwnedBy('user-OWNER');
+            await expect(
+                service.getPnlHistory('agent-1', 'user-OTHER', 100),
+            ).rejects.toThrow(ForbiddenException);
         });
     });
 

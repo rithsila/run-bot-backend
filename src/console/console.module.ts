@@ -3,6 +3,7 @@ import { MongooseModule } from '@nestjs/mongoose';
 
 import { EaInstance, EaInstanceSchema } from './schemas/ea-instance.schema';
 import { EaAuditLog, EaAuditLogSchema } from './schemas/ea-audit-log.schema';
+import { EaPnlPoint, EaPnlPointSchema } from './schemas/ea-pnl-point.schema';
 import { ConsoleController } from './console.controller';
 import { ConsoleGateway } from './console.gateway';
 import { ConsoleService } from './console.service';
@@ -13,6 +14,7 @@ import { ConsoleScheduler } from './console.scheduler';
         MongooseModule.forFeature([
             { name: EaInstance.name, schema: EaInstanceSchema },
             { name: EaAuditLog.name, schema: EaAuditLogSchema },
+            { name: EaPnlPoint.name, schema: EaPnlPointSchema },
         ]),
     ],
     controllers: [ConsoleController],

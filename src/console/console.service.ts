@@ -15,23 +15,69 @@ import {
     EaAuditLogDocument,
     AuditEvent,
 } from './schemas/ea-audit-log.schema';
+import { EaPnlPoint, EaPnlPointDocument } from './schemas/ea-pnl-point.schema';
 import { ConsoleGateway } from './console.gateway';
 import { TelemetryDto } from './dto/telemetry.dto';
 
-// Whitelist of known EA parameter keys that may be pushed via settings command.
-// Reject payloads containing keys outside this set.
+// Canonical EA settings whitelist (RB-54).
+//
+// SOURCE OF TRUTH: the EA's real `input` params in
+// `console panel/EA Sn1P3r Grid Hunter/Sn1P3r Grid Hunter.mq5`, mirrored by
+// the SafetyScore web schema `web/src/lib/run-bot/settings-schema.ts`
+// (`LIVE_SETTINGS_KEYS`). Keep these two lists in sync.
+//
+// ALLOWED_SETTINGS_KEYS = keys the EA can apply WHILE RUNNING (live).
+// RESTART_REQUIRED_KEYS = real EA params that feed indicator handles created in
+// OnInit (iATR/iBands/iStochastic) or define position identity (magic numbers).
+// Pushing them mid-trade is a safety bug, so they are rejected here too —
+// defense in depth behind the UI, which renders them read-only.
 const ALLOWED_SETTINGS_KEYS = new Set([
+    // Trading direction
     'EnableBuy',
     'EnableSell',
-    'EnableBasketTakeProfit',
-    'BasketTakeProfitMode',
+    // Lot sizing
     'StartingLots',
     'LayerMultiplier',
     'MaximumLotSizeCap',
-    'MaxTrades',
-    'MaxTradesPerSide',
+    // Grid
+    'UseOpenCandle',
     'PipStep',
+    'MaxTrades',
     'PipStepMode',
+    // Adaptive pip step (non-handle)
+    'ATRSimpleMultiplier',
+    'ATRPercentileLookback',
+    'MinAdaptiveStepPips',
+    'MaxAdaptiveStepPips',
+    // Signal gate (non-handle: gate toggles + thresholds)
+    'p_G01',
+    'p_G06',
+    'p_G07',
+    'p_G08',
+    // Basket take profit (non-handle)
+    'EnableBasketTakeProfit',
+    'BasketTakeProfitMode',
+    'BasketTP_FixedPips',
+    'BasketTP_ATRMultiplierK',
+    // Equity protection
+    'EnableEquityProtection',
+    'StopLossDrawdownPercent',
+    // Safety filters
+    'CheckMarginBeforeTrade',
+    'MinFreeMarginPercentRequired',
+    'EnableSpreadFilter',
+    'MaxSpreadPips',
+    'PauseOnExtremeVolatility',
+    'PauseIfATRMulAboveNormal',
+    'ATRNormalLookbackBars',
+    // Daily profit target
+    'UseDailyProfitLimit',
+    'DailyProfitMode',
+    'DailyGrossProfitLimit',
+    'DailyProfitMoneyTarget',
+    'TargetEquityAmount',
+    'CloseAllWhenLimitReached',
+    // Session filter
     'EnableSessionFilter',
     'CloseAllOutsideSession',
     'BrokerGMTOffset',
@@ -41,12 +87,20 @@ const ALLOWED_SETTINGS_KEYS = new Set([
     'LondonSessionLocal',
     'TradeNewYorkSession',
     'NewYorkSessionLocal',
-    'EnableEquityProtection',
-    'StopLossDrawdownPercent',
-    'BuyMagicNumber',
-    'SellMagicNumber',
-    'Slippage',
-    'TradeComment',
+]);
+
+// Real EA params that cannot be applied live (indicator handles / identity).
+const RESTART_REQUIRED_KEYS = new Set([
+    'ATRPeriod', // iATR handle
+    'BBPeriod', // iBands handle
+    'BBDeviation', // iBands handle
+    'p_G02', // iStochastic timeframe
+    'p_G03', // iStochastic K period
+    'p_G04', // iStochastic D period
+    'p_G05', // iStochastic smoothing
+    'BasketTP_ATRSmoothPeriod', // iATR (TP) handle
+    'BuyMagicNumber', // position identity
+    'SellMagicNumber', // position identity
 ]);
 
 @Injectable()
@@ -58,6 +112,8 @@ export class ConsoleService {
         private readonly instanceModel: Model<EaInstanceDocument>,
         @InjectModel(EaAuditLog.name)
         private readonly auditModel: Model<EaAuditLogDocument>,
+        @InjectModel(EaPnlPoint.name)
+        private readonly pnlModel: Model<EaPnlPointDocument>,
         private readonly gateway: ConsoleGateway,
     ) {}
 
@@ -158,6 +214,46 @@ export class ConsoleService {
         return { commandId };
     }
 
+    async sendCloseBuy(
+        agentId: string,
+        userId: string,
+    ): Promise<{ commandId: string }> {
+        await this.requireOwnership(agentId, userId);
+        await this.requireOnline(agentId);
+        const commandId = uuidv4();
+        this.gateway.sendCommandToBridge(agentId, commandId, 'CLOSE_BUY');
+        await this.logEvent(
+            agentId,
+            AuditEvent.CloseBuy,
+            { commandId },
+            userId,
+        );
+        this.logger.log(
+            `close_buy agentId=${agentId} commandId=${commandId} userId=${userId}`,
+        );
+        return { commandId };
+    }
+
+    async sendCloseSell(
+        agentId: string,
+        userId: string,
+    ): Promise<{ commandId: string }> {
+        await this.requireOwnership(agentId, userId);
+        await this.requireOnline(agentId);
+        const commandId = uuidv4();
+        this.gateway.sendCommandToBridge(agentId, commandId, 'CLOSE_SELL');
+        await this.logEvent(
+            agentId,
+            AuditEvent.CloseSell,
+            { commandId },
+            userId,
+        );
+        this.logger.log(
+            `close_sell agentId=${agentId} commandId=${commandId} userId=${userId}`,
+        );
+        return { commandId };
+    }
+
     async pushSettings(
         agentId: string,
         settings: Record<string, unknown>,
@@ -233,6 +329,50 @@ export class ConsoleService {
             .exec();
     }
 
+    // ── PnL history (RB-60) ─────────────────────────────────────────────────────
+
+    /**
+     * Snapshot the agent's current PnL from cached telemetry into Mongo.
+     * Called periodically by the scheduler for each online instance. Returns
+     * true when a point was written, false when there is no usable telemetry.
+     */
+    async recordPnlPoint(agentId: string): Promise<boolean> {
+        const raw = this.gateway.getCachedState(agentId);
+        if (!raw) return false;
+        let telemetry: TelemetryDto;
+        try {
+            telemetry = JSON.parse(raw) as TelemetryDto;
+        } catch {
+            return false;
+        }
+        const account = telemetry.account;
+        if (!account || typeof account.equity !== 'number') return false;
+
+        await this.pnlModel.create({
+            agentId,
+            ts: (telemetry.ts ?? 0) * 1000,
+            equity: account.equity,
+            balance: account.balance,
+            totalPnl: telemetry.positions?.totalPnl ?? 0,
+            dailyPnl: account.dailyPnl ?? 0,
+        });
+        return true;
+    }
+
+    async getPnlHistory(
+        agentId: string,
+        userId: string,
+        limit: number,
+    ): Promise<EaPnlPoint[]> {
+        await this.requireOwnership(agentId, userId);
+        return this.pnlModel
+            .find({ agentId })
+            .sort({ ts: 1 })
+            .limit(Math.min(limit, 2000))
+            .lean()
+            .exec();
+    }
+
     // ── Private helpers ───────────────────────────────────────────────────────
 
     private async requireOwnership(
@@ -263,9 +403,19 @@ export class ConsoleService {
     }
 
     private validateSettingsKeys(settings: Record<string, unknown>): void {
-        const unknown = Object.keys(settings).filter(
-            (k) => !ALLOWED_SETTINGS_KEYS.has(k),
+        const keys = Object.keys(settings);
+        // Restart-required keys are real EA params but cannot be applied live —
+        // reject them explicitly so the EA never receives an unsafe mid-trade
+        // change (defense in depth behind the read-only UI).
+        const restartRequired = keys.filter((k) =>
+            RESTART_REQUIRED_KEYS.has(k),
         );
+        if (restartRequired.length > 0) {
+            throw new BadRequestException(
+                `Restart-required settings cannot be changed live: ${restartRequired.join(', ')}`,
+            );
+        }
+        const unknown = keys.filter((k) => !ALLOWED_SETTINGS_KEYS.has(k));
         if (unknown.length > 0) {
             throw new BadRequestException(
                 `Unknown settings keys: ${unknown.join(', ')}`,

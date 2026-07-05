@@ -76,4 +76,27 @@ export class ConsoleScheduler {
             );
         }
     }
+
+    /**
+     * Periodic PnL snapshot (RB-60). Samples each online instance's cached
+     * telemetry once a minute and persists a point so the dashboard chart has a
+     * durable history that survives page refresh.
+     */
+    @Cron('0 * * * * *')
+    async recordPnlSnapshots(): Promise<void> {
+        const onlineInstances = await this.instanceModel
+            .find({ online: true })
+            .lean()
+            .exec();
+
+        for (const instance of onlineInstances) {
+            try {
+                await this.consoleService.recordPnlPoint(instance.agentId);
+            } catch (err) {
+                this.logger.warn(
+                    `PnL snapshot failed: agentId=${instance.agentId} err=${String(err)}`,
+                );
+            }
+        }
+    }
 }

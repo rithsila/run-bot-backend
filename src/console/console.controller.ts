@@ -53,6 +53,15 @@ export class ConsoleController {
         return this.console.getAuditLog(agentId, req.user.userId, limit);
     }
 
+    @Get('instances/:agentId/pnl')
+    async getPnlHistory(
+        @Param('agentId') agentId: string,
+        @Query('limit', new DefaultValuePipe(500), ParseIntPipe) limit: number,
+        @Req() req: AuthRequest,
+    ) {
+        return this.console.getPnlHistory(agentId, req.user.userId, limit);
+    }
+
     @Post('instances/:agentId/kill-switch')
     @HttpCode(HttpStatus.OK)
     @Throttle({ default: { limit: 20, ttl: 60_000 } })
@@ -91,6 +100,23 @@ export class ConsoleController {
             dto.enabled,
             req.user.userId,
         );
+    }
+
+    @Post('instances/:agentId/close-buy')
+    @HttpCode(HttpStatus.OK)
+    @Throttle({ default: { limit: 20, ttl: 60_000 } })
+    async closeBuy(@Param('agentId') agentId: string, @Req() req: AuthRequest) {
+        return this.console.sendCloseBuy(agentId, req.user.userId);
+    }
+
+    @Post('instances/:agentId/close-sell')
+    @HttpCode(HttpStatus.OK)
+    @Throttle({ default: { limit: 20, ttl: 60_000 } })
+    async closeSell(
+        @Param('agentId') agentId: string,
+        @Req() req: AuthRequest,
+    ) {
+        return this.console.sendCloseSell(agentId, req.user.userId);
     }
 
     @Post('instances/:agentId/settings')
