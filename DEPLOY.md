@@ -1,106 +1,133 @@
 # Deploying run-bot-api (Run Bot backend)
 
-This guide explains how to host the **run-bot-api** NestJS backend on **Render.com** and its **MongoDB database** on **MongoDB Atlas** completely for free.
+This guide explains how to host the **run-bot-api** NestJS backend and its **MongoDB database** on your own **Proxmox VE Virtual Machine or LXC Container running Ubuntu 24.04 Minimal**, exposing it securely using a **Cloudflare Tunnel**.
 
-run-bot-api is the slimmed Run Bot backend. It handles **telemetry and commands** for the MT5 bot. It does **not** check licenses and does **not** store user accounts. It only trusts short-lived tokens signed by SafetyScore.
+Using your own Proxmox server ensures:
+- **Low Latency:** Physical proximity to your home setup (sub-1ms if your MT5 bridge is on the same local network, or minimal latency if hosted regionally).
+- **100% Free & Always On:** Hosted on your own hardware with no cloud provider limits or capacity issues.
+- **Security:** Using a Cloudflare Tunnel means you **do not need to open any ports** on your home internet router or configure DDNS.
 
-Because run-bot-api uses **Socket.IO** for real-time telemetry and commands, it requires a host that supports persistent WebSocket connections. Serverless platforms (like Vercel or Supabase Edge Functions) will **not** work. We must use a Platform-as-a-Service (PaaS) that runs long-lived containerized processes.
-
----
-
-## 1. Set Up MongoDB Atlas (M0 Free Tier in Singapore)
-
-MongoDB Atlas is the official database-as-a-service from the creators of MongoDB. Its free tier is highly reliable, stays free forever, and allows you to select the **Singapore** region so that your database is physically close to Cambodia.
-
-### Steps to Set Up:
-1. **Sign Up:** Go to [mongodb.com/cloud/atlas](https://www.mongodb.com/cloud/atlas) and create a free account (no credit card required).
-2. **Create a Cluster:**
-   - Choose the **M0 (Free)** tier.
-   - Select a provider (AWS or Google Cloud) and select **Singapore (ap-southeast-1)** as the region.
-   - Click **Create**.
-3. **Database Security (Network Access):**
-   - Go to **Network Access** in the left menu.
-   - Click **Add IP Address**.
-   - Select **Allow Access from Anywhere** (`0.0.0.0/0`) because free-tier hosts like Render use dynamic IP addresses that change frequently.
-4. **Database Access (User):**
-   - Go to **Database Access** in the left menu.
-   - Click **Add New Database User**.
-   - Choose **Password** authentication.
-   - Create a username (e.g., `run_bot_user`) and a secure password. Make sure the role is set to `Read and write to any database`.
-5. **Get the Connection URI:**
-   - Go to **Database / Clusters**.
-   - Click the **Connect** button on your database cluster.
-   - Select **Drivers** under "Connect to your application".
-   - Copy the connection string (URI). It will look like this:
-     ```
-     mongodb+srv://run_bot_user:<password>@cluster0.xxxx.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0
-     ```
-   - Replace `<password>` with the password you created for your database user, and append the database name (e.g., `run-bot`) before the query parameters:
-     ```
-     mongodb+srv://run_bot_user:MySecurePassword@cluster0.xxxx.mongodb.net/run-bot?retryWrites=true&w=majority&appName=Cluster0
-     ```
+The stack has two services:
+- **run-bot-api** — the Node.js (NestJS) application.
+- **mongo** — the database. There is **no Redis** and **no BullMQ** required.
 
 ---
 
-## 2. Deploy Backend on Render.com
+## 1. Create VM or LXC on Proxmox
 
-Render offers a free Web Service tier. It integrates directly with GitHub or GitLab, and can deploy from the existing `Dockerfile` in the project.
-
-- **Resources:** 512MB RAM, shared CPU.
-- **WebSockets:** Fully supported.
-- **Spin-down Caveat:** Free tier services automatically spin down (sleep) after 15 minutes of inactivity. When a client connects to a sleeping service, it triggers a "cold start" delay of 30+ seconds. We will resolve this in Section 3 using a keep-alive monitor.
-
-### Deployment Steps:
-1. Push your `run-bot-back` code to a repository on **GitHub** or **GitLab**.
-2. Sign up at [dashboard.render.com](https://dashboard.render.com) (no credit card required).
-3. Click **New +** and select **Web Service**.
-4. Connect your GitHub/GitLab repository.
-5. Configure the service:
-   - **Name:** `run-bot-api`
-   - **Environment:** Select **Docker** (Render will automatically detect your `Dockerfile` and build a production-pruned image using the multi-stage configuration).
-   - **Region:** Choose **Oregon (US)** or **Frankfurt (Europe)** (these are the available regions for Render's free tier).
-   - **Instance Type:** Select **Free**.
-6. Set the **Environment Variables** (see Section 4).
-7. Click **Create Web Service**. Render will build and deploy the container.
+In your Proxmox VE web interface:
+1. Download the **Ubuntu 24.04 LTS Minimal** ISO (or use the Ubuntu 24.04 LXC template).
+2. Create a new VM or LXC Container with the following recommended specs:
+   - **Cores:** 1 or 2 vCPUs
+   - **Memory:** 1 GB or 2 GB RAM (NestJS and MongoDB run very leanly together)
+   - **Disk:** 10 GB to 20 GB storage (SSD recommended)
+   - **Network:** Connected to your default bridge (`vmbr0`) with DHCP or static local IP.
+3. Install Ubuntu 24.04 Minimal, set up your username, and enable the **OpenSSH Server** during installation.
 
 ---
 
-## 3. Keep-Alive Setup (How to Avoid Spin-Down)
+## 2. Install Docker and Docker Compose on Ubuntu 24.04
 
-To ensure your free backend on Render stays awake 24/7 (which is critical for the MT5 Go bridge to connect instantly without a 30-second cold-start delay), set up a free uptime monitor:
+SSH into your Proxmox VM or open the Proxmox console:
+```bash
+ssh <username>@<YOUR_VM_IP>
+```
 
-1. Go to [uptime.robot](https://uptimerobot.com) or [cron-job.org](https://cron-job.org).
-2. Create a free account.
-3. Configure a new monitor:
-   - **Monitor Type:** HTTP(s) or Web Page.
-   - **URL:** `https://your-run-bot-api-url.onrender.com/health`
-   - **Interval:** Every **5 minutes** (this is well within Render's 15-minute timeout).
-4. This request returns `{"status":"ok"}` from the health check endpoint and keeps the server container hot and running 24/7 for free.
+Run the following commands to update the system and install Docker:
+```bash
+# Update package repositories
+sudo apt-get update && sudo apt-get upgrade -y
 
----
+# Install Docker
+sudo apt-get install -y docker.io
 
-## 4. Environment Variables Setup
+# Start and enable Docker
+sudo systemctl enable --now docker
 
-When creating your service on Render, navigate to the **Environment** section and add the following variables:
+# Add your user to the docker group so you don't need sudo for docker commands
+sudo usermod -aG docker $USER
 
-| Key | Value | Description |
-| :--- | :--- | :--- |
-| `NODE_ENV` | `production` | Sets NestJS to production mode (reduces logging overhead). |
-| `PORT` | `4000` | The port the container runs on inside Render. Render will bind this. |
-| `FRONTEND_URL` | `https://easafetyscore.com` | **CORS Allowlist:** Set this to your live SafetyScore website URL. |
-| `MONGO_URI` | `mongodb+srv://run_bot_user:MySecurePassword@cluster0.xxxx.mongodb.net/run-bot?retryWrites=true&w=majority` | Your MongoDB Atlas connection string. |
-| `SAFETYSCORE_TOKEN_PUBLIC_KEY` | `-----BEGIN PUBLIC KEY-----\n...\n-----END PUBLIC KEY-----` | The ES256 **public key** (PEM format) generated in your SafetyScore setup. |
+# Install Docker Compose (v2)
+sudo apt-get install -y docker-compose-v2
+```
 
-> [!NOTE]
-> If the hosting provider's UI struggles with multi-line keys, you can base64-encode the PEM key and paste it as a single line, as the config validation supports base64-encoded PEM public keys natively.
+> **Log out and log back in** to apply the docker group permissions.
 
 ---
 
-## 5. Connecting the Web App
+## 3. Clone and Configure the Application
 
-Once your `run-bot-api` is deployed and live (e.g., at `https://run-bot-api.onrender.com`):
+1. Clone your backend repository onto the VM:
+   ```bash
+   git clone https://github.com/rithsila/run-bot-backend.git
+   cd run-bot-backend
+   ```
+2. Create the environment file:
+   ```bash
+   cp .env.docker.example .env
+   ```
+3. Edit `.env` (`nano .env`) and set your variables:
+   - `PORT`: The port the app runs on (default `4000`).
+   - `FRONTEND_URL`: The URL of your SafetyScore web app (e.g., `https://easafetyscore.com`).
+   - `SAFETYSCORE_TOKEN_PUBLIC_KEY`: The ES256 public key (raw PEM or base64-encoded PEM) signed by SafetyScore.
+
+---
+
+## 4. Run the Stack
+
+Start the database and backend services using Docker Compose:
+```bash
+docker compose up -d --build
+```
+
+Verify that both services are healthy:
+```bash
+docker compose ps
+```
+
+The database volume `mongo-data` is mounted inside MongoDB automatically to persist your settings, audit logs, and instances. Only `run-bot-api` can access MongoDB over the private Compose network.
+
+---
+
+## 5. Expose Securely with Cloudflare Tunnel (No Port Forwarding)
+
+A Cloudflare Tunnel (`cloudflared`) makes an outbound connection to Cloudflare, letting you expose `run-bot-api` to the internet securely at a stable HTTPS hostname. You don't need to open any ports on your home router.
+
+### Option A — Run `cloudflared` on the VM Host (Recommended)
+This points the tunnel to the VM's loopback interface on port `4000`.
+
+1. Install `cloudflared` on your Ubuntu VM by following the [Cloudflare Dashboard guide](https://dash.cloudflare.com) (under **Zero Trust > Networks > Tunnels**).
+2. Configure the ingress in your local Cloudflare Tunnel settings or directly in the Cloudflare dashboard:
+   - **Public Hostname:** `run-bot-api.yourdomain.com`
+   - **Service Type:** `HTTP`
+   - **URL:** `http://localhost:4000` (or `http://127.0.0.1:4000`)
+3. Save and run the tunnel service on your VM.
+
+### Option B — Run `cloudflared` as a Docker Container
+You can run the tunnel as a service directly inside your `docker-compose.yml` file.
+
+Add the service to your compose file:
+```yaml
+    cloudflared:
+        image: cloudflare/cloudflared:latest
+        restart: unless-stopped
+        command: tunnel run
+        environment:
+            TUNNEL_TOKEN: ${CLOUDFLARE_TUNNEL_TOKEN}
+        depends_on:
+            run-bot-api:
+                condition: service_healthy
+```
+In your `.env` file, add `CLOUDFLARE_TUNNEL_TOKEN=<your-token>`.
+In the Cloudflare dashboard, route your public hostname to: `http://run-bot-api:4000`.
+
+---
+
+## 6. Connecting the Web App
+
+Once the tunnel is active and live (e.g., at `https://run-bot-api.yourdomain.com`):
 1. In your **SafetyScore** frontend configuration (such as Vercel project settings), update the environment variable:
    ```env
-   NEXT_PUBLIC_BHUB_API_URL=https://run-bot-api.onrender.com
+   NEXT_PUBLIC_BHUB_API_URL=https://run-bot-api.yourdomain.com
    ```
-2. Redeploy the SafetyScore web app so it can connect to the new live backend.
+2. Redeploy the SafetyScore web app to connect to the new low-latency Singapore backend.
