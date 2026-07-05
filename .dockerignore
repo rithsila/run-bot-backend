@@ -32,4 +32,4 @@ docs
 report.*.json
 test
 test-socket-client.js
-pnpm-lock.yaml
+
