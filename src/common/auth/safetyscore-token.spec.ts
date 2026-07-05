@@ -34,12 +34,12 @@ describe('verifySafetyScoreToken', () => {
 
     beforeAll(async () => {
         const pair = await generateKeyPair('ES256', { extractable: true });
-        privateKey = pair.privateKey as CryptoKey;
+        privateKey = pair.privateKey;
         process.env.SAFETYSCORE_TOKEN_PUBLIC_KEY = await exportSPKI(
             pair.publicKey,
         );
         const wrong = await generateKeyPair('ES256', { extractable: true });
-        wrongPrivateKey = wrong.privateKey as CryptoKey;
+        wrongPrivateKey = wrong.privateKey;
     });
 
     beforeEach(() => resetSafetyScoreKeyCache());

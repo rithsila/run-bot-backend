@@ -1,173 +1,106 @@
 # Deploying bhub-api (Run Bot backend)
 
-This guide explains how to run bhub-api on your own server (Proxmox VM) with
-Docker, and how to put it on the internet safely with a **Cloudflare Tunnel**.
+This guide explains how to host the **bhub-api** NestJS backend on **Render.com** and its **MongoDB database** on **MongoDB Atlas** completely for free.
 
-bhub-api is the slimmed Run Bot backend. It handles **telemetry and commands**
-for the MT5 bot. It does **not** check licenses and does **not** store user
-accounts. It only trusts short-lived tokens that SafetyScore signs.
+bhub-api is the slimmed Run Bot backend. It handles **telemetry and commands** for the MT5 bot. It does **not** check licenses and does **not** store user accounts. It only trusts short-lived tokens signed by SafetyScore.
 
-The stack has just two parts:
-
-- **bhub-api** — the Node.js (NestJS) app.
-- **mongo** — the only database. There is **no Redis** and **no BullMQ**.
+Because bhub-api uses **Socket.IO** for real-time telemetry and commands, it requires a host that supports persistent WebSocket connections. Serverless platforms (like Vercel or Supabase Edge Functions) will **not** work. We must use a Platform-as-a-Service (PaaS) that runs long-lived containerized processes.
 
 ---
 
-## 1. What you need first
+## 1. Set Up MongoDB Atlas (M0 Free Tier)
 
-- Docker and Docker Compose installed on the VM.
-- The **ES256 public key** from SafetyScore. SafetyScore keeps the matching
-  private key and signs tokens with it. You only put the **public** half here.
-- The web domain where SafetyScore runs (for example
-  `https://app.safetyscore.com`). This is the CORS allowlist.
+MongoDB Atlas is the official database-as-a-service from the creators of MongoDB. Its free tier is highly reliable and stays free forever without requiring a credit card.
 
----
-
-## 2. Set the environment values
-
-Copy the example file and fill it in:
-
-```bash
-cp .env.docker.example .env
-```
-
-Open `.env` and set:
-
-| Variable | What to put |
-|---|---|
-| `PORT` | The port the app listens on. Default `4000`. |
-| `FRONTEND_URL` | The SafetyScore web origin (used for CORS). |
-| `SAFETYSCORE_TOKEN_PUBLIC_KEY` | The ES256 **public** key. Raw PEM or base64 PEM, on one line. |
-
-Compose reads this `.env` file automatically. Both `FRONTEND_URL` and
-`SAFETYSCORE_TOKEN_PUBLIC_KEY` are required — the stack refuses to start if
-either is missing.
-
-> The `.env` file holds the public key only. Never put the private signing key
-> on this server.
-
----
-
-## 3. Start the stack
-
-```bash
-docker compose up -d --build
-```
-
-This builds the image, starts Mongo, waits until Mongo is healthy, then starts
-bhub-api. Both services restart on their own if the VM reboots
-(`restart: unless-stopped`).
-
-Check the state:
-
-```bash
-docker compose ps
-```
-
-You should see both containers as `healthy`.
-
-### Health check
-
-The app exposes `GET /health`. The published port is bound to `127.0.0.1`
-only, so test it from the VM itself:
-
-```bash
-curl http://127.0.0.1:4000/health
-# {"status":"ok","uptime":...,"env":"production"}
-```
-
-Both the container and Compose run this same check on a 30-second interval.
-
-### Data and storage
-
-- Mongo data lives in the named volume `mongo-data`. It survives restarts and
-  `docker compose down` (without `-v`).
-- Mongo is **internal only** — it is never published to the host. Only bhub-api
-  can reach it over the private Compose network.
-- Back up the durable data with a periodic `mongodump` (settings, audit logs,
-  and instances are the only durable data).
-
-To stop the stack:
-
-```bash
-docker compose down        # keeps the Mongo volume
-docker compose down -v     # also deletes the Mongo volume (data loss)
-```
+### Steps to Set Up:
+1. **Sign Up:** Go to [mongodb.com/cloud/atlas](https://www.mongodb.com/cloud/atlas) and create a free account.
+2. **Create a Cluster:**
+   - Choose the **M0 (Free)** tier.
+   - Select a provider (AWS, Google Cloud, or Azure) and a region close to your target audience.
+   - Click **Create**.
+3. **Database Security (Network Access):**
+   - Go to **Network Access** in the left menu.
+   - Click **Add IP Address**.
+   - Select **Allow Access from Anywhere** (`0.0.0.0/0`) because free-tier hosts like Render use dynamic IP addresses that change frequently.
+4. **Database Access (User):**
+   - Go to **Database Access** in the left menu.
+   - Click **Add New Database User**.
+   - Choose **Password** authentication.
+   - Create a username (e.g., `bhub_user`) and a secure password. Make sure the role is set to `Read and write to any database`.
+5. **Get the Connection URI:**
+   - Go to **Database / Clusters**.
+   - Click the **Connect** button on your database cluster.
+   - Select **Drivers** under "Connect to your application".
+   - Copy the connection string (URI). It will look like this:
+     ```
+     mongodb+srv://bhub_user:<password>@cluster0.xxxx.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0
+     ```
+   - Replace `<password>` with the password you created for your database user, and append the database name (e.g., `bhub`) before the query parameters:
+     ```
+     mongodb+srv://bhub_user:MySecurePassword@cluster0.xxxx.mongodb.net/bhub?retryWrites=true&w=majority&appName=Cluster0
+     ```
 
 ---
 
-## 4. Put it on the internet with a Cloudflare Tunnel
+## 2. Deploy Backend on Render.com
 
-The VM has no public IP and no port-forwarding. A **Cloudflare Tunnel**
-(`cloudflared`) makes an outbound connection to Cloudflare and serves bhub-api
-at a stable HTTPS hostname. Both the Go bridge (on the MT5 VPS) and the browser
-use that hostname.
+Render offers a free Web Service tier. It integrates directly with GitHub or GitLab, and can deploy from the existing `Dockerfile` in the project.
 
-> **Scope note:** wiring the actual tunnel (Cloudflare account, named tunnel,
-> DNS record) is done separately. This section shows where `cloudflared` should
-> point once it exists.
+- **Resources:** 512MB RAM, shared CPU.
+- **WebSockets:** Fully supported.
+- **Spin-down Caveat:** Free tier services automatically spin down (sleep) after 15 minutes of inactivity. When a client connects to a sleeping service, it triggers a "cold start" delay of 30+ seconds. We will resolve this in Section 3 using a keep-alive monitor.
 
-You can run `cloudflared` in two ways. Pick one.
+### Deployment Steps:
+1. Push your `run-bot-back` code to a repository on **GitHub** or **GitLab**.
+2. Sign up at [dashboard.render.com](https://dashboard.render.com).
+3. Click **New +** and select **Web Service**.
+4. Connect your GitHub/GitLab repository.
+5. Configure the service:
+   - **Name:** `bhub-api`
+   - **Environment:** Select **Docker** (Render will automatically detect your `Dockerfile` and build a production-pruned image using the multi-stage configuration).
+   - **Region:** Choose a region close to your database cluster.
+   - **Instance Type:** Select **Free**.
+6. Set the **Environment Variables** (see Section 4).
+7. Click **Create Web Service**. Render will build and deploy the container.
 
-### Option A — `cloudflared` on the host (simplest)
+---
 
-The published port `127.0.0.1:${PORT}` exists for this case. Point the tunnel
-at that loopback address.
+## 3. Keep-Alive Setup (How to Avoid Spin-Down)
 
-`~/.cloudflared/config.yml`:
+To ensure your free backend on Render stays awake 24/7 (which is critical for the MT5 Go bridge to connect instantly without a 30-second cold-start delay), set up a free uptime monitor:
 
-```yaml
-tunnel: <YOUR_TUNNEL_ID>
-credentials-file: /root/.cloudflared/<YOUR_TUNNEL_ID>.json
+1. Go to [uptime.robot](https://uptimerobot.com) or [cron-job.org](https://cron-job.org).
+2. Create a free account.
+3. Configure a new monitor:
+   - **Monitor Type:** HTTP(s) or Web Page.
+   - **URL:** `https://your-bhub-api-url.onrender.com/health`
+   - **Interval:** Every **5 minutes** (this is well within Render's 15-minute timeout).
+4. This request returns `{"status":"ok"}` from the health check endpoint and keeps the server container hot and running 24/7 for free.
 
-ingress:
-  - hostname: bhub.your-domain.com
-    service: http://127.0.0.1:4000
-  - service: http_status:404
-```
+---
 
-Then run the tunnel:
+## 4. Environment Variables Setup
 
-```bash
-cloudflared tunnel run <YOUR_TUNNEL_ID>
-```
+When creating your service on Render, navigate to the **Environment** section and add the following variables:
 
-### Option B — `cloudflared` as a container on the same network
+| Key | Value | Description |
+| :--- | :--- | :--- |
+| `NODE_ENV` | `production` | Sets NestJS to production mode (reduces logging overhead). |
+| `PORT` | `4000` | The port the container runs on inside Render. Render will bind this. |
+| `FRONTEND_URL` | `https://easafetyscore.com` | **CORS Allowlist:** Set this to your live SafetyScore website URL. |
+| `MONGO_URI` | `mongodb+srv://bhub_user:MySecurePassword@cluster0.xxxx.mongodb.net/bhub?retryWrites=true&w=majority` | Your MongoDB Atlas connection string. |
+| `SAFETYSCORE_TOKEN_PUBLIC_KEY` | `-----BEGIN PUBLIC KEY-----\n...\n-----END PUBLIC KEY-----` | The ES256 **public key** (PEM format) generated in your SafetyScore setup. |
 
-Add `cloudflared` to the Compose network and point it at the service name
-`bhub-api` instead of the host port. With this option you can delete the
-`ports:` block from `docker-compose.yml` (the API never needs to be on the
-host).
+> [!NOTE]
+> If the hosting provider's UI struggles with multi-line keys, you can base64-encode the PEM key and paste it as a single line, as the config validation supports base64-encoded PEM public keys natively.
 
-Add a service like this to `docker-compose.yml`:
+---
 
-```yaml
-    cloudflared:
-        image: cloudflare/cloudflared:latest
-        restart: unless-stopped
-        command: tunnel run
-        environment:
-            TUNNEL_TOKEN: ${CLOUDFLARE_TUNNEL_TOKEN}
-        depends_on:
-            bhub-api:
-                condition: service_healthy
-```
+## 5. Connecting the Web App
 
-In the Cloudflare dashboard, set the tunnel's public hostname to forward to:
-
-```
-http://bhub-api:4000
-```
-
-`bhub-api` is the Compose service name, so `cloudflared` reaches it directly
-over the internal network. Put `CLOUDFLARE_TUNNEL_TOKEN` in your `.env`.
-
-### After the tunnel is up
-
-- Set SafetyScore's bhub-api URL to `https://bhub.your-domain.com`.
-- Make sure `FRONTEND_URL` here matches the SafetyScore web origin, or the
-  browser's WebSocket/HTTP calls fail CORS.
-- The tunnel is a single point of failure for both the bridge lane and the
-  browser lane. Add basic up/down alerting on the hostname. (Trading itself is
-  unaffected — the license path is separate from this backend.)
+Once your `bhub-api` is deployed and live (e.g., at `https://bhub-api.onrender.com`):
+1. In your **SafetyScore** frontend configuration (such as Vercel project settings), update the environment variable:
+   ```env
+   NEXT_PUBLIC_BHUB_API_URL=https://bhub-api.onrender.com
+   ```
+2. Redeploy the SafetyScore web app so it can connect to the new live backend.

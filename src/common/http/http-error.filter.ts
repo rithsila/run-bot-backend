@@ -12,7 +12,9 @@ import { subnet24 } from 'src/common/risk/risk.utils';
 export class HttpErrorFilter implements ExceptionFilter {
     catch(exception: HttpException, host: ArgumentsHost) {
         const ctx = host.switchToHttp();
-        const req = ctx.getRequest<Request & any>();
+        const req = ctx.getRequest<
+            Request & { __risk?: Record<string, any> }
+        >();
         const res = ctx.getResponse<Response>();
 
         const status = exception.getStatus?.() ?? 500;
@@ -28,7 +30,7 @@ export class HttpErrorFilter implements ExceptionFilter {
                     evt: 'rate_limit',
                     path: req.originalUrl || req.url,
                     ip: r.ip || null,
-                    ip_subnet24: r.ip ? subnet24(r.ip) : null,
+                    ip_subnet24: r.ip ? subnet24(String(r.ip)) : null,
                     deviceIdHash: r.deviceIdHash || null,
                     emailHash: r.emailHash || null,
                     uaHash: r.uaHash || null,
@@ -41,7 +43,9 @@ export class HttpErrorFilter implements ExceptionFilter {
             // ── diagnostics for non-429 ──────────────────────────────────────────────
             const url = req.originalUrl || req.url;
             const method = req.method;
-            const keys = Object.keys(req.body || {});
+            const keys = Object.keys(
+                (req.body as Record<string, unknown>) || {},
+            );
             const respMsg = Array.isArray(body?.message)
                 ? body.message
                 : body?.message;

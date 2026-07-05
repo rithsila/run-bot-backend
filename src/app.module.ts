@@ -102,7 +102,7 @@ import { ConsoleModule } from './console/console.module';
         MongooseModule.forRootAsync({
             imports: [ConfigModule],
             inject: [ConfigService],
-            useFactory: async (cs: ConfigService) => ({
+            useFactory: (cs: ConfigService) => ({
                 uri: cs.get<string>('MONGO_URI'),
             }),
         }),
@@ -110,7 +110,7 @@ import { ConsoleModule } from './console/console.module';
         // ─── Throttling (in-memory; no Redis) ─────────────────────────────────────
         ThrottlerModule.forRoot({
             throttlers: [{ limit: 60, ttl: seconds(60) }], // 60 req/min
-            getTracker: async (req: Request) => {
+            getTracker: (req: Request) => {
                 const xff = (
                     req.headers['x-forwarded-for'] as string | undefined
                 )
@@ -124,10 +124,11 @@ import { ConsoleModule } from './console/console.module';
                     req.socket.remoteAddress ||
                     'unknown';
 
-                const rawDev =
+                const rawDev = String(
                     (req.headers['x-device-id'] as string | undefined) ??
-                    (req as any).cookies?.device_id ??
-                    '';
+                        (req as any).cookies?.device_id ??
+                        '',
+                );
 
                 const devHash =
                     rawDev && rawDev.length >= 8 && rawDev.length <= 128

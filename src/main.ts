@@ -6,6 +6,7 @@ import { Logger, ValidationPipe } from '@nestjs/common';
 import cookieParser from 'cookie-parser';
 import { ConfigService } from '@nestjs/config';
 import { NestExpressApplication } from '@nestjs/platform-express';
+import type { Request, Response, NextFunction } from 'express';
 import { HttpErrorFilter } from './common/http/http-error.filter';
 import * as bodyParser from 'body-parser';
 import helmet from 'helmet';
@@ -120,7 +121,10 @@ async function bootstrap() {
     app.use(cookieParser());
 
     // ✅ Global required headers (placed AFTER parsers, BEFORE everything else)
-    app.use(new RequiredHeadersMiddleware().use);
+    const requiredHeaders = new RequiredHeadersMiddleware();
+    app.use((req: Request, res: Response, next: NextFunction) =>
+        requiredHeaders.use(req, res, next),
+    );
 
     app.disable('x-powered-by');
     app.set('etag', 'strong');
@@ -132,4 +136,7 @@ async function bootstrap() {
     logger.log(`🚀 Application listening on port ${port}`);
 }
 
-bootstrap();
+bootstrap().catch((err) => {
+    console.error('Failed to bootstrap application:', err);
+    process.exit(1);
+});
