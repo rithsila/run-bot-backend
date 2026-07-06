@@ -28,24 +28,6 @@ export class TelemetryGridDto {
     basketTpPips!: number;
 }
 
-export class TelemetryRiskDto {
-    atrPips!: number;
-    volatilityRatio!: number;
-    spreadPips!: number;
-}
-
-export class TelemetrySessionDto {
-    active!: boolean;
-    sessionCode!: number;
-}
-
-export class TelemetrySignalDto {
-    enabled!: boolean;
-    state!: number;
-    stochK!: number;
-    stochD!: number;
-}
-
 export class TelemetryClosedTradeDto {
     closeTime!: number; // unix seconds (broker server time)
     side!: 'buy' | 'sell';
@@ -62,10 +44,6 @@ export class TelemetryDto {
     account!: TelemetryAccountDto;
     positions!: TelemetryPositionsDto;
     grid!: TelemetryGridDto;
-    risk!: TelemetryRiskDto;
-    session!: TelemetrySessionDto;
-    signal!: TelemetrySignalDto;
-    features!: number;
     statusCode!: number;
     openPositions?: TelemetryClosedTradeDto[];
     history?: TelemetryClosedTradeDto[];
