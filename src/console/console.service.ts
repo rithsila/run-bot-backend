@@ -378,7 +378,9 @@ export class ConsoleService {
         userId: string,
         start?: string,
         end?: string,
-    ): Promise<{ date: string; dailyPnl: number; balance: number; equity: number }[]> {
+    ): Promise<
+        { date: string; dailyPnl: number; balance: number; equity: number }[]
+    > {
         await this.requireOwnership(agentId, userId);
 
         const matchQuery: Record<string, any> = { agentId };

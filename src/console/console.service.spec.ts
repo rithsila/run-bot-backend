@@ -32,6 +32,9 @@ function makeModel(overrides: Record<string, jest.Mock> = {}) {
         }),
         create: jest.fn().mockResolvedValue({}),
         updateOne: jest.fn().mockResolvedValue({}),
+        aggregate: jest.fn().mockReturnValue({
+            exec: () => Promise.resolve([]),
+        }),
         ...overrides,
     };
 }
@@ -778,8 +781,15 @@ describe('ConsoleService', () => {
 
         it('performs aggregation with matched agentId and dates', async () => {
             mockOwnedBy('user-1');
-            const mockDailySummary = [{ date: '2026-07-01', dailyPnl: 10, balance: 1010, equity: 1010 }];
-            
+            const mockDailySummary = [
+                {
+                    date: '2026-07-01',
+                    dailyPnl: 10,
+                    balance: 1010,
+                    equity: 1010,
+                },
+            ];
+
             const execSpy = jest.fn().mockResolvedValue(mockDailySummary);
             const aggregateSpy = jest.fn().mockReturnValue({ exec: execSpy });
             pnlModel.aggregate = aggregateSpy;
@@ -792,23 +802,32 @@ describe('ConsoleService', () => {
             );
 
             expect(result).toEqual(mockDailySummary);
-            expect(aggregateSpy).toHaveBeenCalledWith(expect.arrayContaining([
-                {
-                    $match: {
-                        agentId: 'agent-1',
-                        ts: {
-                            $gte: Date.parse('2026-07-01T00:00:00.000Z'),
-                            $lte: Date.parse('2026-07-31T23:59:59.999Z'),
+            expect(aggregateSpy).toHaveBeenCalledWith(
+                expect.arrayContaining([
+                    {
+                        $match: {
+                            agentId: 'agent-1',
+                            ts: {
+                                $gte: Date.parse('2026-07-01T00:00:00.000Z'),
+                                $lte: Date.parse('2026-07-31T23:59:59.999Z'),
+                            },
                         },
                     },
-                },
-            ]));
+                ]),
+            );
         });
 
         it('performs aggregation without date filters when start/end are missing', async () => {
             mockOwnedBy('user-1');
-            const mockDailySummary = [{ date: '2026-07-01', dailyPnl: 10, balance: 1010, equity: 1010 }];
-            
+            const mockDailySummary = [
+                {
+                    date: '2026-07-01',
+                    dailyPnl: 10,
+                    balance: 1010,
+                    equity: 1010,
+                },
+            ];
+
             const execSpy = jest.fn().mockResolvedValue(mockDailySummary);
             const aggregateSpy = jest.fn().mockReturnValue({ exec: execSpy });
             pnlModel.aggregate = aggregateSpy;
@@ -819,13 +838,15 @@ describe('ConsoleService', () => {
             );
 
             expect(result).toEqual(mockDailySummary);
-            expect(aggregateSpy).toHaveBeenCalledWith(expect.arrayContaining([
-                {
-                    $match: {
-                        agentId: 'agent-1',
+            expect(aggregateSpy).toHaveBeenCalledWith(
+                expect.arrayContaining([
+                    {
+                        $match: {
+                            agentId: 'agent-1',
+                        },
                     },
-                },
-            ]));
+                ]),
+            );
         });
 
         it('throws ForbiddenException when user ownership check fails', async () => {

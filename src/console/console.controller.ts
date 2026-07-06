@@ -65,11 +65,16 @@ export class ConsoleController {
     @Get('instances/:agentId/pnl/daily')
     async getPnlDailySummary(
         @Param('agentId') agentId: string,
+        @Req() req: AuthRequest,
         @Query('start') start?: string,
         @Query('end') end?: string,
-        @Req() req: AuthRequest,
     ) {
-        return this.console.getPnlDailySummary(agentId, req.user.userId, start, end);
+        return this.console.getPnlDailySummary(
+            agentId,
+            req.user.userId,
+            start,
+            end,
+        );
     }
 
     @Post('instances/:agentId/kill-switch')
