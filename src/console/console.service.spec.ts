@@ -767,6 +767,75 @@ describe('ConsoleService', () => {
         });
     });
 
+    describe('getPnlDailySummary', () => {
+        function mockOwnedBy(userId: string | null) {
+            instanceModel.findOne.mockReturnValue({
+                lean: () => ({
+                    exec: () => Promise.resolve({ agentId: 'agent-1', userId }),
+                }),
+            });
+        }
+
+        it('performs aggregation with matched agentId and dates', async () => {
+            mockOwnedBy('user-1');
+            const mockDailySummary = [{ date: '2026-07-01', dailyPnl: 10, balance: 1010, equity: 1010 }];
+            
+            const execSpy = jest.fn().mockResolvedValue(mockDailySummary);
+            const aggregateSpy = jest.fn().mockReturnValue({ exec: execSpy });
+            pnlModel.aggregate = aggregateSpy;
+
+            const result = await service.getPnlDailySummary(
+                'agent-1',
+                'user-1',
+                '2026-07-01',
+                '2026-07-31',
+            );
+
+            expect(result).toEqual(mockDailySummary);
+            expect(aggregateSpy).toHaveBeenCalledWith(expect.arrayContaining([
+                {
+                    $match: {
+                        agentId: 'agent-1',
+                        ts: {
+                            $gte: Date.parse('2026-07-01T00:00:00.000Z'),
+                            $lte: Date.parse('2026-07-31T23:59:59.999Z'),
+                        },
+                    },
+                },
+            ]));
+        });
+
+        it('performs aggregation without date filters when start/end are missing', async () => {
+            mockOwnedBy('user-1');
+            const mockDailySummary = [{ date: '2026-07-01', dailyPnl: 10, balance: 1010, equity: 1010 }];
+            
+            const execSpy = jest.fn().mockResolvedValue(mockDailySummary);
+            const aggregateSpy = jest.fn().mockReturnValue({ exec: execSpy });
+            pnlModel.aggregate = aggregateSpy;
+
+            const result = await service.getPnlDailySummary(
+                'agent-1',
+                'user-1',
+            );
+
+            expect(result).toEqual(mockDailySummary);
+            expect(aggregateSpy).toHaveBeenCalledWith(expect.arrayContaining([
+                {
+                    $match: {
+                        agentId: 'agent-1',
+                    },
+                },
+            ]));
+        });
+
+        it('throws ForbiddenException when user ownership check fails', async () => {
+            mockOwnedBy('user-OWNER');
+            await expect(
+                service.getPnlDailySummary('agent-1', 'user-OTHER'),
+            ).rejects.toThrow(ForbiddenException);
+        });
+    });
+
     // ── Ownership enforcement ─────────────────────────────────────────────────
 
     describe('ownership enforcement', () => {

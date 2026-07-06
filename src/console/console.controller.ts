@@ -62,6 +62,16 @@ export class ConsoleController {
         return this.console.getPnlHistory(agentId, req.user.userId, limit);
     }
 
+    @Get('instances/:agentId/pnl/daily')
+    async getPnlDailySummary(
+        @Param('agentId') agentId: string,
+        @Query('start') start?: string,
+        @Query('end') end?: string,
+        @Req() req: AuthRequest,
+    ) {
+        return this.console.getPnlDailySummary(agentId, req.user.userId, start, end);
+    }
+
     @Post('instances/:agentId/kill-switch')
     @HttpCode(HttpStatus.OK)
     @Throttle({ default: { limit: 20, ttl: 60_000 } })

@@ -373,6 +373,63 @@ export class ConsoleService {
             .exec();
     }
 
+    async getPnlDailySummary(
+        agentId: string,
+        userId: string,
+        start?: string,
+        end?: string,
+    ): Promise<{ date: string; dailyPnl: number; balance: number; equity: number }[]> {
+        await this.requireOwnership(agentId, userId);
+
+        const matchQuery: Record<string, any> = { agentId };
+
+        if (start || end) {
+            matchQuery.ts = {};
+            if (start) {
+                const startTime = Date.parse(`${start}T00:00:00.000Z`);
+                if (!isNaN(startTime)) {
+                    matchQuery.ts.$gte = startTime;
+                }
+            }
+            if (end) {
+                const endTime = Date.parse(`${end}T23:59:59.999Z`);
+                if (!isNaN(endTime)) {
+                    matchQuery.ts.$lte = endTime;
+                }
+            }
+        }
+
+        return this.pnlModel
+            .aggregate([
+                { $match: matchQuery },
+                { $sort: { ts: 1 } },
+                {
+                    $group: {
+                        _id: {
+                            $dateToString: {
+                                format: '%Y-%m-%d',
+                                date: { $toDate: '$ts' },
+                            },
+                        },
+                        dailyPnl: { $last: '$dailyPnl' },
+                        balance: { $last: '$balance' },
+                        equity: { $last: '$equity' },
+                    },
+                },
+                { $sort: { _id: 1 } },
+                {
+                    $project: {
+                        _id: 0,
+                        date: '$_id',
+                        dailyPnl: 1,
+                        balance: 1,
+                        equity: 1,
+                    },
+                },
+            ])
+            .exec();
+    }
+
     // ── Private helpers ───────────────────────────────────────────────────────
 
     private async requireOwnership(
