@@ -23,7 +23,7 @@ export interface SafetyScoreUser {
     symbol: string | null;
 }
 
-export const SAFETYSCORE_TOKEN_AUDIENCE = 'bhub-console';
+export const SAFETYSCORE_TOKEN_AUDIENCE = 'ea-console';
 
 /**
  * Resolve the ES256 public key from `SAFETYSCORE_TOKEN_PUBLIC_KEY`.

@@ -169,7 +169,7 @@ Set these in your hosting provider (for example, Vercel project settings):
 | Variable | Value | Notes |
 |---|---|---|
 | `SAFETYSCORE_TOKEN_PRIVATE_KEY` | The ES256 **private** key (PEM) | **Server-only.** Never expose to the browser. |
-| `NEXT_PUBLIC_BHUB_API_URL` | The run-bot-api public HTTPS URL | From Part D, e.g. `https://bhub.your-domain.com` |
+| `NEXT_PUBLIC_CONSOLE_API_URL` | The run-bot-api public HTTPS URL | From Part D, e.g. `https://console.your-domain.com` |
 
 > `NEXT_PUBLIC_` means the value is visible in the browser. That is fine — it is
 > only a URL, not a secret. The private key has **no** `NEXT_PUBLIC_` prefix, so
@@ -267,7 +267,7 @@ tunnel: <YOUR_TUNNEL_ID>
 credentials-file: /root/.cloudflared/<YOUR_TUNNEL_ID>.json
 
 ingress:
-  - hostname: bhub.your-domain.com
+  - hostname: console.your-domain.com
     service: http://127.0.0.1:4000
   - service: http_status:404
 ```
@@ -282,8 +282,8 @@ cloudflared tunnel run <YOUR_TUNNEL_ID>
 
 ### 6.5 After the tunnel is up
 
-- Your run-bot-api public URL is now `https://bhub.your-domain.com`.
-- **Go back to Part C** and set `NEXT_PUBLIC_BHUB_API_URL` to this URL, then
+- Your run-bot-api public URL is now `https://console.your-domain.com`.
+- **Go back to Part C** and set `NEXT_PUBLIC_CONSOLE_API_URL` to this URL, then
   redeploy the web app.
 - Make sure `FRONTEND_URL` in run-bot-api matches the web origin exactly, or the
   browser calls fail with a CORS error.
@@ -325,7 +325,7 @@ EA (over ZMQ on `127.0.0.1`) and run-bot-api (over Socket.IO/HTTPS).
    your run-bot-api URL:
 
    ```
-   BHUB_API_URL=https://bhub.your-domain.com
+   CONSOLE_API_URL=https://console.your-domain.com
    ```
 
 4. The bridge does **not** hold a token. The EA gives it the bot token over ZMQ.
@@ -403,11 +403,11 @@ Do these in order. Each one proves the link before it works.
 |---|---|---|---|
 | `SAFETYSCORE_TOKEN_PRIVATE_KEY` | Web app (server) + Supabase secret | ES256 private PEM | **Yes** |
 | `SAFETYSCORE_TOKEN_PUBLIC_KEY` | run-bot-api `.env` | ES256 public PEM | No |
-| `NEXT_PUBLIC_BHUB_API_URL` | Web app | `https://bhub.your-domain.com` | No |
+| `NEXT_PUBLIC_CONSOLE_API_URL` | Web app | `https://console.your-domain.com` | No |
 | `FRONTEND_URL` | run-bot-api `.env` | The web origin (CORS) | No |
 | `MONGO_URI` | run-bot-api `.env` | `mongodb+srv://...` | **Yes** |
 | `PORT` | run-bot-api `.env` | `4000` | No |
-| `BHUB_API_URL` | Go bridge config | `https://bhub.your-domain.com` | No |
+| `CONSOLE_API_URL` | Go bridge config | `https://console.your-domain.com` | No |
 
 ---
 
@@ -416,7 +416,7 @@ Do these in order. Each one proves the link before it works.
 | Problem | Likely cause | Fix |
 |---|---|---|
 | Browser shows CORS error | `FRONTEND_URL` does not match the web origin | Set it to the exact origin, restart run-bot-api. |
-| Browser cannot connect at all | `NEXT_PUBLIC_BHUB_API_URL` wrong, or tunnel down | Check the URL and `cloudflared` status. |
+| Browser cannot connect at all | `NEXT_PUBLIC_CONSOLE_API_URL` wrong, or tunnel down | Check the URL and `cloudflared` status. |
 | run-bot-api will not start | Missing public key or `FRONTEND_URL` | Fill both in `.env`. The app fails fast on purpose. |
 | Token rejected by run-bot-api | Public/private keys do not match | They must be one pair. Regenerate and redeploy both halves. |
 | Telemetry never appears | Bridge or EA not running, or token not sent | Start MT5 + EA first, then the bridge. Check `--status`. |

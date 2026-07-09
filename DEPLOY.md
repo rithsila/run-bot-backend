@@ -131,6 +131,6 @@ In the Cloudflare dashboard, route your public hostname to: `http://run-bot-api:
 Once the tunnel is active and live (e.g., at `https://run-bot-api.yourdomain.com`):
 1. In your **SafetyScore** frontend configuration (such as Vercel project settings), update the environment variable:
    ```env
-   NEXT_PUBLIC_BHUB_API_URL=https://run-bot-api.yourdomain.com
+   NEXT_PUBLIC_CONSOLE_API_URL=https://run-bot-api.yourdomain.com
    ```
 2. Redeploy the SafetyScore web app to connect to the new low-latency Singapore backend.

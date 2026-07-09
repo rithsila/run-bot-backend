@@ -73,7 +73,7 @@ public key. Tokens are short-lived (~60 min) **ES256 JWTs** — run-bot-api's ex
 already verifies ES256, so this is a key swap, not new crypto.
 
 ```
-TOKEN CLAIMS:  { user_id, agent_id, license_key, account_login, symbol, aud:"bhub-console", exp }
+TOKEN CLAIMS:  { user_id, agent_id, license_key, account_login, symbol, aud:"ea-console", exp }
                (license_key/account/symbol are REQUIRED so bridge:register can persist
                 the instance — without them the browser can never subscribe)
 
