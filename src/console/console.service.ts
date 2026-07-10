@@ -368,10 +368,14 @@ export class ConsoleService {
         // Sort newest-first so `.limit()` keeps the most recent points once the
         // collection grows past `limit` (it accumulates one point/minute
         // forever), then reverse back to ascending order for the chart.
+        //
+        // Cap is generous (100k points ≈ 69 days of continuous 1-min snapshots)
+        // so a "full history" request isn't truncated in normal use, while
+        // still bounding the worst case for an instance that runs for years.
         const points = await this.pnlModel
             .find({ agentId })
             .sort({ ts: -1 })
-            .limit(Math.min(limit, 2000))
+            .limit(Math.min(limit, 100_000))
             .lean()
             .exec();
         return points.reverse();

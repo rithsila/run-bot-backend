@@ -751,7 +751,7 @@ describe('ConsoleService', () => {
             expect(result).toEqual([{ ts: 2 }, { ts: 3 }]);
         });
 
-        it('caps the limit at 2000 even when a higher limit is requested', async () => {
+        it('caps the limit at 100,000 even when a higher limit is requested', async () => {
             mockOwnedBy('user-1');
             const limitSpy = jest.fn().mockReturnValue({
                 lean: () => ({ exec: () => Promise.resolve([]) }),
@@ -759,9 +759,9 @@ describe('ConsoleService', () => {
             const sortSpy = jest.fn().mockReturnValue({ limit: limitSpy });
             pnlModel.find = jest.fn().mockReturnValue({ sort: sortSpy });
 
-            await service.getPnlHistory('agent-1', 'user-1', 99999);
+            await service.getPnlHistory('agent-1', 'user-1', 999999);
 
-            expect(limitSpy).toHaveBeenCalledWith(2000);
+            expect(limitSpy).toHaveBeenCalledWith(100_000);
         });
 
         it('throws ForbiddenException when userId does not match', async () => {
