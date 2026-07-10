@@ -728,9 +728,11 @@ describe('ConsoleService', () => {
             });
         }
 
-        it('returns points sorted by ts ascending, capped at the limit', async () => {
+        it('returns the most recent points, sorted ascending by ts', async () => {
             mockOwnedBy('user-1');
-            const points = [{ ts: 1 }, { ts: 2 }];
+            // DB returns newest-first (ts: -1); service must reverse to ascending
+            // so the chart always shows the latest window, not the oldest.
+            const points = [{ ts: 3 }, { ts: 2 }];
             const limitSpy = jest.fn().mockReturnValue({
                 lean: () => ({ exec: () => Promise.resolve(points) }),
             });
@@ -744,9 +746,9 @@ describe('ConsoleService', () => {
             );
 
             expect(pnlModel.find).toHaveBeenCalledWith({ agentId: 'agent-1' });
-            expect(sortSpy).toHaveBeenCalledWith({ ts: 1 });
+            expect(sortSpy).toHaveBeenCalledWith({ ts: -1 });
             expect(limitSpy).toHaveBeenCalledWith(500);
-            expect(result).toEqual(points);
+            expect(result).toEqual([{ ts: 2 }, { ts: 3 }]);
         });
 
         it('caps the limit at 2000 even when a higher limit is requested', async () => {

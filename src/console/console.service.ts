@@ -365,12 +365,16 @@ export class ConsoleService {
         limit: number,
     ): Promise<EaPnlPoint[]> {
         await this.requireOwnership(agentId, userId);
-        return this.pnlModel
+        // Sort newest-first so `.limit()` keeps the most recent points once the
+        // collection grows past `limit` (it accumulates one point/minute
+        // forever), then reverse back to ascending order for the chart.
+        const points = await this.pnlModel
             .find({ agentId })
-            .sort({ ts: 1 })
+            .sort({ ts: -1 })
             .limit(Math.min(limit, 2000))
             .lean()
             .exec();
+        return points.reverse();
     }
 
     async getPnlDailySummary(
