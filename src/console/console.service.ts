@@ -297,12 +297,22 @@ export class ConsoleService {
                 verb,
                 value,
             );
-            await this.logEvent(
-                inst.agentId,
-                auditEvent,
-                { commandId, bulk: true },
-                userId,
-            );
+            try {
+                await this.logEvent(
+                    inst.agentId,
+                    auditEvent,
+                    { commandId, bulk: true },
+                    userId,
+                );
+            } catch (err) {
+                // The command is already dispatched — an audit-write failure
+                // must never destroy the per-agent results on the emergency
+                // path. Log and keep going.
+                this.logger.error(
+                    `bulk audit log failed agentId=${inst.agentId} commandId=${commandId}`,
+                    err instanceof Error ? err.stack : String(err),
+                );
+            }
             results.push({ agentId: inst.agentId, ok: true, commandId });
         }
         return {

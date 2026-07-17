@@ -65,7 +65,7 @@ docker compose logs -f --tail 50
 
 You should see:
 - `ConsoleScheduler` logs showing the app started.
-- `Cron` logs mentioning a 15-second sweep (every 15 seconds you will see a line like `sweep time 1234...`).
+- Note: the 15-second expiry sweep is SILENT when nothing is expired. You will NOT see a log line every 15 seconds — that is normal. It only logs a warning line (`expired bridge socket kicked ...`) when it actually kicks an expired bridge.
 
 Wait 5–10 seconds, then press `Ctrl+C` to stop following logs.
 
@@ -100,12 +100,12 @@ Pick the previous commit SHA (the one you want to go back to).
 
 ```bash
 cd /root/run-bot-backend
-git checkout <PREVIOUS_SHA>
+git checkout main && git reset --hard <PREVIOUS_SHA>
 ```
 
 Example:
 ```bash
-git checkout a3b5c7f
+git checkout main && git reset --hard a3b5c7f
 ```
 
 ### 3. Rebuild and restart
