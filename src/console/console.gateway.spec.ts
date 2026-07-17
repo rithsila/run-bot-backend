@@ -562,3 +562,62 @@ describe('room separation (v2)', () => {
         expect(ioToMock).not.toHaveBeenCalledWith('agent:A-XAUUSD-1-2');
     });
 });
+
+describe('token expiry sweep (v2)', () => {
+    let gateway: ConsoleGateway;
+    let instanceModel: ReturnType<typeof makeInstanceModel>;
+
+    beforeEach(async () => {
+        instanceModel = makeInstanceModel();
+        gateway = await buildGateway(instanceModel);
+    });
+
+    function fakeSocket(data: Partial<any>): any {
+        return { id: 's1', data, emit: jest.fn(), disconnect: jest.fn() };
+    }
+
+    function socketsMap(...socks: any[]) {
+        // namespace sockets map as socket.io exposes it
+        return new Map(socks.map((s) => [s.id, s]));
+    }
+
+    function setGatewaySockets(gw: ConsoleGateway, map: Map<string, any>) {
+        (gw.io as any) = { ...(gw.io as any), sockets: map };
+    }
+
+    it('notifies an expired bridge socket, then kicks it on the next sweep', () => {
+        const s = fakeSocket({
+            isBridge: true,
+            agentId: 'A-1',
+            tokenExpiresAt: Math.floor(Date.now() / 1000) - 10,
+        });
+        setGatewaySockets(gateway, socketsMap(s));
+        gateway.sweepExpiredBridgeSockets();
+        expect(s.emit).toHaveBeenCalledWith('auth:expired');
+        expect(s.disconnect).not.toHaveBeenCalled();
+        gateway.sweepExpiredBridgeSockets();
+        expect(s.disconnect).toHaveBeenCalledWith(true);
+    });
+
+    it('never touches browser sockets even when expired', () => {
+        const s = fakeSocket({
+            isBridge: false,
+            tokenExpiresAt: Math.floor(Date.now() / 1000) - 10,
+        });
+        setGatewaySockets(gateway, socketsMap(s));
+        gateway.sweepExpiredBridgeSockets();
+        expect(s.emit).not.toHaveBeenCalled();
+        expect(s.disconnect).not.toHaveBeenCalled();
+    });
+
+    it('ignores unexpired sockets', () => {
+        const s = fakeSocket({
+            isBridge: true,
+            agentId: 'A-1',
+            tokenExpiresAt: Math.floor(Date.now() / 1000) + 3600,
+        });
+        setGatewaySockets(gateway, socketsMap(s));
+        gateway.sweepExpiredBridgeSockets();
+        expect(s.emit).not.toHaveBeenCalled();
+    });
+});

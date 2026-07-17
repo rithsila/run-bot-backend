@@ -21,6 +21,8 @@ export interface SafetyScoreUser {
     licenseKey: string | null;
     accountLogin: string | null;
     symbol: string | null;
+    /** Token `exp` (unix seconds); null when the token has no expiry. */
+    expiresAt: number | null;
 }
 
 export const SAFETYSCORE_TOKEN_AUDIENCE = 'ea-console';
@@ -81,6 +83,7 @@ export async function verifySafetyScoreToken(
         licenseKey: claims.license_key ?? null,
         accountLogin: claims.account_login ?? null,
         symbol: claims.symbol ?? null,
+        expiresAt: typeof payload.exp === 'number' ? payload.exp : null,
     };
 }
 

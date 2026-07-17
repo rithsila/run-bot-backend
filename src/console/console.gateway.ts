@@ -26,6 +26,8 @@ interface BridgeSocketData {
     licenseKey: string | null;
     accountLogin: string | null;
     symbol: string | null;
+    tokenExpiresAt?: number;
+    expiryNotified?: boolean;
 }
 
 type BridgeSocket = Omit<Socket, 'data'> & { data: BridgeSocketData };
@@ -73,6 +75,7 @@ export class ConsoleGateway
             d.licenseKey = verified.licenseKey;
             d.accountLogin = verified.accountLogin;
             d.symbol = verified.symbol;
+            d.tokenExpiresAt = verified.expiresAt ?? undefined;
         } catch {
             this.logger.warn(
                 `WS /console rejected: invalid token id=${client.id}`,
@@ -377,5 +380,37 @@ export class ConsoleGateway
 
     emitToRoom(room: string, event: string, payload: unknown) {
         this.io.to(room).emit(event, payload);
+    }
+
+    /**
+     * Kick bridge sockets whose token has expired. Two-phase: the first sweep
+     * emits `auth:expired` (Plan 1's bridge refreshes its token over ZMQ and
+     * reconnects); the next sweep disconnects sockets that are still expired.
+     * Browser sockets are exempt until the web client ships its handler.
+     */
+    sweepExpiredBridgeSockets(): { notified: number; kicked: number } {
+        const now = Math.floor(Date.now() / 1000);
+        let notified = 0;
+        let kicked = 0;
+        const sockets: Map<string, Socket> =
+            (this.io as unknown as { sockets: Map<string, Socket> }).sockets ??
+            new Map();
+        for (const socket of sockets.values()) {
+            const d = socket.data as BridgeSocketData;
+            if (!d?.isBridge) continue;
+            if (!d.tokenExpiresAt || d.tokenExpiresAt > now) continue;
+            if (!d.expiryNotified) {
+                d.expiryNotified = true;
+                socket.emit('auth:expired');
+                notified++;
+            } else {
+                this.logger.warn(
+                    `expired bridge socket kicked agentId=${d.agentId} id=${socket.id}`,
+                );
+                socket.disconnect(true);
+                kicked++;
+            }
+        }
+        return { notified, kicked };
     }
 }

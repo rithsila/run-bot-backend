@@ -1,4 +1,4 @@
-import { generateKeyPair, SignJWT, exportSPKI } from 'jose';
+import { generateKeyPair, SignJWT, exportSPKI, decodeJwt } from 'jose';
 
 import {
     verifySafetyScoreToken,
@@ -53,7 +53,15 @@ describe('verifySafetyScoreToken', () => {
             licenseKey: 'EA-XYZ',
             accountLogin: '184006910',
             symbol: 'XAUUSDc',
+            expiresAt: expect.any(Number) as number,
         });
+    });
+
+    it('returns expiresAt equal to the token exp claim', async () => {
+        const token = await sign(privateKey);
+        const { exp } = decodeJwt(token);
+        const user = await verifySafetyScoreToken(token);
+        expect(user.expiresAt).toBe(exp);
     });
 
     it('rejects a token signed by a different key (bad signature)', async () => {
