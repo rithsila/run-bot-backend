@@ -283,12 +283,26 @@ export class ConsoleService {
         const results: BulkCommandResult[] = [];
         for (const inst of instances) {
             if (!inst.online) {
-                results.push({ agentId: inst.agentId, ok: false, error: 'offline' });
+                results.push({
+                    agentId: inst.agentId,
+                    ok: false,
+                    error: 'offline',
+                });
                 continue;
             }
             const commandId = uuidv4();
-            this.gateway.sendCommandToBridge(inst.agentId, commandId, verb, value);
-            await this.logEvent(inst.agentId, auditEvent, { commandId, bulk: true }, userId);
+            this.gateway.sendCommandToBridge(
+                inst.agentId,
+                commandId,
+                verb,
+                value,
+            );
+            await this.logEvent(
+                inst.agentId,
+                auditEvent,
+                { commandId, bulk: true },
+                userId,
+            );
             results.push({ agentId: inst.agentId, ok: true, commandId });
         }
         return {
@@ -310,7 +324,13 @@ export class ConsoleService {
         this.logger.log(
             `stop-account accountLogin=${accountLogin} userId=${userId} instances=${instances.length}`,
         );
-        return this.fanOutCommand(instances, 'MASTER_ENABLE', '0', AuditEvent.MasterEnable, userId);
+        return this.fanOutCommand(
+            instances,
+            'MASTER_ENABLE',
+            '0',
+            AuditEvent.MasterEnable,
+            userId,
+        );
     }
 
     /** Bulk: kill-switch every EA owned by the caller. */
@@ -319,8 +339,16 @@ export class ConsoleService {
             .find({ userId })
             .lean()
             .exec();
-        this.logger.log(`kill-all userId=${userId} instances=${instances.length}`);
-        return this.fanOutCommand(instances, 'KILL_SWITCH', undefined, AuditEvent.KillSwitch, userId);
+        this.logger.log(
+            `kill-all userId=${userId} instances=${instances.length}`,
+        );
+        return this.fanOutCommand(
+            instances,
+            'KILL_SWITCH',
+            undefined,
+            AuditEvent.KillSwitch,
+            userId,
+        );
     }
 
     async pushSettings(
