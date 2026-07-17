@@ -47,6 +47,27 @@ function makeClient(data: Partial<FakeSocketData>) {
     };
 }
 
+// v2 helper: builds a bridge socket whose `data` mirrors what
+// `handleConnection` would set from a verified token claim (agentId is the
+// TOKEN claim, not something the payload can override).
+function makeBridgeClient(claims: { agentId: string; userId?: string }): any {
+    return {
+        id: `sock-${Math.random().toString(36).slice(2, 8)}`,
+        data: {
+            userId: claims.userId ?? 'user-1',
+            isBridge: true,
+            agentId: claims.agentId,
+            licenseKey: 'LIC-1',
+            accountLogin: claims.agentId.split('-')[0],
+            symbol: claims.agentId.split('-')[1],
+        },
+        emit: jest.fn(),
+        disconnect: jest.fn(),
+        join: jest.fn(),
+        leave: jest.fn(),
+    };
+}
+
 async function buildGateway(
     instanceModel: ReturnType<typeof makeInstanceModel>,
 ) {
@@ -87,6 +108,9 @@ describe('ConsoleGateway.onBridgeRegister', () => {
     it('creates ea-instance with all required fields when token carries credentials', async () => {
         const client = makeClient({
             userId: 'user-1',
+            // v2: agentId is the verified token claim (set by handleConnection),
+            // not something the payload establishes.
+            agentId: '184006910-XAUUSDc-1001-1002',
             licenseKey: 'EA-XYZ',
             accountLogin: '184006910',
             symbol: 'XAUUSDc',
@@ -115,6 +139,8 @@ describe('ConsoleGateway.onBridgeRegister', () => {
     it('skips upsert and warns when licenseKey is missing from token', async () => {
         const client = makeClient({
             userId: 'user-1',
+            // v2: agentId is the verified token claim (set by handleConnection).
+            agentId: '184006910-XAUUSDc-1001-1002',
             licenseKey: null,
             accountLogin: '184006910',
             symbol: 'XAUUSDc',
@@ -325,5 +351,41 @@ describe('ConsoleGateway.onClientSubscribe (tight ownership)', () => {
             agentId: 'agent-1',
         });
         expect(client.disconnect).toHaveBeenCalled();
+    });
+});
+
+describe('bridge:register token↔agent binding (v2)', () => {
+    let gateway: ConsoleGateway;
+    let instanceModel: ReturnType<typeof makeInstanceModel>;
+
+    beforeEach(async () => {
+        instanceModel = makeInstanceModel();
+        gateway = await buildGateway(instanceModel);
+    });
+
+    it('disconnects when payload agentId differs from token claim', async () => {
+        const client = makeBridgeClient({ agentId: 'A-XAUUSD-1-2' }); // token claim
+        await gateway.onBridgeRegister(client as any, {
+            agentId: 'B-EURUSD-3-4', // spoofed payload
+        });
+        expect(client.emit).toHaveBeenCalledWith('error', {
+            message: 'forbidden: agentId does not match token',
+        });
+        expect(client.disconnect).toHaveBeenCalledWith(true);
+    });
+
+    it('accepts when payload agentId matches the token claim', async () => {
+        const client = makeBridgeClient({ agentId: 'A-XAUUSD-1-2' });
+        await gateway.onBridgeRegister(client as any, {
+            agentId: 'A-XAUUSD-1-2',
+        });
+        expect(client.disconnect).not.toHaveBeenCalled();
+    });
+
+    it('uses the token claim when payload omits agentId', async () => {
+        const client = makeBridgeClient({ agentId: 'A-XAUUSD-1-2' });
+        await gateway.onBridgeRegister(client as any, {});
+        expect(client.data.agentId).toBe('A-XAUUSD-1-2');
+        expect(client.disconnect).not.toHaveBeenCalled();
     });
 });

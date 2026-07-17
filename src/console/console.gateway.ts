@@ -109,13 +109,28 @@ export class ConsoleGateway
         @MessageBody() data: { agentId?: string; bridgeVersion?: string },
     ) {
         if (!client.data.isBridge) return;
-        // agentId comes from the token; allow the payload to confirm it.
-        const agentId = data.agentId ?? client.data.agentId;
+        // v2: the agentId is BOUND to the token claim. The payload may repeat
+        // it, but may never override it — a bridge presenting agent A's token
+        // cannot register as agent B.
+        const tokenAgentId = client.data.agentId;
         const callerId = client.data.userId;
-        if (!agentId) {
-            this.logger.warn('bridge:register missing agentId -- skipping');
+        if (!tokenAgentId) {
+            this.logger.warn(
+                'bridge:register missing token agent claim -- skipping',
+            );
             return;
         }
+        if (data.agentId && data.agentId !== tokenAgentId) {
+            this.logger.warn(
+                `bridge:register agentId mismatch token=${tokenAgentId} payload=${data.agentId} -- disconnecting`,
+            );
+            client.emit('error', {
+                message: 'forbidden: agentId does not match token',
+            });
+            client.disconnect(true);
+            return;
+        }
+        const agentId = tokenAgentId;
 
         // Ownership lock: if instance already exists under a different userId, reject
         const existing = await this.instanceModel
