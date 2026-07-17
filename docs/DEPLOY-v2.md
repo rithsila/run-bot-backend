@@ -64,6 +64,7 @@ docker compose logs -f --tail 50
 ```
 
 You should see:
+
 - `ConsoleScheduler` logs showing the app started.
 - Note: the 15-second expiry sweep is SILENT when nothing is expired. You will NOT see a log line every 15 seconds — that is normal. It only logs a warning line (`expired bridge socket kicked ...`) when it actually kicks an expired bridge.
 
@@ -104,6 +105,7 @@ git checkout main && git reset --hard <PREVIOUS_SHA>
 ```
 
 Example:
+
 ```bash
 git checkout main && git reset --hard a3b5c7f
 ```
@@ -137,6 +139,17 @@ Wait for the old version to start, then stop logs with `Ctrl+C`.
 ## Contact
 
 If the app fails to start:
+
 1. Check logs: `docker compose logs --tail 100`.
 2. Look for error messages (usually near the top of the logs).
 3. If the error mentions missing dependencies, try `docker compose build --no-cache` and then `docker compose up -d --force-recreate` again.
+
+---
+
+## Follow-up deploy: browser expiry sweep (Plan 3)
+
+Deploy this ONLY after the new web dashboard (multi-EA UI) is live on
+easafetyscore.com. Order matters: this build starts kicking browser
+connections with expired tokens. The new web client refreshes its token
+and reconnects by itself. The old web client cannot, and would drop
+after about 1 hour.

@@ -383,12 +383,12 @@ export class ConsoleGateway
     }
 
     /**
-     * Kick bridge sockets whose token has expired. Two-phase: the first sweep
-     * emits `auth:expired` (Plan 1's bridge refreshes its token over ZMQ and
+     * Kick sockets whose token has expired — bridges AND browsers. Two-phase:
+     * the first sweep emits `auth:expired` (the bridge refreshes its token
+     * over ZMQ; the web client refetches GET /api/ea-console/token and
      * reconnects); the next sweep disconnects sockets that are still expired.
-     * Browser sockets are exempt until the web client ships its handler.
      */
-    sweepExpiredBridgeSockets(): { notified: number; kicked: number } {
+    sweepExpiredSockets(): { notified: number; kicked: number } {
         const now = Math.floor(Date.now() / 1000);
         let notified = 0;
         let kicked = 0;
@@ -397,15 +397,14 @@ export class ConsoleGateway
             new Map();
         for (const socket of sockets.values()) {
             const d = socket.data as BridgeSocketData;
-            if (!d?.isBridge) continue;
-            if (!d.tokenExpiresAt || d.tokenExpiresAt > now) continue;
+            if (!d?.tokenExpiresAt || d.tokenExpiresAt > now) continue;
             if (!d.expiryNotified) {
                 d.expiryNotified = true;
                 socket.emit('auth:expired');
                 notified++;
             } else {
                 this.logger.warn(
-                    `expired bridge socket kicked agentId=${d.agentId} id=${socket.id}`,
+                    `expired socket kicked isBridge=${String(d.isBridge)} agentId=${d.agentId ?? '-'} id=${socket.id}`,
                 );
                 socket.disconnect(true);
                 kicked++;

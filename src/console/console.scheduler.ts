@@ -101,12 +101,12 @@ export class ConsoleScheduler {
     }
 
     /**
-     * Every 15s: notify/kick bridge sockets with expired tokens. 15s cadence
-     * means the notify→kick grace is 15s, well inside the bridge's 15s
-     * token-refresh timeout window.
+     * Every 15s: notify/kick bridge AND browser sockets with expired tokens.
+     * 15s cadence means the notify→kick grace is 15s, well inside the
+     * bridge's 15s token-refresh timeout window.
      */
     @Cron('*/15 * * * * *')
     sweepExpiredSockets(): void {
-        this.gateway.sweepExpiredBridgeSockets();
+        this.gateway.sweepExpiredSockets();
     }
 }

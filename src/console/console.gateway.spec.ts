@@ -592,21 +592,21 @@ describe('token expiry sweep (v2)', () => {
             tokenExpiresAt: Math.floor(Date.now() / 1000) - 10,
         });
         setGatewaySockets(gateway, socketsMap(s));
-        gateway.sweepExpiredBridgeSockets();
+        gateway.sweepExpiredSockets();
         expect(s.emit).toHaveBeenCalledWith('auth:expired');
         expect(s.disconnect).not.toHaveBeenCalled();
-        gateway.sweepExpiredBridgeSockets();
+        gateway.sweepExpiredSockets();
         expect(s.disconnect).toHaveBeenCalledWith(true);
     });
 
-    it('never touches browser sockets even when expired', () => {
+    it('notifies an expired browser socket too (no longer exempt, Plan 3)', () => {
         const s = fakeSocket({
             isBridge: false,
             tokenExpiresAt: Math.floor(Date.now() / 1000) - 10,
         });
         setGatewaySockets(gateway, socketsMap(s));
-        gateway.sweepExpiredBridgeSockets();
-        expect(s.emit).not.toHaveBeenCalled();
+        gateway.sweepExpiredSockets();
+        expect(s.emit).toHaveBeenCalledWith('auth:expired');
         expect(s.disconnect).not.toHaveBeenCalled();
     });
 
@@ -617,7 +617,25 @@ describe('token expiry sweep (v2)', () => {
             tokenExpiresAt: Math.floor(Date.now() / 1000) + 3600,
         });
         setGatewaySockets(gateway, socketsMap(s));
-        gateway.sweepExpiredBridgeSockets();
+        gateway.sweepExpiredSockets();
         expect(s.emit).not.toHaveBeenCalled();
+    });
+
+    it('sweeps expired browser sockets too: notify first, kick second', () => {
+        const s = fakeSocket({
+            isBridge: false,
+            userId: 'user-1',
+            tokenExpiresAt: Math.floor(Date.now() / 1000) - 10,
+        });
+        setGatewaySockets(gateway, socketsMap(s));
+
+        const first = gateway.sweepExpiredSockets();
+        expect(first.notified).toBe(1);
+        expect(s.emit).toHaveBeenCalledWith('auth:expired');
+        expect(s.disconnect).not.toHaveBeenCalled();
+
+        const second = gateway.sweepExpiredSockets();
+        expect(second.kicked).toBe(1);
+        expect(s.disconnect).toHaveBeenCalledWith(true);
     });
 });
