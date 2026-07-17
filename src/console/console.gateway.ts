@@ -40,9 +40,6 @@ export class ConsoleGateway
     // In-process telemetry cache (replaces the Redis `ea:state:{agentId}` cache).
     private readonly telemetryCache = new TtlCache();
 
-    // commandId → socketId of the browser client waiting for ACK
-    private readonly pendingAck = new Map<string, string>();
-
     // agentId → socket id of the CURRENT bridge connection for that agent.
     // A new registration for the same agentId kicks the stale socket, and a
     // stale socket's late disconnect can no longer mark the agent offline.
@@ -190,8 +187,10 @@ export class ConsoleGateway
             return;
         }
 
-        const room = `agent:${agentId}`;
-        void client.join(room);
+        // The bridge does not need to be in the browser (`agent:`) room —
+        // every emit it receives is addressed to `bridge:`, keeping bridge
+        // command traffic invisible to browser clients in the same room.
+        void client.join(`bridge:${agentId}`);
 
         // Persist the instance so the browser can subscribe afterwards. This
         // MUST land before any client:subscribe for the same agentId succeeds.
@@ -213,7 +212,9 @@ export class ConsoleGateway
         this.logger.log(
             `bridge:register agentId=${agentId} socketId=${client.id}`,
         );
-        this.io.to(room).emit('console:status', { agentId, online: true });
+        this.io
+            .to(`agent:${agentId}`)
+            .emit('console:status', { agentId, online: true });
     }
 
     @SubscribeMessage('console:telemetry')
@@ -266,13 +267,6 @@ export class ConsoleGateway
         if (agentId) {
             this.io.to(`agent:${agentId}`).emit('console:ack', data);
         }
-
-        // Also send to the specific socket that originated the command (if any).
-        const targetSocketId = this.pendingAck.get(data.uuid);
-        if (targetSocketId) {
-            this.io.to(targetSocketId).emit('console:ack', data);
-        }
-        this.pendingAck.delete(data.uuid);
     }
 
     @SubscribeMessage('console:status')
@@ -366,22 +360,8 @@ export class ConsoleGateway
         verb: string,
         value?: string,
     ) {
-        this.pendingAck.set(commandId, ''); // will be set with actual socket ID in service
         this.io
-            .to(`agent:${agentId}`)
-            .emit('bridge:command', { commandId, verb, value });
-    }
-
-    sendCommandToBridgeWithAck(
-        agentId: string,
-        commandId: string,
-        originSocketId: string,
-        verb: string,
-        value?: string,
-    ) {
-        this.pendingAck.set(commandId, originSocketId);
-        this.io
-            .to(`agent:${agentId}`)
+            .to(`bridge:${agentId}`)
             .emit('bridge:command', { commandId, verb, value });
     }
 

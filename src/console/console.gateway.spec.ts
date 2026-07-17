@@ -437,3 +437,28 @@ describe('duplicate bridge connections (v2)', () => {
         );
     });
 });
+
+describe('room separation (v2)', () => {
+    let gateway: ConsoleGateway;
+    let instanceModel: ReturnType<typeof makeInstanceModel>;
+    let ioToMock: jest.Mock;
+
+    beforeEach(async () => {
+        instanceModel = makeInstanceModel();
+        gateway = await buildGateway(instanceModel);
+        ioToMock = (gateway.io as unknown as { to: jest.Mock }).to;
+    });
+
+    it('bridge joins bridge:<agentId>, not agent:<agentId>', async () => {
+        const client = makeBridgeClient({ agentId: 'A-XAUUSD-1-2' });
+        await gateway.onBridgeRegister(client as any, {});
+        expect(client.join).toHaveBeenCalledWith('bridge:A-XAUUSD-1-2');
+        expect(client.join).not.toHaveBeenCalledWith('agent:A-XAUUSD-1-2');
+    });
+
+    it('sendCommandToBridge emits to the bridge room only', () => {
+        gateway.sendCommandToBridge('A-XAUUSD-1-2', 'cmd-1', 'KILL_SWITCH');
+        expect(ioToMock).toHaveBeenCalledWith('bridge:A-XAUUSD-1-2');
+        expect(ioToMock).not.toHaveBeenCalledWith('agent:A-XAUUSD-1-2');
+    });
+});
