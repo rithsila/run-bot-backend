@@ -43,6 +43,11 @@ export class ConsoleGateway
     // commandId → socketId of the browser client waiting for ACK
     private readonly pendingAck = new Map<string, string>();
 
+    // agentId → socket id of the CURRENT bridge connection for that agent.
+    // A new registration for the same agentId kicks the stale socket, and a
+    // stale socket's late disconnect can no longer mark the agent offline.
+    private readonly bridgeSockets = new Map<string, string>();
+
     constructor(
         @InjectModel(EaInstance.name)
         private readonly instanceModel: Model<EaInstanceDocument>,
@@ -89,6 +94,15 @@ export class ConsoleGateway
         );
 
         if (d.isBridge && d.agentId) {
+            // Owner check: only the CURRENT socket for this agent may flip it
+            // offline. A kicked/stale socket's late disconnect is a no-op.
+            if (this.bridgeSockets.get(d.agentId) !== client.id) {
+                this.logger.log(
+                    `stale bridge socket disconnect ignored agentId=${d.agentId} id=${client.id}`,
+                );
+                return;
+            }
+            this.bridgeSockets.delete(d.agentId);
             await this.instanceModel.updateOne(
                 { agentId: d.agentId },
                 { $set: { online: false } },
@@ -147,6 +161,16 @@ export class ConsoleGateway
             client.disconnect(true);
             return;
         }
+
+        // Duplicate-connection handling: newest registration wins.
+        const staleId = this.bridgeSockets.get(agentId);
+        if (staleId && staleId !== client.id) {
+            this.logger.warn(
+                `bridge:register takeover agentId=${agentId} old=${staleId} new=${client.id}`,
+            );
+            this.io.in(staleId).disconnectSockets(true);
+        }
+        this.bridgeSockets.set(agentId, client.id);
 
         client.data.agentId = agentId;
         client.data.isBridge = true;

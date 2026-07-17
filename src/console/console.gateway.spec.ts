@@ -27,7 +27,12 @@ function makeInstanceModel() {
 function makeIoMock() {
     const emit = jest.fn();
     const to = jest.fn().mockReturnValue({ emit });
-    return { to, emit };
+    // v2: duplicate-connection kick uses `io.in(staleSocketId).disconnectSockets(true)`.
+    const disconnectSocketsMock = jest.fn();
+    const inFn = jest.fn().mockReturnValue({
+        disconnectSockets: disconnectSocketsMock,
+    });
+    return { to, emit, in: inFn, disconnectSocketsMock };
 }
 
 function makeClient(data: Partial<FakeSocketData>) {
@@ -387,5 +392,48 @@ describe('bridge:register token↔agent binding (v2)', () => {
         await gateway.onBridgeRegister(client as any, {});
         expect(client.data.agentId).toBe('A-XAUUSD-1-2');
         expect(client.disconnect).not.toHaveBeenCalled();
+    });
+});
+
+describe('duplicate bridge connections (v2)', () => {
+    let gateway: ConsoleGateway;
+    let instanceModel: ReturnType<typeof makeInstanceModel>;
+    let disconnectSocketsMock: jest.Mock;
+
+    beforeEach(async () => {
+        instanceModel = makeInstanceModel();
+        gateway = await buildGateway(instanceModel);
+        disconnectSocketsMock = (
+            gateway.io as unknown as { disconnectSocketsMock: jest.Mock }
+        ).disconnectSocketsMock;
+    });
+
+    it('kicks the old socket when the same agentId registers again', async () => {
+        const oldClient = makeBridgeClient({ agentId: 'A-XAUUSD-1-2' });
+        const newClient = makeBridgeClient({ agentId: 'A-XAUUSD-1-2' });
+        await gateway.onBridgeRegister(oldClient as any, {});
+        await gateway.onBridgeRegister(newClient as any, {});
+        // the gateway disconnects the stale socket via the server API
+        expect(disconnectSocketsMock).toHaveBeenCalled(); // io.in(oldId).disconnectSockets(true)
+    });
+
+    it('a kicked socket disconnecting later does NOT mark the agent offline', async () => {
+        const oldClient = makeBridgeClient({ agentId: 'A-XAUUSD-1-2' });
+        const newClient = makeBridgeClient({ agentId: 'A-XAUUSD-1-2' });
+        await gateway.onBridgeRegister(oldClient as any, {});
+        await gateway.onBridgeRegister(newClient as any, {});
+        (instanceModel.updateOne as jest.Mock).mockClear();
+        await gateway.handleDisconnect(oldClient as any);
+        expect(instanceModel.updateOne).not.toHaveBeenCalled();
+    });
+
+    it('the current owner disconnecting DOES mark the agent offline', async () => {
+        const client = makeBridgeClient({ agentId: 'A-XAUUSD-1-2' });
+        await gateway.onBridgeRegister(client as any, {});
+        await gateway.handleDisconnect(client as any);
+        expect(instanceModel.updateOne).toHaveBeenCalledWith(
+            { agentId: 'A-XAUUSD-1-2' },
+            { $set: { online: false } },
+        );
     });
 });
