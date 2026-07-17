@@ -159,4 +159,28 @@ export class ConsoleController {
         );
         return { settings };
     }
+
+    // ── Bulk commands (v2) ───────────────────────────────────────────────────
+
+    @Post('accounts/:accountLogin/stop-all')
+    @HttpCode(HttpStatus.OK)
+    @Throttle({ default: { limit: 10, ttl: 60_000 } })
+    async stopAccount(
+        @Param('accountLogin') accountLogin: string,
+        @Req() req: AuthRequest,
+    ) {
+        return this.console.stopAccount(accountLogin, req.user.userId);
+    }
+
+    @Post('kill-all')
+    @HttpCode(HttpStatus.OK)
+    @Throttle({ default: { limit: 10, ttl: 60_000 } })
+    async killAll(@Body() dto: KillSwitchDto, @Req() req: AuthRequest) {
+        if (dto.confirm !== true) {
+            throw new BadRequestException(
+                'confirm must be true to execute kill-all',
+            );
+        }
+        return this.console.killAll(req.user.userId);
+    }
 }

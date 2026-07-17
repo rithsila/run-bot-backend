@@ -103,6 +103,19 @@ const RESTART_REQUIRED_KEYS = new Set([
     'SellMagicNumber', // position identity
 ]);
 
+export interface BulkCommandResult {
+    agentId: string;
+    ok: boolean;
+    commandId?: string;
+    error?: string;
+}
+
+export interface BulkCommandSummary {
+    total: number;
+    sent: number;
+    results: BulkCommandResult[];
+}
+
 @Injectable()
 export class ConsoleService {
     private readonly logger = new Logger(ConsoleService.name);
@@ -252,6 +265,62 @@ export class ConsoleService {
             `close_sell agentId=${agentId} commandId=${commandId} userId=${userId}`,
         );
         return { commandId };
+    }
+
+    // ── Bulk commands (v2) ───────────────────────────────────────────────────
+
+    /**
+     * Send one verb to every instance in `instances`, collecting per-agent
+     * results. Offline instances are reported, never silently skipped.
+     */
+    private async fanOutCommand(
+        instances: Pick<EaInstance, 'agentId' | 'online'>[],
+        verb: string,
+        value: string | undefined,
+        auditEvent: AuditEvent,
+        userId: string,
+    ): Promise<BulkCommandSummary> {
+        const results: BulkCommandResult[] = [];
+        for (const inst of instances) {
+            if (!inst.online) {
+                results.push({ agentId: inst.agentId, ok: false, error: 'offline' });
+                continue;
+            }
+            const commandId = uuidv4();
+            this.gateway.sendCommandToBridge(inst.agentId, commandId, verb, value);
+            await this.logEvent(inst.agentId, auditEvent, { commandId, bulk: true }, userId);
+            results.push({ agentId: inst.agentId, ok: true, commandId });
+        }
+        return {
+            total: instances.length,
+            sent: results.filter((r) => r.ok).length,
+            results,
+        };
+    }
+
+    /** Bulk: master-disable every EA on one account owned by the caller. */
+    async stopAccount(
+        accountLogin: string,
+        userId: string,
+    ): Promise<BulkCommandSummary> {
+        const instances = await this.instanceModel
+            .find({ userId, accountLogin })
+            .lean()
+            .exec();
+        this.logger.log(
+            `stop-account accountLogin=${accountLogin} userId=${userId} instances=${instances.length}`,
+        );
+        return this.fanOutCommand(instances, 'MASTER_ENABLE', '0', AuditEvent.MasterEnable, userId);
+    }
+
+    /** Bulk: kill-switch every EA owned by the caller. */
+    async killAll(userId: string): Promise<BulkCommandSummary> {
+        const instances = await this.instanceModel
+            .find({ userId })
+            .lean()
+            .exec();
+        this.logger.log(`kill-all userId=${userId} instances=${instances.length}`);
+        return this.fanOutCommand(instances, 'KILL_SWITCH', undefined, AuditEvent.KillSwitch, userId);
     }
 
     async pushSettings(

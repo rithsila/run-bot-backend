@@ -934,4 +934,52 @@ describe('ConsoleService', () => {
             expect(gateway.sendCommandToBridge).not.toHaveBeenCalled();
         });
     });
+
+    // ── bulk commands (v2) ────────────────────────────────────────────────────
+
+    describe('bulk commands (v2)', () => {
+        function mockFind(docs: unknown[]) {
+            instanceModel.find.mockReturnValue({
+                lean: () => ({ exec: () => Promise.resolve(docs) }),
+            });
+        }
+
+        const inst = (agentId: string, online: boolean, accountLogin = '111') => ({
+            agentId, online, accountLogin, userId: 'user-1',
+            licenseKey: 'L', symbol: agentId.split('-')[1],
+        });
+
+        beforeEach(() => {
+            auditModel.create.mockResolvedValue({});
+        });
+
+        it('stopAccount sends MASTER_ENABLE 0 to online EAs of that account only', async () => {
+            mockFind([inst('111-XAUUSD-1-2', true), inst('111-EURUSD-3-4', false)]);
+            const res = await service.stopAccount('111', 'user-1');
+            expect(gateway.sendCommandToBridge).toHaveBeenCalledTimes(1);
+            expect(gateway.sendCommandToBridge).toHaveBeenCalledWith(
+                '111-XAUUSD-1-2', expect.any(String), 'MASTER_ENABLE', '0',
+            );
+            expect(res.total).toBe(2);
+            expect(res.sent).toBe(1);
+            expect(res.results).toEqual(expect.arrayContaining([
+                expect.objectContaining({ agentId: '111-EURUSD-3-4', ok: false, error: 'offline' }),
+            ]));
+        });
+
+        it('killAll fans KILL_SWITCH to every online EA of the user', async () => {
+            mockFind([inst('111-XAUUSD-1-2', true), inst('222-USDJPY-5-6', true, '222')]);
+            const res = await service.killAll('user-1');
+            expect(gateway.sendCommandToBridge).toHaveBeenCalledTimes(2);
+            expect(res.sent).toBe(2);
+        });
+
+        it('bulk methods query only the caller userId', async () => {
+            mockFind([]);
+            await service.killAll('user-1');
+            expect(instanceModel.find).toHaveBeenCalledWith(
+                expect.objectContaining({ userId: 'user-1' }),
+            );
+        });
+    });
 });
