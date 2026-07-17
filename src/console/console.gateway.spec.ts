@@ -27,7 +27,12 @@ function makeInstanceModel() {
 function makeIoMock() {
     const emit = jest.fn();
     const to = jest.fn().mockReturnValue({ emit });
-    return { to, emit };
+    // v2: duplicate-connection kick uses `io.in(staleSocketId).disconnectSockets(true)`.
+    const disconnectSocketsMock = jest.fn();
+    const inFn = jest.fn().mockReturnValue({
+        disconnectSockets: disconnectSocketsMock,
+    });
+    return { to, emit, in: inFn, disconnectSocketsMock };
 }
 
 function makeClient(data: Partial<FakeSocketData>) {
@@ -44,6 +49,27 @@ function makeClient(data: Partial<FakeSocketData>) {
         join: jest.fn(),
         emit: jest.fn(),
         disconnect: jest.fn(),
+    };
+}
+
+// v2 helper: builds a bridge socket whose `data` mirrors what
+// `handleConnection` would set from a verified token claim (agentId is the
+// TOKEN claim, not something the payload can override).
+function makeBridgeClient(claims: { agentId: string; userId?: string }): any {
+    return {
+        id: `sock-${Math.random().toString(36).slice(2, 8)}`,
+        data: {
+            userId: claims.userId ?? 'user-1',
+            isBridge: true,
+            agentId: claims.agentId,
+            licenseKey: 'LIC-1',
+            accountLogin: claims.agentId.split('-')[0],
+            symbol: claims.agentId.split('-')[1],
+        },
+        emit: jest.fn(),
+        disconnect: jest.fn(),
+        join: jest.fn(),
+        leave: jest.fn(),
     };
 }
 
@@ -87,6 +113,9 @@ describe('ConsoleGateway.onBridgeRegister', () => {
     it('creates ea-instance with all required fields when token carries credentials', async () => {
         const client = makeClient({
             userId: 'user-1',
+            // v2: agentId is the verified token claim (set by handleConnection),
+            // not something the payload establishes.
+            agentId: '184006910-XAUUSDc-1001-1002',
             licenseKey: 'EA-XYZ',
             accountLogin: '184006910',
             symbol: 'XAUUSDc',
@@ -115,6 +144,8 @@ describe('ConsoleGateway.onBridgeRegister', () => {
     it('skips upsert and warns when licenseKey is missing from token', async () => {
         const client = makeClient({
             userId: 'user-1',
+            // v2: agentId is the verified token claim (set by handleConnection).
+            agentId: '184006910-XAUUSDc-1001-1002',
             licenseKey: null,
             accountLogin: '184006910',
             symbol: 'XAUUSDc',
@@ -325,5 +356,268 @@ describe('ConsoleGateway.onClientSubscribe (tight ownership)', () => {
             agentId: 'agent-1',
         });
         expect(client.disconnect).toHaveBeenCalled();
+    });
+});
+
+describe('bridge:register token↔agent binding (v2)', () => {
+    let gateway: ConsoleGateway;
+    let instanceModel: ReturnType<typeof makeInstanceModel>;
+
+    beforeEach(async () => {
+        instanceModel = makeInstanceModel();
+        gateway = await buildGateway(instanceModel);
+    });
+
+    it('disconnects when payload agentId differs from token claim', async () => {
+        const client = makeBridgeClient({ agentId: 'A-XAUUSD-1-2' }); // token claim
+        await gateway.onBridgeRegister(client as any, {
+            agentId: 'B-EURUSD-3-4', // spoofed payload
+        });
+        expect(client.emit).toHaveBeenCalledWith('error', {
+            message: 'forbidden: agentId does not match token',
+        });
+        expect(client.disconnect).toHaveBeenCalledWith(true);
+    });
+
+    it('accepts when payload agentId matches the token claim', async () => {
+        const client = makeBridgeClient({ agentId: 'A-XAUUSD-1-2' });
+        await gateway.onBridgeRegister(client as any, {
+            agentId: 'A-XAUUSD-1-2',
+        });
+        expect(client.disconnect).not.toHaveBeenCalled();
+    });
+
+    it('uses the token claim when payload omits agentId', async () => {
+        const client = makeBridgeClient({ agentId: 'A-XAUUSD-1-2' });
+        await gateway.onBridgeRegister(client as any, {});
+        expect(client.data.agentId).toBe('A-XAUUSD-1-2');
+        expect(client.disconnect).not.toHaveBeenCalled();
+    });
+});
+
+describe('duplicate bridge connections (v2)', () => {
+    let gateway: ConsoleGateway;
+    let instanceModel: ReturnType<typeof makeInstanceModel>;
+    let disconnectSocketsMock: jest.Mock;
+
+    beforeEach(async () => {
+        instanceModel = makeInstanceModel();
+        gateway = await buildGateway(instanceModel);
+        disconnectSocketsMock = (
+            gateway.io as unknown as { disconnectSocketsMock: jest.Mock }
+        ).disconnectSocketsMock;
+    });
+
+    it('kicks the old socket when the same agentId registers again', async () => {
+        const oldClient = makeBridgeClient({ agentId: 'A-XAUUSD-1-2' });
+        const newClient = makeBridgeClient({ agentId: 'A-XAUUSD-1-2' });
+        await gateway.onBridgeRegister(oldClient as any, {});
+        await gateway.onBridgeRegister(newClient as any, {});
+        // the gateway disconnects the stale socket via the server API
+        expect(disconnectSocketsMock).toHaveBeenCalled(); // io.in(oldId).disconnectSockets(true)
+    });
+
+    it('a kicked socket disconnecting later does NOT mark the agent offline', async () => {
+        const oldClient = makeBridgeClient({ agentId: 'A-XAUUSD-1-2' });
+        const newClient = makeBridgeClient({ agentId: 'A-XAUUSD-1-2' });
+        await gateway.onBridgeRegister(oldClient as any, {});
+        await gateway.onBridgeRegister(newClient as any, {});
+        (instanceModel.updateOne as jest.Mock).mockClear();
+        await gateway.handleDisconnect(oldClient as any);
+        expect(instanceModel.updateOne).not.toHaveBeenCalled();
+    });
+
+    it('the current owner disconnecting DOES mark the agent offline', async () => {
+        const client = makeBridgeClient({ agentId: 'A-XAUUSD-1-2' });
+        await gateway.onBridgeRegister(client as any, {});
+        await gateway.handleDisconnect(client as any);
+        expect(instanceModel.updateOne).toHaveBeenCalledWith(
+            { agentId: 'A-XAUUSD-1-2' },
+            { $set: { online: false } },
+        );
+    });
+});
+
+describe('bridge:register kick ordering (v2)', () => {
+    let gateway: ConsoleGateway;
+    let instanceModel: ReturnType<typeof makeInstanceModel>;
+    let disconnectSocketsMock: jest.Mock;
+
+    beforeEach(async () => {
+        instanceModel = makeInstanceModel();
+        gateway = await buildGateway(instanceModel);
+        disconnectSocketsMock = (
+            gateway.io as unknown as { disconnectSocketsMock: jest.Mock }
+        ).disconnectSocketsMock;
+    });
+
+    it('does not kick the healthy socket when a later incomplete registration for the same agentId fails validation', async () => {
+        const healthyClient = makeBridgeClient({ agentId: 'A-XAUUSD-1-2' });
+        await gateway.onBridgeRegister(healthyClient as any, {});
+        disconnectSocketsMock.mockClear();
+
+        // Incomplete registration for the SAME agentId: token claim carries
+        // no licenseKey, so the required-fields check must fail it.
+        const incompleteClient = makeBridgeClient({ agentId: 'A-XAUUSD-1-2' });
+        incompleteClient.data.licenseKey = null;
+        await gateway.onBridgeRegister(incompleteClient as any, {});
+
+        expect(disconnectSocketsMock).not.toHaveBeenCalled();
+
+        // Ownership of the agentId must still belong to the healthy socket:
+        // its disconnect should still flip the agent offline.
+        (instanceModel.updateOne as jest.Mock).mockClear();
+        await gateway.handleDisconnect(healthyClient as any);
+        expect(instanceModel.updateOne).toHaveBeenCalledWith(
+            { agentId: 'A-XAUUSD-1-2' },
+            { $set: { online: false } },
+        );
+    });
+});
+
+describe('console:telemetry agentId spoof guard (v2)', () => {
+    let gateway: ConsoleGateway;
+    let instanceModel: ReturnType<typeof makeInstanceModel>;
+    let ioToMock: jest.Mock;
+
+    beforeEach(async () => {
+        instanceModel = makeInstanceModel();
+        gateway = await buildGateway(instanceModel);
+        ioToMock = (gateway.io as unknown as { to: jest.Mock }).to;
+    });
+
+    it('drops the frame when payload agentId differs from the token claim', async () => {
+        const client = makeClient({
+            userId: 'user-1',
+            isBridge: true,
+            agentId: 'agent-A',
+        });
+        const telemetry = { agentId: 'agent-B', ts: 123, balance: 1000 };
+
+        await gateway.onBridgeTelemetry(client as never, telemetry as never);
+
+        expect(gateway.getCachedState('agent-A')).toBeNull();
+        expect(gateway.getCachedState('agent-B')).toBeNull();
+        expect(instanceModel.updateOne).not.toHaveBeenCalled();
+        expect(ioToMock).not.toHaveBeenCalledWith('agent:agent-B');
+        expect(ioToMock).not.toHaveBeenCalledWith('agent:agent-A');
+    });
+
+    it('processes normally when payload agentId matches the token claim', async () => {
+        const client = makeClient({
+            userId: 'user-1',
+            isBridge: true,
+            agentId: 'agent-A',
+        });
+        const telemetry = { agentId: 'agent-A', ts: 123, balance: 1000 };
+
+        await gateway.onBridgeTelemetry(client as never, telemetry as never);
+
+        expect(gateway.getCachedState('agent-A')).toBe(
+            JSON.stringify(telemetry),
+        );
+        expect(instanceModel.updateOne).toHaveBeenCalled();
+        expect(ioToMock).toHaveBeenCalledWith('agent:agent-A');
+    });
+
+    it('processes normally when the payload omits agentId (falls back to token claim)', async () => {
+        const client = makeClient({
+            userId: 'user-1',
+            isBridge: true,
+            agentId: 'agent-A',
+        });
+        const telemetry = { ts: 123, balance: 1000 };
+
+        await gateway.onBridgeTelemetry(client as never, telemetry as never);
+
+        expect(gateway.getCachedState('agent-A')).toBe(
+            JSON.stringify(telemetry),
+        );
+        expect(instanceModel.updateOne).toHaveBeenCalled();
+        expect(ioToMock).toHaveBeenCalledWith('agent:agent-A');
+    });
+});
+
+describe('room separation (v2)', () => {
+    let gateway: ConsoleGateway;
+    let instanceModel: ReturnType<typeof makeInstanceModel>;
+    let ioToMock: jest.Mock;
+
+    beforeEach(async () => {
+        instanceModel = makeInstanceModel();
+        gateway = await buildGateway(instanceModel);
+        ioToMock = (gateway.io as unknown as { to: jest.Mock }).to;
+    });
+
+    it('bridge joins bridge:<agentId>, not agent:<agentId>', async () => {
+        const client = makeBridgeClient({ agentId: 'A-XAUUSD-1-2' });
+        await gateway.onBridgeRegister(client as any, {});
+        expect(client.join).toHaveBeenCalledWith('bridge:A-XAUUSD-1-2');
+        expect(client.join).not.toHaveBeenCalledWith('agent:A-XAUUSD-1-2');
+    });
+
+    it('sendCommandToBridge emits to the bridge room only', () => {
+        gateway.sendCommandToBridge('A-XAUUSD-1-2', 'cmd-1', 'KILL_SWITCH');
+        expect(ioToMock).toHaveBeenCalledWith('bridge:A-XAUUSD-1-2');
+        expect(ioToMock).not.toHaveBeenCalledWith('agent:A-XAUUSD-1-2');
+    });
+});
+
+describe('token expiry sweep (v2)', () => {
+    let gateway: ConsoleGateway;
+    let instanceModel: ReturnType<typeof makeInstanceModel>;
+
+    beforeEach(async () => {
+        instanceModel = makeInstanceModel();
+        gateway = await buildGateway(instanceModel);
+    });
+
+    function fakeSocket(data: Partial<any>): any {
+        return { id: 's1', data, emit: jest.fn(), disconnect: jest.fn() };
+    }
+
+    function socketsMap(...socks: any[]) {
+        // namespace sockets map as socket.io exposes it
+        return new Map(socks.map((s) => [s.id, s]));
+    }
+
+    function setGatewaySockets(gw: ConsoleGateway, map: Map<string, any>) {
+        (gw.io as any) = { ...(gw.io as any), sockets: map };
+    }
+
+    it('notifies an expired bridge socket, then kicks it on the next sweep', () => {
+        const s = fakeSocket({
+            isBridge: true,
+            agentId: 'A-1',
+            tokenExpiresAt: Math.floor(Date.now() / 1000) - 10,
+        });
+        setGatewaySockets(gateway, socketsMap(s));
+        gateway.sweepExpiredBridgeSockets();
+        expect(s.emit).toHaveBeenCalledWith('auth:expired');
+        expect(s.disconnect).not.toHaveBeenCalled();
+        gateway.sweepExpiredBridgeSockets();
+        expect(s.disconnect).toHaveBeenCalledWith(true);
+    });
+
+    it('never touches browser sockets even when expired', () => {
+        const s = fakeSocket({
+            isBridge: false,
+            tokenExpiresAt: Math.floor(Date.now() / 1000) - 10,
+        });
+        setGatewaySockets(gateway, socketsMap(s));
+        gateway.sweepExpiredBridgeSockets();
+        expect(s.emit).not.toHaveBeenCalled();
+        expect(s.disconnect).not.toHaveBeenCalled();
+    });
+
+    it('ignores unexpired sockets', () => {
+        const s = fakeSocket({
+            isBridge: true,
+            agentId: 'A-1',
+            tokenExpiresAt: Math.floor(Date.now() / 1000) + 3600,
+        });
+        setGatewaySockets(gateway, socketsMap(s));
+        gateway.sweepExpiredBridgeSockets();
+        expect(s.emit).not.toHaveBeenCalled();
     });
 });

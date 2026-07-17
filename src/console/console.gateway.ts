@@ -26,6 +26,8 @@ interface BridgeSocketData {
     licenseKey: string | null;
     accountLogin: string | null;
     symbol: string | null;
+    tokenExpiresAt?: number;
+    expiryNotified?: boolean;
 }
 
 type BridgeSocket = Omit<Socket, 'data'> & { data: BridgeSocketData };
@@ -40,8 +42,10 @@ export class ConsoleGateway
     // In-process telemetry cache (replaces the Redis `ea:state:{agentId}` cache).
     private readonly telemetryCache = new TtlCache();
 
-    // commandId → socketId of the browser client waiting for ACK
-    private readonly pendingAck = new Map<string, string>();
+    // agentId → socket id of the CURRENT bridge connection for that agent.
+    // A new registration for the same agentId kicks the stale socket, and a
+    // stale socket's late disconnect can no longer mark the agent offline.
+    private readonly bridgeSockets = new Map<string, string>();
 
     constructor(
         @InjectModel(EaInstance.name)
@@ -71,6 +75,7 @@ export class ConsoleGateway
             d.licenseKey = verified.licenseKey;
             d.accountLogin = verified.accountLogin;
             d.symbol = verified.symbol;
+            d.tokenExpiresAt = verified.expiresAt ?? undefined;
         } catch {
             this.logger.warn(
                 `WS /console rejected: invalid token id=${client.id}`,
@@ -89,6 +94,15 @@ export class ConsoleGateway
         );
 
         if (d.isBridge && d.agentId) {
+            // Owner check: only the CURRENT socket for this agent may flip it
+            // offline. A kicked/stale socket's late disconnect is a no-op.
+            if (this.bridgeSockets.get(d.agentId) !== client.id) {
+                this.logger.log(
+                    `stale bridge socket disconnect ignored agentId=${d.agentId} id=${client.id}`,
+                );
+                return;
+            }
+            this.bridgeSockets.delete(d.agentId);
             await this.instanceModel.updateOne(
                 { agentId: d.agentId },
                 { $set: { online: false } },
@@ -109,13 +123,28 @@ export class ConsoleGateway
         @MessageBody() data: { agentId?: string; bridgeVersion?: string },
     ) {
         if (!client.data.isBridge) return;
-        // agentId comes from the token; allow the payload to confirm it.
-        const agentId = data.agentId ?? client.data.agentId;
+        // v2: the agentId is BOUND to the token claim. The payload may repeat
+        // it, but may never override it — a bridge presenting agent A's token
+        // cannot register as agent B.
+        const tokenAgentId = client.data.agentId;
         const callerId = client.data.userId;
-        if (!agentId) {
-            this.logger.warn('bridge:register missing agentId -- skipping');
+        if (!tokenAgentId) {
+            this.logger.warn(
+                'bridge:register missing token agent claim -- skipping',
+            );
             return;
         }
+        if (data.agentId && data.agentId !== tokenAgentId) {
+            this.logger.warn(
+                `bridge:register agentId mismatch token=${tokenAgentId} payload=${data.agentId} -- disconnecting`,
+            );
+            client.emit('error', {
+                message: 'forbidden: agentId does not match token',
+            });
+            client.disconnect(true);
+            return;
+        }
+        const agentId = tokenAgentId;
 
         // Ownership lock: if instance already exists under a different userId, reject
         const existing = await this.instanceModel
@@ -151,8 +180,20 @@ export class ConsoleGateway
             return;
         }
 
-        const room = `agent:${agentId}`;
-        void client.join(room);
+        // Kick the stale socket only once THIS registration is known to be valid.
+        const staleId = this.bridgeSockets.get(agentId);
+        if (staleId && staleId !== client.id) {
+            this.logger.warn(
+                `bridge:register takeover agentId=${agentId} old=${staleId} new=${client.id}`,
+            );
+            this.io.in(staleId).disconnectSockets(true);
+        }
+        this.bridgeSockets.set(agentId, client.id);
+
+        // The bridge does not need to be in the browser (`agent:`) room —
+        // every emit it receives is addressed to `bridge:`, keeping bridge
+        // command traffic invisible to browser clients in the same room.
+        void client.join(`bridge:${agentId}`);
 
         // Persist the instance so the browser can subscribe afterwards. This
         // MUST land before any client:subscribe for the same agentId succeeds.
@@ -174,7 +215,9 @@ export class ConsoleGateway
         this.logger.log(
             `bridge:register agentId=${agentId} socketId=${client.id}`,
         );
-        this.io.to(room).emit('console:status', { agentId, online: true });
+        this.io
+            .to(`agent:${agentId}`)
+            .emit('console:status', { agentId, online: true });
     }
 
     @SubscribeMessage('console:telemetry')
@@ -183,8 +226,18 @@ export class ConsoleGateway
         @MessageBody() telemetry: TelemetryDto,
     ) {
         if (!client.data.isBridge) return;
-        const agentId = telemetry.agentId ?? client.data.agentId;
-        if (!agentId) return;
+        // The agentId is BOUND to the socket's token claim. Plan 1's bridge
+        // opens one connection per agent and its payload agentId always
+        // matches -- any mismatch is a spoof or a bug: drop the frame.
+        const claimed = client.data.agentId;
+        if (!claimed) return;
+        if (telemetry.agentId && telemetry.agentId !== claimed) {
+            this.logger.warn(
+                `console:telemetry agentId mismatch claim=${claimed} payload=${telemetry.agentId} -- frame dropped`,
+            );
+            return;
+        }
+        const agentId = claimed;
 
         this.telemetryCache.setex(
             `ea:state:${agentId}`,
@@ -227,13 +280,6 @@ export class ConsoleGateway
         if (agentId) {
             this.io.to(`agent:${agentId}`).emit('console:ack', data);
         }
-
-        // Also send to the specific socket that originated the command (if any).
-        const targetSocketId = this.pendingAck.get(data.uuid);
-        if (targetSocketId) {
-            this.io.to(targetSocketId).emit('console:ack', data);
-        }
-        this.pendingAck.delete(data.uuid);
     }
 
     @SubscribeMessage('console:status')
@@ -327,26 +373,44 @@ export class ConsoleGateway
         verb: string,
         value?: string,
     ) {
-        this.pendingAck.set(commandId, ''); // will be set with actual socket ID in service
         this.io
-            .to(`agent:${agentId}`)
-            .emit('bridge:command', { commandId, verb, value });
-    }
-
-    sendCommandToBridgeWithAck(
-        agentId: string,
-        commandId: string,
-        originSocketId: string,
-        verb: string,
-        value?: string,
-    ) {
-        this.pendingAck.set(commandId, originSocketId);
-        this.io
-            .to(`agent:${agentId}`)
+            .to(`bridge:${agentId}`)
             .emit('bridge:command', { commandId, verb, value });
     }
 
     emitToRoom(room: string, event: string, payload: unknown) {
         this.io.to(room).emit(event, payload);
+    }
+
+    /**
+     * Kick bridge sockets whose token has expired. Two-phase: the first sweep
+     * emits `auth:expired` (Plan 1's bridge refreshes its token over ZMQ and
+     * reconnects); the next sweep disconnects sockets that are still expired.
+     * Browser sockets are exempt until the web client ships its handler.
+     */
+    sweepExpiredBridgeSockets(): { notified: number; kicked: number } {
+        const now = Math.floor(Date.now() / 1000);
+        let notified = 0;
+        let kicked = 0;
+        const sockets: Map<string, Socket> =
+            (this.io as unknown as { sockets: Map<string, Socket> }).sockets ??
+            new Map();
+        for (const socket of sockets.values()) {
+            const d = socket.data as BridgeSocketData;
+            if (!d?.isBridge) continue;
+            if (!d.tokenExpiresAt || d.tokenExpiresAt > now) continue;
+            if (!d.expiryNotified) {
+                d.expiryNotified = true;
+                socket.emit('auth:expired');
+                notified++;
+            } else {
+                this.logger.warn(
+                    `expired bridge socket kicked agentId=${d.agentId} id=${socket.id}`,
+                );
+                socket.disconnect(true);
+                kicked++;
+            }
+        }
+        return { notified, kicked };
     }
 }

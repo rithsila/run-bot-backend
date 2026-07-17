@@ -4,7 +4,6 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { APP_GUARD } from '@nestjs/core';
-import type { Request } from 'express';
 
 // ─── Validation & Environment ──────────────────────────────────────────────────
 import { envValidationSchema } from './config/env.validation';
@@ -13,8 +12,8 @@ import { envValidationSchema } from './config/env.validation';
 import { MongooseModule } from '@nestjs/mongoose';
 
 // ─── Security & Throttling ─────────────────────────────────────────────────────
-import { ThrottlerModule, ThrottlerGuard, seconds } from '@nestjs/throttler';
-import { sha256Hex } from './common/crypto/hash.util';
+import { ThrottlerModule, seconds } from '@nestjs/throttler';
+import { ConsoleThrottlerGuard } from './common/guards/console-throttler.guard';
 
 // ─── Logger ───────────────────────────────────────────────────────────────────
 import { LoggerModule } from 'nestjs-pino';
@@ -110,33 +109,6 @@ import { ConsoleModule } from './console/console.module';
         // ─── Throttling (in-memory; no Redis) ─────────────────────────────────────
         ThrottlerModule.forRoot({
             throttlers: [{ limit: 60, ttl: seconds(60) }], // 60 req/min
-            getTracker: (req: Request) => {
-                const xff = (
-                    req.headers['x-forwarded-for'] as string | undefined
-                )
-                    ?.split(',')[0]
-                    ?.trim();
-
-                const ip =
-                    xff ||
-                    (req.headers['cf-connecting-ip'] as string | undefined) ||
-                    req.ip ||
-                    req.socket.remoteAddress ||
-                    'unknown';
-
-                const rawDev = String(
-                    (req.headers['x-device-id'] as string | undefined) ??
-                        (req as any).cookies?.device_id ??
-                        '',
-                );
-
-                const devHash =
-                    rawDev && rawDev.length >= 8 && rawDev.length <= 128
-                        ? sha256Hex(rawDev)
-                        : 'no-dev';
-
-                return `${ip}|${devHash}`;
-            },
         }),
 
         ScheduleModule.forRoot(),
@@ -147,6 +119,6 @@ import { ConsoleModule } from './console/console.module';
 
     controllers: [AppController],
 
-    providers: [{ provide: APP_GUARD, useClass: ThrottlerGuard }],
+    providers: [{ provide: APP_GUARD, useClass: ConsoleThrottlerGuard }],
 })
 export class AppModule {}
