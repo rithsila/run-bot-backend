@@ -35,8 +35,8 @@ export class ConsoleThrottlerGuard extends ThrottlerGuard {
             'unknown';
         const rawDev = String(
             (req.headers['x-device-id'] as string | undefined) ??
-                (req as unknown as { cookies?: Record<string, string> })
-                    .cookies?.device_id ??
+                (req as unknown as { cookies?: Record<string, string> }).cookies
+                    ?.device_id ??
                 '',
         );
         const devHash =
