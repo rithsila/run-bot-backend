@@ -438,6 +438,106 @@ describe('duplicate bridge connections (v2)', () => {
     });
 });
 
+describe('bridge:register kick ordering (v2)', () => {
+    let gateway: ConsoleGateway;
+    let instanceModel: ReturnType<typeof makeInstanceModel>;
+    let disconnectSocketsMock: jest.Mock;
+
+    beforeEach(async () => {
+        instanceModel = makeInstanceModel();
+        gateway = await buildGateway(instanceModel);
+        disconnectSocketsMock = (
+            gateway.io as unknown as { disconnectSocketsMock: jest.Mock }
+        ).disconnectSocketsMock;
+    });
+
+    it('does not kick the healthy socket when a later incomplete registration for the same agentId fails validation', async () => {
+        const healthyClient = makeBridgeClient({ agentId: 'A-XAUUSD-1-2' });
+        await gateway.onBridgeRegister(healthyClient as any, {});
+        disconnectSocketsMock.mockClear();
+
+        // Incomplete registration for the SAME agentId: token claim carries
+        // no licenseKey, so the required-fields check must fail it.
+        const incompleteClient = makeBridgeClient({ agentId: 'A-XAUUSD-1-2' });
+        incompleteClient.data.licenseKey = null;
+        await gateway.onBridgeRegister(incompleteClient as any, {});
+
+        expect(disconnectSocketsMock).not.toHaveBeenCalled();
+
+        // Ownership of the agentId must still belong to the healthy socket:
+        // its disconnect should still flip the agent offline.
+        (instanceModel.updateOne as jest.Mock).mockClear();
+        await gateway.handleDisconnect(healthyClient as any);
+        expect(instanceModel.updateOne).toHaveBeenCalledWith(
+            { agentId: 'A-XAUUSD-1-2' },
+            { $set: { online: false } },
+        );
+    });
+});
+
+describe('console:telemetry agentId spoof guard (v2)', () => {
+    let gateway: ConsoleGateway;
+    let instanceModel: ReturnType<typeof makeInstanceModel>;
+    let ioToMock: jest.Mock;
+
+    beforeEach(async () => {
+        instanceModel = makeInstanceModel();
+        gateway = await buildGateway(instanceModel);
+        ioToMock = (gateway.io as unknown as { to: jest.Mock }).to;
+    });
+
+    it('drops the frame when payload agentId differs from the token claim', async () => {
+        const client = makeClient({
+            userId: 'user-1',
+            isBridge: true,
+            agentId: 'agent-A',
+        });
+        const telemetry = { agentId: 'agent-B', ts: 123, balance: 1000 };
+
+        await gateway.onBridgeTelemetry(client as never, telemetry as never);
+
+        expect(gateway.getCachedState('agent-A')).toBeNull();
+        expect(gateway.getCachedState('agent-B')).toBeNull();
+        expect(instanceModel.updateOne).not.toHaveBeenCalled();
+        expect(ioToMock).not.toHaveBeenCalledWith('agent:agent-B');
+        expect(ioToMock).not.toHaveBeenCalledWith('agent:agent-A');
+    });
+
+    it('processes normally when payload agentId matches the token claim', async () => {
+        const client = makeClient({
+            userId: 'user-1',
+            isBridge: true,
+            agentId: 'agent-A',
+        });
+        const telemetry = { agentId: 'agent-A', ts: 123, balance: 1000 };
+
+        await gateway.onBridgeTelemetry(client as never, telemetry as never);
+
+        expect(gateway.getCachedState('agent-A')).toBe(
+            JSON.stringify(telemetry),
+        );
+        expect(instanceModel.updateOne).toHaveBeenCalled();
+        expect(ioToMock).toHaveBeenCalledWith('agent:agent-A');
+    });
+
+    it('processes normally when the payload omits agentId (falls back to token claim)', async () => {
+        const client = makeClient({
+            userId: 'user-1',
+            isBridge: true,
+            agentId: 'agent-A',
+        });
+        const telemetry = { ts: 123, balance: 1000 };
+
+        await gateway.onBridgeTelemetry(client as never, telemetry as never);
+
+        expect(gateway.getCachedState('agent-A')).toBe(
+            JSON.stringify(telemetry),
+        );
+        expect(instanceModel.updateOne).toHaveBeenCalled();
+        expect(ioToMock).toHaveBeenCalledWith('agent:agent-A');
+    });
+});
+
 describe('room separation (v2)', () => {
     let gateway: ConsoleGateway;
     let instanceModel: ReturnType<typeof makeInstanceModel>;

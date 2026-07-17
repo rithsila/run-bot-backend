@@ -159,16 +159,6 @@ export class ConsoleGateway
             return;
         }
 
-        // Duplicate-connection handling: newest registration wins.
-        const staleId = this.bridgeSockets.get(agentId);
-        if (staleId && staleId !== client.id) {
-            this.logger.warn(
-                `bridge:register takeover agentId=${agentId} old=${staleId} new=${client.id}`,
-            );
-            this.io.in(staleId).disconnectSockets(true);
-        }
-        this.bridgeSockets.set(agentId, client.id);
-
         client.data.agentId = agentId;
         client.data.isBridge = true;
 
@@ -186,6 +176,16 @@ export class ConsoleGateway
             );
             return;
         }
+
+        // Kick the stale socket only once THIS registration is known to be valid.
+        const staleId = this.bridgeSockets.get(agentId);
+        if (staleId && staleId !== client.id) {
+            this.logger.warn(
+                `bridge:register takeover agentId=${agentId} old=${staleId} new=${client.id}`,
+            );
+            this.io.in(staleId).disconnectSockets(true);
+        }
+        this.bridgeSockets.set(agentId, client.id);
 
         // The bridge does not need to be in the browser (`agent:`) room —
         // every emit it receives is addressed to `bridge:`, keeping bridge
@@ -223,8 +223,18 @@ export class ConsoleGateway
         @MessageBody() telemetry: TelemetryDto,
     ) {
         if (!client.data.isBridge) return;
-        const agentId = telemetry.agentId ?? client.data.agentId;
-        if (!agentId) return;
+        // The agentId is BOUND to the socket's token claim. Plan 1's bridge
+        // opens one connection per agent and its payload agentId always
+        // matches -- any mismatch is a spoof or a bug: drop the frame.
+        const claimed = client.data.agentId;
+        if (!claimed) return;
+        if (telemetry.agentId && telemetry.agentId !== claimed) {
+            this.logger.warn(
+                `console:telemetry agentId mismatch claim=${claimed} payload=${telemetry.agentId} -- frame dropped`,
+            );
+            return;
+        }
+        const agentId = claimed;
 
         this.telemetryCache.setex(
             `ea:state:${agentId}`,
