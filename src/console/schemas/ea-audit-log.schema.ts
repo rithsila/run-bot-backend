@@ -13,6 +13,7 @@ export enum AuditEvent {
     BridgeConnect = 'bridge_connect',
     BridgeDisconnect = 'bridge_disconnect',
     AlertSent = 'alert_sent',
+    InstanceHidden = 'instance_hidden',
 }
 
 @Schema({ collection: 'ea-audit-logs', timestamps: true })

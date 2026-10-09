@@ -137,6 +137,8 @@ describe('ConsoleGateway.onBridgeRegister', () => {
             symbol: 'XAUUSDc',
             online: true,
             userId: 'user-1',
+            // A reconnecting (previously hidden) EA un-hides itself.
+            hiddenAt: null,
         });
         expect(call[1].$set.lastSeenAt).toBeInstanceOf(Date);
     });

@@ -2,6 +2,7 @@ import {
     Injectable,
     NotFoundException,
     BadRequestException,
+    ConflictException,
     ForbiddenException,
     Logger,
 } from '@nestjs/common';
@@ -116,6 +117,20 @@ export interface BulkCommandSummary {
     results: BulkCommandResult[];
 }
 
+/**
+ * Slim projection for the instance list — the browser needs no licenseKey,
+ * telemetry payload, currentSettings or userId.
+ */
+export interface InstanceListItem {
+    agentId: string;
+    accountLogin: string;
+    symbol: string;
+    online: boolean;
+    lastSeenAt: Date | null;
+    /** Milliseconds — matches the `console:status` socket payload. */
+    lastSeenTs?: number;
+}
+
 @Injectable()
 export class ConsoleService {
     private readonly logger = new Logger(ConsoleService.name);
@@ -146,8 +161,52 @@ export class ConsoleService {
         }
     }
 
-    async getAllInstances(userId: string): Promise<EaInstance[]> {
-        return this.instanceModel.find({ userId }).lean().exec();
+    async getAllInstances(userId: string): Promise<InstanceListItem[]> {
+        // hiddenAt: null also matches documents created before the field
+        // existed — a soft-hidden EA only reappears by reconnecting.
+        const instances = await this.instanceModel
+            .find({ userId, hiddenAt: null })
+            .lean()
+            .exec();
+        return instances.map((instance) => ({
+            agentId: instance.agentId,
+            accountLogin: instance.accountLogin,
+            symbol: instance.symbol,
+            online: instance.online,
+            lastSeenAt: instance.lastSeenAt,
+            lastSeenTs: instance.lastSeenAt
+                ? instance.lastSeenAt.getTime()
+                : undefined,
+        }));
+    }
+
+    /**
+     * Soft-hide an offline EA from the console list. History (pnl points,
+     * audit logs, settings) is kept; the gateway clears hiddenAt as soon as
+     * the EA connects again. Online instances are refused — stop them first.
+     * Idempotent: hiding an already-hidden offline EA succeeds.
+     */
+    async hideInstance(
+        agentId: string,
+        userId: string,
+    ): Promise<{ agentId: string; hidden: boolean }> {
+        await this.requireOwnership(agentId, userId);
+        const instance = await this.instanceModel
+            .findOne({ agentId })
+            .lean()
+            .exec();
+        if (instance?.online) {
+            throw new ConflictException(
+                'EA instance is online; stop it before removing',
+            );
+        }
+        await this.instanceModel.updateOne(
+            { agentId, userId, online: false },
+            { $set: { hiddenAt: new Date() } },
+        );
+        await this.logEvent(agentId, AuditEvent.InstanceHidden, {}, userId);
+        this.logger.log(`instance_hidden agentId=${agentId} userId=${userId}`);
+        return { agentId, hidden: true };
     }
 
     async getInstanceStatus(

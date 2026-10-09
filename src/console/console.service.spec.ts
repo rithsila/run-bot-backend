@@ -3,6 +3,7 @@ import { getModelToken } from '@nestjs/mongoose';
 import {
     NotFoundException,
     BadRequestException,
+    ConflictException,
     ForbiddenException,
 } from '@nestjs/common';
 
@@ -875,12 +876,15 @@ describe('ConsoleService', () => {
             });
         }
 
-        it('getAllInstances filters by userId', async () => {
+        it('getAllInstances filters by userId and excludes hidden EAs', async () => {
             instanceModel.find.mockReturnValue({
                 lean: () => ({ exec: () => Promise.resolve([]) }),
             });
             await service.getAllInstances(USER_A);
-            expect(instanceModel.find).toHaveBeenCalledWith({ userId: USER_A });
+            expect(instanceModel.find).toHaveBeenCalledWith({
+                userId: USER_A,
+                hiddenAt: null,
+            });
         });
 
         it('sendKillSwitch throws ForbiddenException when userId does not match', async () => {
@@ -932,6 +936,145 @@ describe('ConsoleService', () => {
                 service.sendKillSwitch(AGENT_A, USER_A),
             ).rejects.toThrow(ForbiddenException);
             expect(gateway.sendCommandToBridge).not.toHaveBeenCalled();
+        });
+    });
+
+    // ── getAllInstances projection ─────────────────────────────────────────────
+
+    describe('getAllInstances projection', () => {
+        it('returns only list fields and adds lastSeenTs in milliseconds', async () => {
+            const lastSeenAt = new Date('2026-08-01T12:00:00.000Z');
+            instanceModel.find.mockReturnValue({
+                lean: () => ({
+                    exec: () =>
+                        Promise.resolve([
+                            {
+                                agentId: 'agent-1',
+                                accountLogin: '111',
+                                symbol: 'XAUUSD',
+                                online: false,
+                                lastSeenAt,
+                                // Fields the browser must not receive:
+                                licenseKey: 'SECRET-KEY',
+                                lastTelemetry: { balance: 1 },
+                                currentSettings: { StartingLots: 0.01 },
+                                userId: 'user-1',
+                                hiddenAt: null,
+                            },
+                            {
+                                agentId: 'agent-2',
+                                accountLogin: '222',
+                                symbol: 'EURUSD',
+                                online: true,
+                                lastSeenAt: null,
+                            },
+                        ]),
+                }),
+            });
+
+            const result = await service.getAllInstances('user-1');
+
+            expect(result).toEqual([
+                {
+                    agentId: 'agent-1',
+                    accountLogin: '111',
+                    symbol: 'XAUUSD',
+                    online: false,
+                    lastSeenAt,
+                    lastSeenTs: lastSeenAt.getTime(),
+                },
+                {
+                    agentId: 'agent-2',
+                    accountLogin: '222',
+                    symbol: 'EURUSD',
+                    online: true,
+                    lastSeenAt: null,
+                    lastSeenTs: undefined,
+                },
+            ]);
+            expect(result[0]).not.toHaveProperty('licenseKey');
+            expect(result[0]).not.toHaveProperty('lastTelemetry');
+            expect(result[0]).not.toHaveProperty('currentSettings');
+            expect(result[0]).not.toHaveProperty('userId');
+        });
+    });
+
+    // ── hideInstance (soft remove) ────────────────────────────────────────────
+
+    describe('hideInstance', () => {
+        function mockInstance(doc: unknown) {
+            instanceModel.findOne.mockReturnValue({
+                lean: () => ({ exec: () => Promise.resolve(doc) }),
+            });
+        }
+
+        it('throws NotFoundException when the instance does not exist', async () => {
+            mockInstance(null);
+            await expect(
+                service.hideInstance('missing', 'user-1'),
+            ).rejects.toThrow(NotFoundException);
+            expect(instanceModel.updateOne).not.toHaveBeenCalled();
+        });
+
+        it('throws ForbiddenException when owned by another user', async () => {
+            mockInstance({
+                agentId: 'agent-1',
+                userId: 'user-OWNER',
+                online: false,
+            });
+            await expect(
+                service.hideInstance('agent-1', 'user-OTHER'),
+            ).rejects.toThrow(ForbiddenException);
+            expect(instanceModel.updateOne).not.toHaveBeenCalled();
+        });
+
+        it('throws ConflictException while the EA is online', async () => {
+            mockInstance({
+                agentId: 'agent-1',
+                userId: 'user-1',
+                online: true,
+            });
+            await expect(
+                service.hideInstance('agent-1', 'user-1'),
+            ).rejects.toThrow(ConflictException);
+            expect(instanceModel.updateOne).not.toHaveBeenCalled();
+        });
+
+        it('sets hiddenAt and writes an instance_hidden audit event', async () => {
+            mockInstance({
+                agentId: 'agent-1',
+                userId: 'user-1',
+                online: false,
+            });
+
+            const result = await service.hideInstance('agent-1', 'user-1');
+
+            expect(result).toEqual({ agentId: 'agent-1', hidden: true });
+            expect(instanceModel.updateOne).toHaveBeenCalledWith(
+                { agentId: 'agent-1', userId: 'user-1', online: false },
+                { $set: { hiddenAt: expect.any(Date) } },
+            );
+            expect(auditModel.create).toHaveBeenCalledWith(
+                expect.objectContaining({
+                    agentId: 'agent-1',
+                    event: AuditEvent.InstanceHidden,
+                    userId: 'user-1',
+                }),
+            );
+        });
+
+        it('succeeds on an already-hidden offline EA (idempotent)', async () => {
+            mockInstance({
+                agentId: 'agent-1',
+                userId: 'user-1',
+                online: false,
+                hiddenAt: new Date('2026-08-01T00:00:00.000Z'),
+            });
+
+            const result = await service.hideInstance('agent-1', 'user-1');
+
+            expect(result).toEqual({ agentId: 'agent-1', hidden: true });
+            expect(instanceModel.updateOne).toHaveBeenCalled();
         });
     });
 

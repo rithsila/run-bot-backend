@@ -1,5 +1,6 @@
 import {
     Controller,
+    Delete,
     Get,
     Post,
     Param,
@@ -158,6 +159,16 @@ export class ConsoleController {
             req.user.userId,
         );
         return { settings };
+    }
+
+    @Delete('instances/:agentId')
+    @HttpCode(HttpStatus.OK)
+    @Throttle({ default: { limit: 20, ttl: 60_000 } })
+    async removeInstance(
+        @Param('agentId') agentId: string,
+        @Req() req: AuthRequest,
+    ) {
+        return this.console.hideInstance(agentId, req.user.userId);
     }
 
     // ── Bulk commands (v2) ───────────────────────────────────────────────────

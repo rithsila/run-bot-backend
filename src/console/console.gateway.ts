@@ -207,6 +207,8 @@ export class ConsoleGateway
                     userId: callerId,
                     online: true,
                     lastSeenAt: new Date(),
+                    // A reconnecting EA un-hides itself.
+                    hiddenAt: null,
                 },
             },
             { upsert: true, new: true },
@@ -257,6 +259,8 @@ export class ConsoleGateway
                         unknown
                     >,
                     lastSeenAt: new Date(),
+                    // A reconnecting EA un-hides itself.
+                    hiddenAt: null,
                 },
             },
         );
@@ -294,7 +298,14 @@ export class ConsoleGateway
 
         await this.instanceModel.updateOne(
             { agentId },
-            { $set: { online: data.online, lastSeenAt: new Date() } },
+            {
+                $set: {
+                    online: data.online,
+                    lastSeenAt: new Date(),
+                    // A reconnecting EA un-hides itself.
+                    ...(data.online ? { hiddenAt: null } : {}),
+                },
+            },
         );
 
         this.io.to(`agent:${agentId}`).emit('console:status', {

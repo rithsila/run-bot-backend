@@ -31,6 +31,9 @@ export class EaInstance {
 
     @Prop({ type: String, index: true, default: null })
     userId!: string | null;
+
+    @Prop({ type: Date, default: null, index: true })
+    hiddenAt!: Date | null;
 }
 
 export const EaInstanceSchema = SchemaFactory.createForClass(EaInstance);
